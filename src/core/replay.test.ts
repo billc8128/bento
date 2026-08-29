@@ -1,0 +1,539 @@
+import { describe, expect, it } from "vitest"
+
+import { applyRecord, createAccumulator, finalizeTrailing, messagesOf } from "./replay"
+
+const at = "2026-08-24T00:00:00.000Z"
+const T = Date.parse(at)
+
+describe("replay", () => {
+  it("把统一事件流投影成消息并更新工具状态", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at, kind: "event", payload: { type: "user_message", text: "修一下" } },
+      { seq: 2, at, kind: "event", payload: { type: "agent_thought_chunk", text: "先看代码" } },
+      {
+        seq: 3,
+        at,
+        kind: "event",
+        payload: {
+          type: "tool_started",
+          id: "t1",
+          kind: "read",
+          title: "src/App.tsx",
+          status: "running",
+        },
+      },
+      {
+        seq: 4,
+        at,
+        kind: "event",
+        payload: { type: "tool_updated", id: "t1", status: "completed" },
+      },
+      { seq: 5, at, kind: "event", payload: { type: "agent_message_chunk", text: "好了" } },
+      { seq: 6, at, kind: "event", payload: { type: "turn_finished", reason: "end_turn" } },
+    ] as const
+
+    for (const record of records) applyRecord(acc, record)
+
+    expect(messagesOf(acc)).toEqual([
+      { id: "u1", role: "user", text: "修一下" },
+      {
+        id: "a1",
+        role: "assistant",
+        text: "好了",
+        thinking: "先看代码",
+        tools: [
+          { kind: "read", target: "src/App.tsx", detail: "", status: "done", startedAtMs: T, durationMs: 0 },
+        ],
+        durationMs: 0,
+      },
+    ])
+  })
+
+  it("继续兼容 v0.3 的 ACP 原始日志并按 seq 去重", () => {
+    const acc = createAccumulator()
+    const record = {
+      seq: 1,
+      at,
+      kind: "update",
+      payload: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "旧历史" },
+      },
+    }
+    applyRecord(acc, record)
+    applyRecord(acc, record)
+
+    expect(messagesOf(acc)).toMatchObject([
+      { role: "assistant", text: "旧历史" },
+    ])
+  })
+})
+
+describe("permission metadata 不终结 draft(TRACE_DATA_PLAN §3.4 P0 回归)", () => {
+  it("metadata 照常落盘但不渲染,其后的 tool_updated 正常命中并落定", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at, kind: "event", payload: { type: "user_message", text: "改一下" } },
+      { seq: 2, at, kind: "event", payload: { type: "agent_thought_chunk", text: "想想" } },
+      {
+        seq: 3,
+        at,
+        kind: "event",
+        payload: { type: "tool_started", id: "t1", kind: "edit", title: "Edit", status: "running" },
+      },
+      // canUseTool/requestPermission 改道后的 permission 事件
+      {
+        seq: 4,
+        at,
+        kind: "event",
+        payload: { type: "metadata", name: "permission/auto_approved", data: { toolName: "Edit" } },
+      },
+      {
+        seq: 5,
+        at,
+        kind: "event",
+        payload: { type: "tool_updated", id: "t1", title: "src/App.tsx", status: "completed" },
+      },
+      { seq: 6, at, kind: "event", payload: { type: "agent_message_chunk", text: "改好了" } },
+      { seq: 7, at, kind: "event", payload: { type: "turn_finished", reason: "end_turn" } },
+    ] as const
+
+    for (const record of records) applyRecord(acc, record)
+
+    // 旧实现(notice 拆 draft)下这里会是两条 assistant 消息且工具永远 running
+    expect(messagesOf(acc)).toEqual([
+      { id: "u1", role: "user", text: "改一下" },
+      {
+        id: "a1",
+        role: "assistant",
+        text: "改好了",
+        thinking: "想想",
+        tools: [{ kind: "edit", target: "src/App.tsx", detail: "", status: "done", startedAtMs: T, durationMs: 0 }],
+        durationMs: 0,
+      },
+    ])
+  })
+})
+
+describe("finalize 强制 running→failed(错误路径回放一致性)", () => {
+  it("历史日志中的成功恢复提示静默，恢复失败提示仍保留", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at, kind: "event", payload: { type: "notice", text: "会话已恢复(resume),上下文延续" } },
+      { seq: 2, at, kind: "notice", payload: { text: "会话已恢复(Codex thread/resume),上下文延续" } },
+      { seq: 3, at, kind: "event", payload: { type: "notice", text: "原会话无法恢复,已开新上下文续接" } },
+    ] as const
+
+    for (const record of records) applyRecord(acc, record)
+
+    expect(messagesOf(acc)).toEqual([
+      { id: "n3", role: "assistant", text: "⚠️ 原会话无法恢复,已开新上下文续接" },
+    ])
+  })
+
+  it("错误 notice 先终结 draft 时,未落定的工具改写为 failed 且无重复错误消息", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at, kind: "event", payload: { type: "user_message", text: "跑一个长任务" } },
+      {
+        seq: 2,
+        at,
+        kind: "event",
+        payload: { type: "tool_started", id: "t1", kind: "bash", title: "sleep 100", status: "running" },
+      },
+      // 落盘的 driver 错误 notice——错误消息只来自这里
+      { seq: 3, at, kind: "event", payload: { type: "notice", text: "Claude: overloaded" } },
+      { seq: 4, at, kind: "event", payload: { type: "turn_finished", reason: "error" } },
+    ] as const
+
+    for (const record of records) applyRecord(acc, record)
+
+    expect(messagesOf(acc)).toEqual([
+      { id: "u1", role: "user", text: "跑一个长任务" },
+      {
+        id: "a1",
+        role: "assistant",
+        text: "",
+        tools: [{ kind: "bash", target: "sleep 100", detail: "", status: "failed", startedAtMs: T }],
+        durationMs: 0,
+      },
+      { id: "n3", role: "assistant", text: "⚠️ Claude: overloaded" },
+    ])
+  })
+})
+
+describe("finalizeTrailing 回放终界(TRACE_DATA_PLAN §3.3)", () => {
+  it("崩溃会话的 trailing draft 收尾:running 强制 failed 且不再是 draft", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at, kind: "event", payload: { type: "user_message", text: "继续" } },
+      { seq: 2, at, kind: "event", payload: { type: "agent_thought_chunk", text: "想想" } },
+      {
+        seq: 3,
+        at,
+        kind: "event",
+        payload: { type: "tool_started", id: "t1", kind: "read", title: "a.ts", status: "running" },
+      },
+    ] as const
+    for (const record of records) applyRecord(acc, record)
+
+    // 收尾前:trailing draft 原样吐出,spinner 照转
+    expect(messagesOf(acc)).toEqual([
+      { id: "u1", role: "user", text: "继续" },
+      {
+        id: "draft",
+        role: "assistant",
+        text: "",
+        thinking: "想想",
+        tools: [{ kind: "read", target: "a.ts", detail: "", status: "running", startedAtMs: T }],
+      },
+    ])
+
+    finalizeTrailing(acc, at)
+
+    expect(messagesOf(acc)).toEqual([
+      { id: "u1", role: "user", text: "继续" },
+      {
+        id: "a1",
+        role: "assistant",
+        text: "",
+        thinking: "想想",
+        tools: [{ kind: "read", target: "a.ts", detail: "", status: "failed", startedAtMs: T }],
+        durationMs: 0,
+      },
+    ])
+  })
+
+  it("没有 trailing draft 时收尾是无害的 no-op", () => {
+    const acc = createAccumulator()
+    applyRecord(acc, { seq: 1, at, kind: "event", payload: { type: "user_message", text: "hi" } })
+    finalizeTrailing(acc, at)
+    expect(messagesOf(acc)).toEqual([{ id: "u1", role: "user", text: "hi" }])
+  })
+})
+
+describe("at 差计时(TRACE_DATA_PLAN §3.3 M1)", () => {
+  function atOffset(ms: number) {
+    return new Date(T + ms).toISOString()
+  }
+
+  it("tool_updated 终态时以 at - startedAtMs 写 durationMs", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at: atOffset(0), kind: "event", payload: { type: "user_message", text: "查一下" } },
+      {
+        seq: 2,
+        at: atOffset(1_000),
+        kind: "event",
+        payload: { type: "tool_started", id: "t1", kind: "search", title: "grep foo", status: "running" },
+      },
+      {
+        seq: 3,
+        at: atOffset(5_200),
+        kind: "event",
+        payload: { type: "tool_updated", id: "t1", status: "completed" },
+      },
+      { seq: 4, at: atOffset(5_200), kind: "event", payload: { type: "turn_finished", reason: "end_turn" } },
+    ] as const
+    for (const record of records) applyRecord(acc, record)
+
+    const assistant = messagesOf(acc)[1]
+    expect(assistant && assistant.role === "assistant" && assistant.tools?.[0]).toMatchObject({
+      startedAtMs: T + 1_000,
+      durationMs: 4_200,
+    })
+  })
+
+  it("同 tick(at 相同)durationMs 为 0,交给 formatDuration 的 <0.1s 下限", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at, kind: "event", payload: { type: "user_message", text: "hi" } },
+      {
+        seq: 2,
+        at,
+        kind: "event",
+        payload: { type: "tool_started", id: "t1", kind: "read", title: "a.ts", status: "running" },
+      },
+      {
+        seq: 3,
+        at,
+        kind: "event",
+        payload: { type: "tool_updated", id: "t1", status: "completed" },
+      },
+    ] as const
+    for (const record of records) applyRecord(acc, record)
+
+    const assistant = messagesOf(acc)[1]
+    expect(assistant && assistant.role === "assistant" && assistant.tools?.[0]?.durationMs).toBe(0)
+  })
+
+  it("回合 durationMs = 首个 draft 事件到 turn_finished 的 at 差", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at: atOffset(0), kind: "event", payload: { type: "user_message", text: "hi" } },
+      { seq: 2, at: atOffset(300), kind: "event", payload: { type: "agent_thought_chunk", text: "想" } },
+      {
+        seq: 3,
+        at: atOffset(2_000),
+        kind: "event",
+        payload: { type: "tool_started", id: "t1", kind: "read", title: "a.ts", status: "running" },
+      },
+      {
+        seq: 4,
+        at: atOffset(9_000),
+        kind: "event",
+        payload: { type: "tool_updated", id: "t1", status: "completed" },
+      },
+      { seq: 5, at: atOffset(12_000), kind: "event", payload: { type: "turn_finished", reason: "end_turn" } },
+    ] as const
+    for (const record of records) applyRecord(acc, record)
+
+    const assistant = messagesOf(acc)[1]
+    expect(assistant && assistant.role === "assistant" && assistant.durationMs).toBe(11_700)
+    expect(assistant && assistant.role === "assistant" && assistant.tools?.[0]?.durationMs).toBe(7_000)
+  })
+
+  it("draft 未定稿时(messagesOf 的 draft)没有 durationMs", () => {
+    const acc = createAccumulator()
+    applyRecord(acc, { seq: 1, at: atOffset(0), kind: "event", payload: { type: "user_message", text: "hi" } })
+    applyRecord(acc, { seq: 2, at: atOffset(500), kind: "event", payload: { type: "agent_thought_chunk", text: "想" } })
+
+    expect(messagesOf(acc).at(-1)).toMatchObject({ id: "draft" })
+    expect(messagesOf(acc).at(-1)).not.toHaveProperty("durationMs")
+  })
+
+  it("legacy 路径同样按 at 差计时(v0.3 会话也能显示耗时)", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at: atOffset(0), kind: "user_message", payload: { text: "旧会话" } },
+      {
+        seq: 2,
+        at: atOffset(400),
+        kind: "update",
+        payload: { sessionUpdate: "tool_call", toolCallId: "t1", kind: "read", title: "a.ts", status: "in_progress" },
+      },
+      {
+        seq: 3,
+        at: atOffset(1_100),
+        kind: "update",
+        payload: { sessionUpdate: "tool_call_update", toolCallId: "t1", status: "completed" },
+      },
+      { seq: 4, at: atOffset(1_500), kind: "turn_end", payload: {} },
+    ] as const
+    for (const record of records) applyRecord(acc, record)
+
+    const assistant = messagesOf(acc)[1]
+    expect(assistant && assistant.role === "assistant" && assistant.tools?.[0]).toMatchObject({
+      status: "done",
+      startedAtMs: T + 400,
+      durationMs: 700,
+    })
+    expect(assistant && assistant.role === "assistant" && assistant.durationMs).toBe(1_100)
+  })
+})
+
+describe("工具输出与搜索链接透传(TRACE_DATA_PLAN §7 P3)", () => {
+  const atOffset = (ms: number) => new Date(T + ms).toISOString()
+
+  it("tool_updated 的 output/url 透传到 ToolCall,后者覆盖前者", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at: atOffset(0), kind: "event", payload: { type: "user_message", text: "搜一下" } },
+      {
+        seq: 2,
+        at: atOffset(10),
+        kind: "event",
+        payload: { type: "tool_started", id: "t1", kind: "search", title: "web", status: "running" },
+      },
+      {
+        seq: 3,
+        at: atOffset(20),
+        kind: "event",
+        payload: {
+          type: "tool_updated",
+          id: "t1",
+          status: "completed",
+          output: "第一版输出",
+          url: "https://a.example/x",
+        },
+      },
+      {
+        seq: 4,
+        at: atOffset(30),
+        kind: "event",
+        payload: { type: "tool_updated", id: "t1", output: "更全的输出" },
+      },
+      { seq: 5, at: atOffset(40), kind: "event", payload: { type: "turn_finished", reason: "end_turn" } },
+    ] as const
+    for (const record of records) applyRecord(acc, record)
+
+    const assistant = messagesOf(acc)[1]
+    expect(assistant && assistant.role === "assistant" && assistant.tools?.[0]).toEqual({
+      kind: "search",
+      target: "web",
+      detail: "",
+      status: "done",
+      startedAtMs: T + 10,
+      durationMs: 20,
+      output: "更全的输出",
+      url: "https://a.example/x",
+    })
+  })
+
+  it("没有 output/url 的事件不产生字段,旧会话回放自动隐藏", () => {
+    const acc = createAccumulator()
+    applyRecord(acc, { seq: 1, at: atOffset(0), kind: "event", payload: { type: "user_message", text: "hi" } })
+    applyRecord(acc, {
+      seq: 2,
+      at: atOffset(10),
+      kind: "event",
+      payload: { type: "tool_started", id: "t1", kind: "read", title: "a.ts", status: "running" },
+    })
+    applyRecord(acc, {
+      seq: 3,
+      at: atOffset(20),
+      kind: "event",
+      payload: { type: "tool_updated", id: "t1", status: "completed" },
+    })
+
+    const tool = messagesOf(acc)[1]
+    expect(tool && tool.role === "assistant" && tool.tools?.[0]).not.toHaveProperty("output")
+    expect(tool && tool.role === "assistant" && tool.tools?.[0]).not.toHaveProperty("url")
+  })
+})
+
+describe("tool_updated 的 detail 透传(合并语义回归)", () => {
+  const atOffset = (ms: number) => new Date(T + ms).toISOString()
+
+  it("detail 写入 ToolCall,后续更新覆盖;缺 detail 的更新保留旧值", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at: atOffset(0), kind: "event", payload: { type: "user_message", text: "跑一下" } },
+      {
+        seq: 2,
+        at: atOffset(10),
+        kind: "event",
+        payload: { type: "tool_started", id: "t1", kind: "bash", title: "pnpm test", status: "running" },
+      },
+      {
+        seq: 3,
+        at: atOffset(20),
+        kind: "event",
+        payload: { type: "tool_updated", id: "t1", detail: "271 passed" },
+      },
+      {
+        seq: 4,
+        at: atOffset(30),
+        kind: "event",
+        payload: { type: "tool_updated", id: "t1", status: "completed", detail: "271 passed · 6.3s" },
+      },
+      {
+        seq: 5,
+        at: atOffset(40),
+        kind: "event",
+        payload: { type: "tool_updated", id: "t1", status: "failed" },
+      },
+      { seq: 6, at: atOffset(50), kind: "event", payload: { type: "turn_finished", reason: "end_turn" } },
+    ] as const
+    for (const record of records) applyRecord(acc, record)
+
+    const tool = messagesOf(acc)[1]
+    expect(tool && tool.role === "assistant" && tool.tools?.[0]).toMatchObject({
+      status: "failed",
+      detail: "271 passed · 6.3s",
+    })
+  })
+})
+
+describe("plan 与 usage(TRACE_DATA_PLAN §7 P4)", () => {
+  const atOffset = (ms: number) => new Date(T + ms).toISOString()
+
+  it("metadata 的 plan 事件写入回合计划并整体替换;非法条目跳过", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at: atOffset(0), kind: "event", payload: { type: "user_message", text: "做个功能" } },
+      {
+        seq: 2,
+        at: atOffset(10),
+        kind: "event",
+        payload: {
+          type: "metadata",
+          name: "plan",
+          data: {
+            entries: [
+              { content: "读代码", priority: "high", status: "completed" },
+              { content: "改代码", priority: "high", status: "in_progress" },
+            ],
+          },
+        },
+      },
+      {
+        seq: 3,
+        at: atOffset(20),
+        kind: "event",
+        payload: {
+          type: "metadata",
+          name: "plan",
+          data: {
+            entries: [
+              { content: "读代码", priority: "high", status: "completed" },
+              { content: "改代码", priority: "high", status: "completed" },
+              { content: "", status: "pending" },
+              { content: 42, status: "pending" },
+            ],
+          },
+        },
+      },
+      { seq: 4, at: atOffset(30), kind: "event", payload: { type: "agent_message_chunk", text: "完成" } },
+      { seq: 5, at: atOffset(40), kind: "event", payload: { type: "turn_finished", reason: "end_turn" } },
+    ] as const
+    for (const record of records) applyRecord(acc, record)
+
+    const assistant = messagesOf(acc)[1]
+    expect(assistant && assistant.role === "assistant" && assistant.plan).toEqual([
+      { content: "读代码", status: "completed" },
+      { content: "改代码", status: "completed" },
+    ])
+  })
+
+  it("turn_finished 的 usage 写入回合消息;无 usage 的终点不产生字段", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at: atOffset(0), kind: "event", payload: { type: "user_message", text: "第一个" } },
+      { seq: 2, at: atOffset(10), kind: "event", payload: { type: "agent_message_chunk", text: "一" } },
+      {
+        seq: 3,
+        at: atOffset(20),
+        kind: "event",
+        payload: {
+          type: "turn_finished",
+          reason: "end_turn",
+          usage: { inputTokens: 1500, outputTokens: 400, cost: 0.02 },
+        },
+      },
+      { seq: 4, at: atOffset(30), kind: "event", payload: { type: "user_message", text: "第二个" } },
+      { seq: 5, at: atOffset(40), kind: "event", payload: { type: "agent_message_chunk", text: "二" } },
+      { seq: 6, at: atOffset(50), kind: "event", payload: { type: "turn_finished", reason: "end_turn" } },
+    ] as const
+    for (const record of records) applyRecord(acc, record)
+
+    const [first, second] = messagesOf(acc).filter((m) => m.role === "assistant")
+    expect(first.usage).toEqual({ inputTokens: 1500, outputTokens: 400, cost: 0.02 })
+    expect(second).not.toHaveProperty("usage")
+  })
+
+  it("notice 终结的回合不带 usage(usage 只随 turn_finished 上送)", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at: atOffset(0), kind: "event", payload: { type: "user_message", text: "hi" } },
+      { seq: 2, at: atOffset(10), kind: "event", payload: { type: "agent_message_chunk", text: "好" } },
+      { seq: 3, at: atOffset(20), kind: "event", payload: { type: "notice", text: "Codex 运行失败" } },
+    ] as const
+    for (const record of records) applyRecord(acc, record)
+
+    const notice = messagesOf(acc)[1]
+    expect(notice && notice.role === "assistant").toBe(true)
+    expect(notice).not.toHaveProperty("usage")
+  })
+})

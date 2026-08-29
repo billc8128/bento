@@ -1,0 +1,228 @@
+@import "tailwindcss";
+@import "dockview/dist/styles/dockview.css";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+@import "@fontsource-variable/dm-sans";
+@import "@fontsource-variable/instrument-sans";
+@import "@fontsource-variable/newsreader";
+@import "@fontsource-variable/plus-jakarta-sans";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource/ibm-plex-mono/latin-400.css";
+@import "@fontsource/ibm-plex-mono/latin-500.css";
+@import "@fontsource/ibm-plex-mono/latin-600.css";
+@import "./styles/themes.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Electron app-region 按原生矩形合并，不遵守 DOM z-index。设置页打开时，
+ * 必须停用被它盖住的底层拖拽区，否则拖拽矩形会穿透并截走按钮点击。 */
+:root[data-settings-open="true"] .app-window-drag {
+  -webkit-app-region: no-drag !important;
+}
+
+@theme inline {
+    --font-heading: var(--app-font-heading);
+    --font-sans: var(--app-font-sans);
+    --font-mono: var(--app-font-mono);
+    --text-xs: var(--app-type-caption-size);
+    --text-xs--line-height: var(--app-type-caption-line);
+    --text-sm: var(--app-type-ui-size);
+    --text-sm--line-height: var(--app-type-ui-line);
+    --text-base: var(--app-type-body-size);
+    --text-base--line-height: var(--app-type-body-line);
+    --font-weight-normal: var(--app-weight-normal);
+    --font-weight-medium: var(--app-weight-medium);
+    --font-weight-semibold: var(--app-weight-semibold);
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+    /* chart 色板是唯一不在主题块里的 token 组，五套主题共用。其余视觉 token
+     * 的单一事实源是 themes.css 的 graphite 块（同时匹配裸 :root 兜底）。 */
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+}
+
+.dark {
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    font-size: var(--app-type-body-size);
+    font-weight: var(--app-weight-normal);
+    line-height: var(--app-type-body-line);
+    }
+  html {
+    @apply font-sans;
+    }
+}
+
+/* 语义排版角色。常规 UI 继续使用 text-sm/text-xs/text-base，
+ * 它们已在 @theme 中映射到每套主题的 token。 */
+.type-display {
+  font-family: var(--app-font-heading);
+  font-size: var(--app-type-display-size);
+  font-weight: var(--app-type-display-weight);
+  line-height: var(--app-type-display-line);
+  letter-spacing: var(--app-type-display-tracking);
+}
+
+.app-title {
+  font-family: var(--app-font-heading);
+}
+
+.type-micro {
+  font-size: var(--app-type-micro-size);
+  line-height: var(--app-type-micro-line);
+}
+
+/* 项目已选择时的 hover：内层轻微下沉，保持外层结构和 composer 轮廓不动。 */
+.project-picker-depression {
+  background: transparent;
+  box-shadow: inset 0 0 0 transparent;
+}
+
+.group\/project:hover .project-picker-depression,
+.group\/project:focus-within .project-picker-depression {
+  background: color-mix(in oklch, var(--foreground) 5%, var(--muted));
+  box-shadow:
+    inset 0 1px 2px color-mix(in oklch, var(--foreground) 10%, transparent),
+    0 1px 0 color-mix(in oklch, var(--background) 78%, transparent);
+}
+
+/* 运行配置从触发器方向生长;forceMount 让开合 transition 可以中途反向 */
+.runtime-popover {
+  visibility: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(8px) scale(0.97);
+  transform-origin: var(--radix-popover-content-transform-origin);
+  transition:
+    opacity 110ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 110ms cubic-bezier(0.23, 1, 0.32, 1),
+    visibility 0s linear 110ms;
+  will-change: transform, opacity;
+}
+
+.runtime-popover[data-state="open"] {
+  visibility: visible;
+  pointer-events: auto;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition:
+    opacity 160ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 180ms cubic-bezier(0.23, 1, 0.32, 1),
+    visibility 0s;
+}
+
+/* forceMount 保留退场动画时 Radix 的定位 wrapper 仍有尺寸；关闭态必须让
+ * pointer event 穿透，否则它会盖住上方的项目选择器。 */
+[data-radix-popper-content-wrapper]:has(> .runtime-popover[data-state="closed"]) {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runtime-popover,
+  .runtime-popover[data-state="open"] {
+    transform: none;
+    transition: opacity 80ms linear, visibility 0s;
+  }
+}
+
+@keyframes browser-progress {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(210%); }
+}
+
+/* 侧栏文件夹分组的平滑展开/收起;高度取 Radix 的内容测量值,
+ * Presence 会等 close 动画播完再卸载,无需 forceMount。 */
+.collapsible-section {
+  overflow: hidden;
+}
+
+.collapsible-section[data-state="open"] {
+  animation: collapsible-open 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.collapsible-section[data-state="closed"] {
+  animation: collapsible-close 150ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@keyframes collapsible-open {
+  from { height: 0; opacity: 0.4; }
+  to { height: var(--radix-collapsible-content-height); opacity: 1; }
+}
+
+@keyframes collapsible-close {
+  from { height: var(--radix-collapsible-content-height); opacity: 1; }
+  to { height: 0; opacity: 0.4; }
+}
+
+/* agent 工具轨迹:工具行按各自挂载时机逐行浮现(流式追加时新行即插即演) */
+.trace-row {
+  animation: trace-row-in 320ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@keyframes trace-row-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collapsible-section[data-state="open"],
+  .collapsible-section[data-state="closed"],
+  .trace-row {
+    animation: none;
+  }
+}

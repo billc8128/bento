@@ -1,0 +1,580 @@
+/* ---------------------------------------------------------------------------
+ * 五套视觉主题的 token 定义
+ *
+ * 特异性约定(重要):
+ *   :root[data-style="x"]        → (0,2,0)  浅色
+ *   :root[data-style="x"].dark   → (0,3,0)  深色,必然胜过浅色
+ * shadcn 自带的 :root / .dark 都是 (0,1,0),只作为未指定 data-style 时的兜底。
+ *
+ * 每个主题必须成套定义:底色、前景、边框、强调色、语义色、字体、圆角。
+ * 任何颜色都不允许只在其中一个模式里出现。
+ * ------------------------------------------------------------------------- */
+
+/* === A. terminal — 终端极客 ============================================== */
+/* 底色带冷绿偏而非纯黑,避开「纯黑 + 荧光绿」的俗套配色 */
+
+:root[data-style="terminal"] {
+    --app-font-sans: "JetBrains Mono Variable", "SFMono-Regular", "PingFang SC", monospace;
+    --app-font-heading: var(--app-font-sans);
+    --app-font-mono: "JetBrains Mono Variable", "SFMono-Regular", monospace;
+    --app-type-caption-size: 12px;
+    --app-type-caption-line: 17px;
+    --app-type-ui-size: 13px;
+    --app-type-ui-line: 19px;
+    --app-type-body-size: 14px;
+    --app-type-body-line: 23px;
+    --app-type-micro-size: 11px;
+    --app-type-micro-line: 15px;
+    --app-type-display-size: clamp(24px, 2.6vw, 30px);
+    --app-type-display-line: 1.2;
+    --app-type-display-weight: 600;
+    --app-type-display-tracking: -0.02em;
+    --app-weight-normal: 400;
+    --app-weight-medium: 500;
+    --app-weight-semibold: 700;
+    --app-content-max: 76rem;
+    --app-onboarding-max: 68rem;
+    --app-onboarding-title-gap: 2.5rem;
+    --app-onboarding-composer-height: 8.5rem;
+    --app-project-row-height: 3.5rem;
+    --radius: 0.125rem;
+
+    --background: oklch(0.97 0.008 150);
+    --foreground: oklch(0.22 0.015 160);
+    --card: oklch(0.995 0.004 150);
+    --card-foreground: oklch(0.22 0.015 160);
+    --popover: oklch(0.995 0.004 150);
+    --popover-foreground: oklch(0.22 0.015 160);
+    --primary: oklch(0.5 0.13 150);
+    --primary-foreground: oklch(0.98 0.01 150);
+    --secondary: oklch(0.93 0.012 150);
+    --secondary-foreground: oklch(0.28 0.02 155);
+    --muted: oklch(0.93 0.012 150);
+    --muted-foreground: oklch(0.48 0.018 155);
+    --accent: oklch(0.9 0.02 150);
+    --accent-foreground: oklch(0.25 0.02 155);
+    --destructive: oklch(0.55 0.2 27);
+    --border: oklch(0.86 0.014 150);
+    --input: oklch(0.86 0.014 150);
+    --ring: oklch(0.5 0.13 150);
+
+    --sidebar: oklch(0.94 0.012 150);
+    --sidebar-foreground: oklch(0.24 0.015 160);
+    --sidebar-primary: oklch(0.5 0.13 150);
+    --sidebar-primary-foreground: oklch(0.98 0.01 150);
+    --sidebar-accent: oklch(0.89 0.02 150);
+    --sidebar-accent-foreground: oklch(0.24 0.02 155);
+    --sidebar-border: oklch(0.86 0.014 150);
+    --sidebar-ring: oklch(0.5 0.13 150);
+
+    --app-ok: oklch(0.5 0.13 150);
+    --app-warn: oklch(0.6 0.14 75);
+    --app-err: oklch(0.55 0.2 27);
+    --app-chrome: oklch(0.9 0.014 150);
+}
+
+:root[data-style="terminal"].dark {
+    --background: oklch(0.16 0.008 160);
+    --foreground: oklch(0.92 0.012 150);
+    --card: oklch(0.195 0.01 160);
+    --card-foreground: oklch(0.92 0.012 150);
+    --popover: oklch(0.195 0.01 160);
+    --popover-foreground: oklch(0.92 0.012 150);
+    /* 大面积用中绿:荧光绿铺满按钮和气泡会刺眼,亮度留给下面的 --app-ok 做小面积状态 */
+    --primary: oklch(0.62 0.135 150);
+    --primary-foreground: oklch(0.97 0.02 150);
+    --secondary: oklch(0.25 0.012 160);
+    --secondary-foreground: oklch(0.9 0.012 150);
+    --muted: oklch(0.24 0.012 160);
+    --muted-foreground: oklch(0.65 0.018 152);
+    --accent: oklch(0.28 0.018 158);
+    --accent-foreground: oklch(0.93 0.012 150);
+    --destructive: oklch(0.68 0.19 25);
+    --border: oklch(0.3 0.014 160);
+    --input: oklch(0.3 0.014 160);
+    --ring: oklch(0.78 0.16 148);
+
+    --sidebar: oklch(0.135 0.008 160);
+    --sidebar-foreground: oklch(0.88 0.012 150);
+    --sidebar-primary: oklch(0.62 0.135 150);
+    --sidebar-primary-foreground: oklch(0.97 0.02 150);
+    --sidebar-accent: oklch(0.26 0.016 158);
+    --sidebar-accent-foreground: oklch(0.93 0.012 150);
+    --sidebar-border: oklch(0.26 0.014 160);
+    --sidebar-ring: oklch(0.78 0.16 148);
+
+    --app-ok: oklch(0.78 0.16 148);
+    --app-warn: oklch(0.8 0.14 80);
+    --app-err: oklch(0.68 0.19 25);
+    --app-chrome: oklch(0.22 0.012 160);
+}
+
+/* === B. warm — 温暖编辑 ================================================== */
+/* 强调色走青瓷绿,刻意绕开「暖米底 + 赤陶橙」这套已经被用滥的组合 */
+
+:root[data-style="warm"] {
+    --app-font-sans: "Instrument Sans Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --app-font-heading: "Newsreader Variable", Georgia, "Songti SC", "STSong", serif;
+    --app-font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    --app-type-caption-size: 13px;
+    --app-type-caption-line: 18px;
+    --app-type-ui-size: 15px;
+    --app-type-ui-line: 22px;
+    --app-type-body-size: 16px;
+    --app-type-body-line: 26px;
+    --app-type-micro-size: 11px;
+    --app-type-micro-line: 15px;
+    --app-type-display-size: clamp(30px, 3.2vw, 40px);
+    --app-type-display-line: 1.15;
+    --app-type-display-weight: 500;
+    --app-type-display-tracking: -0.015em;
+    --app-weight-normal: 400;
+    --app-weight-medium: 500;
+    --app-weight-semibold: 600;
+    --app-content-max: 58rem;
+    --app-onboarding-max: 58rem;
+    --app-onboarding-title-gap: 3.5rem;
+    --app-onboarding-composer-height: 11rem;
+    --app-project-row-height: 4.25rem;
+    --radius: 0.875rem;
+
+    --background: oklch(0.985 0.006 85);
+    --foreground: oklch(0.24 0.015 60);
+    --card: oklch(0.998 0.003 85);
+    --card-foreground: oklch(0.24 0.015 60);
+    --popover: oklch(0.998 0.003 85);
+    --popover-foreground: oklch(0.24 0.015 60);
+    --primary: oklch(0.52 0.135 42);
+    --primary-foreground: oklch(0.99 0.01 60);
+    --secondary: oklch(0.955 0.01 80);
+    --secondary-foreground: oklch(0.3 0.018 62);
+    --muted: oklch(0.955 0.01 80);
+    --muted-foreground: oklch(0.5 0.022 62);
+    --accent: oklch(0.935 0.016 78);
+    --accent-foreground: oklch(0.28 0.02 62);
+    --destructive: oklch(0.55 0.19 28);
+    --border: oklch(0.9 0.012 78);
+    --input: oklch(0.9 0.012 78);
+    --ring: oklch(0.52 0.135 42);
+
+    --sidebar: oklch(0.962 0.01 80);
+    --sidebar-foreground: oklch(0.26 0.016 60);
+    --sidebar-primary: oklch(0.52 0.135 42);
+    --sidebar-primary-foreground: oklch(0.99 0.01 60);
+    --sidebar-accent: oklch(0.925 0.018 78);
+    --sidebar-accent-foreground: oklch(0.26 0.02 62);
+    --sidebar-border: oklch(0.9 0.012 78);
+    --sidebar-ring: oklch(0.52 0.135 42);
+
+    --app-ok: oklch(0.5 0.09 175);
+    --app-warn: oklch(0.6 0.13 68);
+    --app-err: oklch(0.55 0.19 28);
+    --app-chrome: oklch(0.945 0.012 80);
+}
+
+:root[data-style="warm"].dark {
+    --background: oklch(0.215 0.021 58);
+    --foreground: oklch(0.95 0.015 82);
+    --card: oklch(0.262 0.024 60);
+    --card-foreground: oklch(0.95 0.015 82);
+    --popover: oklch(0.272 0.025 60);
+    --popover-foreground: oklch(0.95 0.015 82);
+    --primary: oklch(0.73 0.125 48);
+    --primary-foreground: oklch(0.2 0.03 45);
+    --secondary: oklch(0.305 0.024 60);
+    --secondary-foreground: oklch(0.92 0.01 80);
+    --muted: oklch(0.3 0.024 60);
+    --muted-foreground: oklch(0.74 0.028 78);
+    --accent: oklch(0.34 0.028 62);
+    --accent-foreground: oklch(0.94 0.01 80);
+    --destructive: oklch(0.67 0.18 27);
+    --border: oklch(0.35 0.026 60);
+    --input: oklch(0.35 0.026 60);
+    --ring: oklch(0.73 0.125 48);
+
+    --sidebar: oklch(0.185 0.02 58);
+    --sidebar-foreground: oklch(0.91 0.01 80);
+    --sidebar-primary: oklch(0.73 0.125 48);
+    --sidebar-primary-foreground: oklch(0.2 0.03 45);
+    --sidebar-accent: oklch(0.32 0.028 62);
+    --sidebar-accent-foreground: oklch(0.94 0.01 80);
+    --sidebar-border: oklch(0.31 0.024 60);
+    --sidebar-ring: oklch(0.73 0.125 48);
+
+    --app-ok: oklch(0.72 0.1 175);
+    --app-warn: oklch(0.78 0.13 72);
+    --app-err: oklch(0.67 0.18 27);
+    --app-chrome: oklch(0.248 0.022 59);
+}
+
+/* === 主题相关的密度与排版微调 ============================================ */
+
+/* warm 的标题用衬线,行距放松,读起来更像编辑排版 */
+:root[data-style="warm"] .app-title {
+    font-family: var(--app-font-heading);
+    letter-spacing: -0.01em;
+}
+
+/* terminal 全等宽,字距需要略收一点才不散 */
+:root[data-style="terminal"] {
+    letter-spacing: -0.012em;
+}
+
+/* 语义色工具类:状态在五套主题里都通过同一组 token 表达 */
+.text-ok { color: var(--app-ok); }
+.text-warn { color: var(--app-warn); }
+.text-err { color: var(--app-err); }
+.bg-ok { background-color: var(--app-ok); }
+.bg-warn { background-color: var(--app-warn); }
+.bg-err { background-color: var(--app-err); }
+.bg-chrome { background-color: var(--app-chrome); }
+
+/* === C. soft — 柔和浮岛 ================================================== */
+/* 背景是「桌面」,卡片和侧栏浮在上面。莓紫强调色,和其余四套都不撞 */
+
+:root[data-style="soft"] {
+    --app-font-sans: "Plus Jakarta Sans Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --app-font-heading: var(--app-font-sans);
+    --app-font-mono: "JetBrains Mono Variable", "SFMono-Regular", monospace;
+    --app-type-caption-size: 12px;
+    --app-type-caption-line: 17px;
+    --app-type-ui-size: 14px;
+    --app-type-ui-line: 21px;
+    --app-type-body-size: 16px;
+    --app-type-body-line: 25px;
+    --app-type-micro-size: 11px;
+    --app-type-micro-line: 15px;
+    --app-type-display-size: clamp(28px, 3vw, 36px);
+    --app-type-display-line: 1.18;
+    --app-type-display-weight: 600;
+    --app-type-display-tracking: -0.025em;
+    --app-weight-normal: 400;
+    --app-weight-medium: 500;
+    --app-weight-semibold: 600;
+    --app-content-max: 62rem;
+    --app-onboarding-max: 60rem;
+    --app-onboarding-title-gap: 3.25rem;
+    --app-onboarding-composer-height: 10.5rem;
+    --app-project-row-height: 4.25rem;
+    --radius: 1.25rem;
+
+    --background: oklch(0.955 0.009 285);
+    --foreground: oklch(0.22 0.018 290);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.22 0.018 290);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.22 0.018 290);
+    --primary: oklch(0.56 0.15 320);
+    --primary-foreground: oklch(0.99 0.008 320);
+    --secondary: oklch(0.925 0.012 285);
+    --secondary-foreground: oklch(0.3 0.02 290);
+    --muted: oklch(0.93 0.012 285);
+    --muted-foreground: oklch(0.52 0.022 290);
+    --accent: oklch(0.9 0.02 300);
+    --accent-foreground: oklch(0.28 0.025 300);
+    --destructive: oklch(0.56 0.2 25);
+    --border: oklch(0.895 0.012 285);
+    --input: oklch(0.895 0.012 285);
+    --ring: oklch(0.56 0.15 320);
+
+    /* 浮岛比桌面亮一档,投影才有落点 */
+    --sidebar: oklch(1 0 0);
+    --sidebar-foreground: oklch(0.24 0.018 290);
+    --sidebar-primary: oklch(0.56 0.15 320);
+    --sidebar-primary-foreground: oklch(0.99 0.008 320);
+    --sidebar-accent: oklch(0.94 0.018 305);
+    --sidebar-accent-foreground: oklch(0.28 0.025 300);
+    --sidebar-border: oklch(0.91 0.012 285);
+    --sidebar-ring: oklch(0.56 0.15 320);
+
+    --app-ok: oklch(0.55 0.13 160);
+    --app-warn: oklch(0.62 0.14 65);
+    --app-err: oklch(0.56 0.2 25);
+    --app-chrome: oklch(0.965 0.008 290);
+}
+
+:root[data-style="soft"].dark {
+    --background: oklch(0.165 0.014 295);
+    --foreground: oklch(0.94 0.01 290);
+    --card: oklch(0.225 0.018 295);
+    --card-foreground: oklch(0.94 0.01 290);
+    --popover: oklch(0.235 0.02 295);
+    --popover-foreground: oklch(0.94 0.01 290);
+    --primary: oklch(0.7 0.14 320);
+    --primary-foreground: oklch(0.16 0.02 320);
+    --secondary: oklch(0.27 0.02 295);
+    --secondary-foreground: oklch(0.92 0.01 290);
+    --muted: oklch(0.265 0.02 295);
+    --muted-foreground: oklch(0.7 0.02 292);
+    --accent: oklch(0.31 0.028 300);
+    --accent-foreground: oklch(0.94 0.01 290);
+    --destructive: oklch(0.67 0.19 25);
+    --border: oklch(0.3 0.022 295);
+    --input: oklch(0.3 0.022 295);
+    --ring: oklch(0.7 0.14 320);
+
+    --sidebar: oklch(0.225 0.018 295);
+    --sidebar-foreground: oklch(0.94 0.01 290);
+    --sidebar-primary: oklch(0.7 0.14 320);
+    --sidebar-primary-foreground: oklch(0.16 0.02 320);
+    --sidebar-accent: oklch(0.31 0.028 300);
+    --sidebar-accent-foreground: oklch(0.94 0.01 290);
+    --sidebar-border: oklch(0.32 0.024 295);
+    --sidebar-ring: oklch(0.7 0.14 320);
+
+    --app-ok: oklch(0.73 0.14 160);
+    --app-warn: oklch(0.79 0.14 68);
+    --app-err: oklch(0.67 0.19 25);
+    --app-chrome: oklch(0.26 0.02 295);
+}
+
+/* soft 走圆润字形,字重稍轻,配大圆角才不显笨重 */
+:root[data-style="soft"] .app-title {
+    letter-spacing: -0.015em;
+}
+
+/* === D. graphite — 石墨单色 ============================================== */
+/* 移植自 21st.dev 的 Graphite Mono:全零彩度,层次全靠明度,radius 1rem */
+/* graphite 是默认基线:同时匹配裸 :root,未挂 data-style 时（首帧/异常态）同样生效。
+ * 其它主题的 :root[data-style="..."] 选择器特异性更高，会完整覆盖这里的全部 token。 */
+
+:root, :root[data-style="graphite"] {
+    --app-font-sans: "DM Sans Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --app-font-heading: var(--app-font-sans);
+    --app-font-mono: "Geist Mono Variable", ui-monospace, Menlo, monospace;
+    --app-type-caption-size: 12px;
+    --app-type-caption-line: 16px;
+    --app-type-ui-size: 14px;
+    --app-type-ui-line: 20px;
+    --app-type-body-size: 16px;
+    --app-type-body-line: 24px;
+    --app-type-micro-size: 11px;
+    --app-type-micro-line: 14px;
+    --app-type-display-size: clamp(28px, 3vw, 36px);
+    --app-type-display-line: 1.15;
+    --app-type-display-weight: 500;
+    --app-type-display-tracking: -0.025em;
+    --app-weight-normal: 400;
+    --app-weight-medium: 500;
+    --app-weight-semibold: 600;
+    --app-content-max: 64rem;
+    --app-onboarding-max: 62rem;
+    --app-onboarding-title-gap: 3rem;
+    --app-onboarding-composer-height: 10rem;
+    --app-project-row-height: 4rem;
+    --radius: 1rem;
+
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(0.995 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.87 0 0);
+    --secondary-foreground: oklch(0.145 0 0);
+    --muted: oklch(0.95 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.95 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.583 0.239 28.494);
+    --border: oklch(0.92 0 0);
+    --input: oklch(0.97 0 0);
+    --ring: oklch(0.708 0 0);
+
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.94 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+
+    /* 单色系里语义色刻意压低彩度,只在状态上露一点颜色 */
+    --app-ok: oklch(0.55 0.1 155);
+    --app-warn: oklch(0.62 0.12 80);
+    --app-err: oklch(0.583 0.239 28.494);
+    --app-chrome: oklch(0.965 0 0);
+}
+
+:root.dark, :root[data-style="graphite"].dark {
+    --background: oklch(0.205 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.165 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.371 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.702 0.19 22.16);
+    --border: oklch(0.269 0 0);
+    --input: oklch(0.269 0 0);
+    --ring: oklch(0.556 0 0);
+
+    --sidebar: oklch(0.269 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.922 0 0);
+    --sidebar-primary-foreground: oklch(0.205 0 0);
+    --sidebar-accent: oklch(0.32 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(0.275 0 0);
+    --sidebar-ring: oklch(0.439 0 0);
+
+    --app-ok: oklch(0.75 0.11 155);
+    --app-warn: oklch(0.8 0.12 85);
+    --app-err: oklch(0.702 0.19 22.16);
+    --app-chrome: oklch(0.24 0 0);
+}
+
+/* === E. indigo — 靛蓝暗夜 =============================================== */
+/* 移植自 21st.dev 的 Indigo Mono:纯黑底 + 靛蓝强调,Geist 全家桶 */
+
+:root[data-style="indigo"] {
+    --app-font-sans: "Geist Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --app-font-heading: var(--app-font-sans);
+    --app-font-mono: "Geist Mono Variable", ui-monospace, Menlo, monospace;
+    --app-type-caption-size: 12px;
+    --app-type-caption-line: 16px;
+    --app-type-ui-size: 13px;
+    --app-type-ui-line: 18px;
+    --app-type-body-size: 15px;
+    --app-type-body-line: 23px;
+    --app-type-micro-size: 11px;
+    --app-type-micro-line: 14px;
+    --app-type-display-size: clamp(27px, 2.8vw, 34px);
+    --app-type-display-line: 1.14;
+    --app-type-display-weight: 600;
+    --app-type-display-tracking: -0.03em;
+    --app-weight-normal: 400;
+    --app-weight-medium: 500;
+    --app-weight-semibold: 600;
+    --app-content-max: 70rem;
+    --app-onboarding-max: 64rem;
+    --app-onboarding-title-gap: 2.75rem;
+    --app-onboarding-composer-height: 9.5rem;
+    --app-project-row-height: 3.75rem;
+    --radius: 0.5rem;
+
+    --background: oklch(0.985 0 0);
+    --foreground: oklch(0 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.21 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0 0 0);
+    --primary: oklch(0.514 0.16 267.44);
+    --primary-foreground: oklch(0.97 0.014 254.604);
+    --secondary: oklch(0.94 0 0);
+    --secondary-foreground: oklch(0.25 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.44 0 0);
+    --accent: oklch(0.921 0.025 257.65);
+    --accent-foreground: oklch(0.257 0.116 272.24);
+    --destructive: oklch(0.58 0.22 27);
+    --border: oklch(0.92 0 0);
+    --input: oklch(0.94 0 0);
+    --ring: oklch(0.514 0.16 267.44);
+
+    --sidebar: oklch(1 0 0);
+    --sidebar-foreground: oklch(0 0 0);
+    --sidebar-primary: oklch(0.514 0.16 267.44);
+    --sidebar-primary-foreground: oklch(0.97 0.014 254.604);
+    --sidebar-accent: oklch(0.921 0.025 257.65);
+    --sidebar-accent-foreground: oklch(0.257 0.116 272.24);
+    --sidebar-border: oklch(0.92 0 0);
+    --sidebar-ring: oklch(0.514 0.16 267.44);
+
+    --app-ok: oklch(0.55 0.13 155);
+    --app-warn: oklch(0.62 0.13 75);
+    --app-err: oklch(0.58 0.22 27);
+    --app-chrome: oklch(0.955 0 0);
+}
+
+:root[data-style="indigo"].dark {
+    --background: oklch(0 0 0);
+    --foreground: oklch(1 0 0);
+    --card: oklch(0.21 0 0);
+    --card-foreground: oklch(0.946 0 0);
+    --popover: oklch(0.21 0 0);
+    --popover-foreground: oklch(1 0 0);
+    --primary: oklch(0.514 0.16 267.44);
+    --primary-foreground: oklch(0.97 0.014 254.604);
+    --secondary: oklch(0.25 0 0);
+    --secondary-foreground: oklch(0.94 0 0);
+    --muted: oklch(0.23 0 0);
+    --muted-foreground: oklch(0.72 0 0);
+    --accent: oklch(0.32 0 0);
+    --accent-foreground: oklch(0.921 0.025 257.65);
+    --destructive: oklch(0.702 0.19 22.16);
+    --border: oklch(0.26 0 0);
+    --input: oklch(0.32 0 0);
+    --ring: oklch(0.514 0.16 267.44);
+
+    --sidebar: oklch(0.21 0 0);
+    --sidebar-foreground: oklch(1 0 0);
+    --sidebar-primary: oklch(0.514 0.16 267.44);
+    --sidebar-primary-foreground: oklch(0.97 0.014 254.604);
+    --sidebar-accent: oklch(0.32 0 0);
+    --sidebar-accent-foreground: oklch(0.921 0.025 257.65);
+    --sidebar-border: oklch(0.26 0 0);
+    --sidebar-ring: oklch(0.514 0.16 267.44);
+
+    --app-ok: oklch(0.75 0.14 155);
+    --app-warn: oklch(0.8 0.13 85);
+    --app-err: oklch(0.702 0.19 22.16);
+    --app-chrome: oklch(0.17 0 0);
+}
+
+/* === dockview 主题桥:--dv-* 全部映射到 L0 token,切主题自动跟随 ========== */
+
+.dockview-theme-bento {
+    --dv-group-view-background-color: var(--background);
+    --dv-separator-border: var(--border);
+    --dv-paneview-header-border-color: var(--border);
+
+    /* 标签头(仅自由布局模式可见) */
+    --dv-tabs-and-actions-container-background-color: var(--app-chrome);
+    --dv-tabs-and-actions-container-height: 32px;
+    --dv-tabs-and-actions-container-font-size: 12px;
+    --dv-activegroup-visiblepanel-tab-background-color: var(--background);
+    --dv-activegroup-visiblepanel-tab-color: var(--foreground);
+    --dv-activegroup-hiddenpanel-tab-background-color: transparent;
+    --dv-activegroup-hiddenpanel-tab-color: var(--muted-foreground);
+    --dv-inactivegroup-visiblepanel-tab-background-color: var(--app-chrome);
+    --dv-inactivegroup-visiblepanel-tab-color: var(--muted-foreground);
+    --dv-inactivegroup-hiddenpanel-tab-background-color: transparent;
+    --dv-inactivegroup-hiddenpanel-tab-color: var(--muted-foreground);
+    --dv-tab-divider-color: var(--border);
+    --dv-tab-close-icon-size: 14px;
+    --dv-icon-hover-background-color: var(--accent);
+
+    /* 拖拽落点预览 */
+    --dv-drag-over-background-color: color-mix(in oklab, var(--primary) 10%, transparent);
+    --dv-drag-over-border-color: var(--primary);
+
+    /* 分隔条:平时隐形,激活时用主题色淡显,与外层侧栏拖柄一致 */
+    --dv-sash-color: transparent;
+    --dv-active-sash-color: color-mix(in oklab, var(--primary) 25%, transparent);
+    --dv-sash-border-radius: 0;
+
+    --dv-border-radius: var(--radius);
+    --dv-floating-box-shadow: 0 12px 32px rgb(0 0 0 / 0.25);
+    --dv-floating-border: 1px solid var(--border);
+    --dv-floating-group-border: 1px solid var(--border);
+    --dv-floating-titlebar-background-color: var(--app-chrome);
+    --dv-floating-titlebar-border-bottom: 1px solid var(--border);
+    --dv-scrollbar-background-color: var(--border);
+    --dv-overlay-z-index: 40;
+}
+
+/* 组间留一条主题分隔线(dockview 自己的 sash 是悬浮层,不占位) */
+.dockview-theme-bento .dv-split-view-container.dv-horizontal > .dv-view-container > .dv-view:not(:first-child) {
+    border-left: 1px solid var(--border);
+}

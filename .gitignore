@@ -1,0 +1,35 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+dist-electron/*.mjs
+release
+build/*
+!build/bento-icon.png
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 设计评审快照(impeccable skill 产物)
+.impeccable/
+
+# 本地过程产物:原型 demo 与 QA 截图,不进开源仓库
+prototypes/
+artifacts/

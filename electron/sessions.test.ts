@@ -1,0 +1,741 @@
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
+import { afterEach, describe, expect, it, vi } from "vitest"
+
+import type { LogRecord } from "../src/core/events"
+import type { HarnessDriver, HarnessStartOptions } from "./drivers/types"
+import { SessionManager } from "./sessions"
+
+let tempDir = ""
+
+afterEach(() => {
+  if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true })
+  tempDir = ""
+})
+
+describe("SessionManager model selection", () => {
+  it("旧会话缺少 scope 时迁移为 project", () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-session-scope-migrate-"))
+    const sessionsDir = path.join(tempDir, "sessions")
+    fs.mkdirSync(sessionsDir, { recursive: true })
+    fs.writeFileSync(path.join(sessionsDir, "index.json"), JSON.stringify([{
+      key: "legacy-project",
+      harnessId: "pi",
+      cwd: tempDir,
+      nativeSessionId: "",
+      title: "旧项目会话",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }]))
+
+    const manager = new SessionManager(tempDir, () => {})
+    expect(manager.listSessions()[0]?.scope).toBe("project")
+  })
+
+  it("chat 会话使用独立私有工作目录，删会话时一并清理", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-chat-session-"))
+    const manager = new SessionManager(tempDir, () => {})
+    const { key, record } = manager.createPendingSession({
+      scope: "chat",
+      harnessId: "pi",
+      cwd: "/ignored-for-chat",
+      providerId: "native-pi",
+      modelId: "model",
+    })
+
+    expect(record.scope).toBe("chat")
+    expect(path.dirname(record.cwd)).toBe(path.join(tempDir, "chat-workspaces"))
+    expect(path.basename(record.cwd)).toBe(key)
+    expect(fs.statSync(record.cwd).isDirectory()).toBe(true)
+    expect(fs.statSync(record.cwd).mode & 0o777).toBe(0o700)
+
+    await manager.removeSession(key)
+    expect(fs.existsSync(record.cwd)).toBe(false)
+  })
+
+  it("chat 同步启动失败时不遗留私有工作目录", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-chat-start-failure-"))
+    const driver: HarnessDriver = {
+      id: "pi",
+      start: async () => { throw new Error("start failed") },
+    }
+    const manager = new SessionManager(tempDir, () => {}, () => driver)
+
+    await expect(manager.createSession({
+      scope: "chat",
+      harnessId: "pi",
+      cwd: "",
+      providerId: "native-pi",
+      modelId: "model",
+    })).rejects.toThrow("start failed")
+    expect(fs.readdirSync(path.join(tempDir, "chat-workspaces"))).toEqual([])
+  })
+
+  it("pending 新会话立即落盘，首条 prompt 才启动 Harness", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-pending-session-"))
+    const releaseStart = Promise.withResolvers<void>()
+    let starts = 0
+    const driver: HarnessDriver = {
+      id: "kimi",
+      async start() {
+        starts += 1
+        await releaseStart.promise
+        return {
+          nativeSessionId: "pending-native",
+          capabilities: { modelSwitch: "none", effortSwitch: "none" },
+          prompt: async () => ({ stopReason: "end_turn" }),
+          cancel: async () => {},
+          close: () => {},
+          onExit: () => () => {},
+        }
+      },
+    }
+    const manager = new SessionManager(tempDir, () => {}, () => driver)
+
+    const { key, record } = manager.createPendingSession({
+      harnessId: "kimi",
+      cwd: tempDir,
+      providerId: "moonshot",
+      modelId: "kimi-k3",
+    })
+    expect(starts).toBe(0)
+    expect(manager.listSessions()).toContainEqual(record)
+    expect(manager.isLive(key)).toBe(false)
+
+    const prompting = manager.prompt(key, "立即显示这条消息")
+    await vi.waitFor(() => expect(starts).toBe(1))
+    expect(manager.isLive(key)).toBe(false)
+    releaseStart.resolve()
+    await expect(prompting).resolves.toMatchObject({ stopReason: "end_turn" })
+    expect(manager.isLive(key)).toBe(true)
+    await vi.waitFor(() => expect(manager.readEvents(key).some(
+      (item) => item.kind === "event" && item.payload.type === "user_message",
+    )).toBe(true))
+    manager.disposeAll()
+  })
+
+  it("pending 会话启动失败后保留记录并允许重试", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-pending-retry-"))
+    let starts = 0
+    const driver: HarnessDriver = {
+      id: "kimi",
+      async start() {
+        starts += 1
+        if (starts === 1) throw new Error("runtime unavailable")
+        return {
+          nativeSessionId: "retry-native",
+          capabilities: { modelSwitch: "none", effortSwitch: "none" },
+          prompt: async () => ({ stopReason: "end_turn" }),
+          cancel: async () => {},
+          close: () => {},
+          onExit: () => () => {},
+        }
+      },
+    }
+    const manager = new SessionManager(tempDir, () => {}, () => driver)
+    const { key } = manager.createPendingSession({
+      harnessId: "kimi",
+      cwd: tempDir,
+      providerId: "moonshot",
+      modelId: "kimi-k3",
+    })
+
+    await expect(manager.prompt(key, "第一次")).rejects.toThrow("runtime unavailable")
+    expect(manager.listSessions().some((item) => item.key === key)).toBe(true)
+    await expect(manager.prompt(key, "重试")).resolves.toMatchObject({ stopReason: "end_turn" })
+    expect(starts).toBe(2)
+    manager.disposeAll()
+  })
+
+  it("native provider 不要求路由且不把默认占位模型传给 driver", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-native-session-"))
+    let started: HarnessStartOptions | undefined
+    const driver: HarnessDriver = {
+      id: "pi",
+      async start(options) {
+        started = options
+        return {
+          nativeSessionId: "native-pi",
+          capabilities: { modelSwitch: "live", effortSwitch: "live" },
+          prompt: async () => ({ stopReason: "completed" }),
+          cancel: async () => {},
+          close: () => {},
+          onExit: () => () => {},
+        }
+      },
+    }
+    const manager = new SessionManager(tempDir, () => {}, () => driver)
+    await manager.createSession({
+      harnessId: "pi",
+      cwd: tempDir,
+      providerId: "native-pi",
+      modelId: "__native_default__",
+    })
+    expect(started).toMatchObject({ providerId: "native-pi" })
+    expect(started?.modelId).toBeUndefined()
+    expect(started?.proxyEnv).toBeUndefined()
+    manager.disposeAll()
+  })
+
+  it("create/prompt 事件到达 onEvent 回调且 updatedAt 前进", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"))
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-session-append-"))
+    const driver: HarnessDriver = {
+      id: "kimi",
+      async start() {
+        return {
+          nativeSessionId: "append-1",
+          capabilities: { modelSwitch: "none", effortSwitch: "none" },
+          prompt: async () => ({ stopReason: "end_turn" }),
+          cancel: async () => {},
+          close: () => {},
+          onExit: () => () => {},
+        }
+      },
+    }
+    const received: Array<{ key: string; kind: string; at: string }> = []
+    const manager = new SessionManager(tempDir, (key, record) => {
+      received.push({ key, kind: record.kind, at: record.at })
+    }, () => driver)
+
+    const { key } = await manager.createSession({
+      harnessId: "kimi", cwd: tempDir, providerId: "moonshot", modelId: "kimi-k3",
+    })
+    // listSessions 返回 SessionRecord 本体;字符串快照保留 create 时刻的 updatedAt
+    const created = manager.listSessions().find((item) => item.key === key)
+    expect(created).toBeTruthy()
+    const updatedAtAtCreate = created!.updatedAt
+    await manager.prompt(key, "你好")
+    // append 在 create/prompt 内同步完成;推进系统时钟保证 updatedAt 严格前进
+    vi.setSystemTime(new Date("2026-01-01T00:00:01.000Z"))
+    await manager.prompt(key, "第二轮")
+    vi.useRealTimers()
+
+    // 回调收到 create(metadata/session_started)与 prompt(user_message+turn_finished)
+    expect(received.every((item) => item.key === key)).toBe(true)
+    expect(received.length).toBeGreaterThanOrEqual(3)
+    expect(received.some((item) => item.kind === "event")).toBe(true)
+    // updatedAt 单调前进且已越过 create 时刻
+    const final = manager.listSessions().find((item) => item.key === key)
+    expect(final!.updatedAt > updatedAtAtCreate).toBe(true)
+    manager.disposeAll()
+  })
+
+  it("把 model/effort 传给 driver,持久化并支持 live 切换", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-session-test-"))
+    let started: HarnessStartOptions | undefined
+    let currentModel = ""
+    let currentEffort = ""
+    const fakeDriver: HarnessDriver = {
+      id: "kimi",
+      async start(options) {
+        started = options
+        return {
+          nativeSessionId: "native-1",
+          capabilities: { modelSwitch: "live", effortSwitch: "live" },
+          prompt: async () => ({ stopReason: "end_turn" }),
+          cancel: async () => {},
+          close: () => {},
+          onExit: () => () => {},
+          setModel: async (modelId) => { currentModel = modelId },
+          setEffort: async (effort) => { currentEffort = effort },
+        }
+      },
+    }
+
+    const manager = new SessionManager(tempDir, () => {}, (id) => {
+      if (id !== "kimi") throw new Error(`fake 只认 kimi,收到 ${id}`)
+      return fakeDriver
+    })
+    const { key } = await manager.createSession({
+      harnessId: "kimi",
+      cwd: tempDir,
+      providerId: "moonshot",
+      modelId: "kimi-k3",
+      effort: "high",
+    })
+    expect(started).toMatchObject({ providerId: "moonshot", modelId: "kimi-k3", effort: "high" })
+
+    // Phase 0 契约:kimi Bento 会话跨 provider 需要新会话;同 provider 换模型 live。
+    await manager.setModel(key, "moonshot", "kimi-k2.5")
+    await manager.setEffort(key, "max")
+    expect({ currentModel, currentEffort }).toEqual({
+      currentModel: "kimi-k2.5",
+      currentEffort: "max",
+    })
+    expect(manager.listSessions()[0]).toMatchObject({
+      providerId: "moonshot",
+      modelId: "kimi-k2.5",
+      effort: "max",
+    })
+    manager.disposeAll()
+  })
+
+  it("新会话缺少明确 provider/model 时拒绝", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-session-selection-"))
+    const driver: HarnessDriver = {
+      id: "kimi",
+      start: async () => { throw new Error("不应启动") },
+    }
+    const manager = new SessionManager(tempDir, () => {}, () => driver)
+    await expect(manager.createSession({ harnessId: "kimi", cwd: tempDir } as never))
+      .rejects.toThrow(/显式指定 providerId 与 modelId/)
+  })
+
+  it("未选择项目时使用用户主目录", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-session-default-cwd-"))
+    let started: HarnessStartOptions | undefined
+    const driver: HarnessDriver = {
+      id: "kimi",
+      async start(options) {
+        started = options
+        return {
+          nativeSessionId: "default-cwd",
+          capabilities: { modelSwitch: "none", effortSwitch: "none" },
+          prompt: async () => ({ stopReason: "end_turn" }),
+          cancel: async () => {},
+          close: () => {},
+          onExit: () => () => {},
+        }
+      },
+    }
+    const manager = new SessionManager(tempDir, () => {}, () => driver)
+    const { record } = await manager.createSession({
+      harnessId: "kimi",
+      cwd: "",
+      providerId: "moonshot",
+      modelId: "kimi-k3",
+    })
+
+    expect(started?.cwd).toBe(os.homedir())
+    expect(record.cwd).toBe(os.homedir())
+    manager.disposeAll()
+  })
+
+  it("旧会话缺 provider/model 时由 registry resolver 一次性迁移并写回", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-session-migrate-"))
+    const driver: HarnessDriver = {
+      id: "kimi",
+      async start() {
+        return {
+          nativeSessionId: "migrated-native",
+          capabilities: { modelSwitch: "none", effortSwitch: "none" },
+          prompt: async () => ({ stopReason: "completed" }),
+          cancel: async () => {},
+          close: () => {},
+          onExit: () => () => {},
+        }
+      },
+    }
+    const manager = new SessionManager(
+      tempDir,
+      () => {},
+      () => driver,
+      null,
+      async () => ({ providerId: "moonshot", modelId: "kimi-k3" }),
+    )
+    fs.writeFileSync(path.join(tempDir, "sessions", "index.json"), JSON.stringify([{
+      key: "legacy",
+      harnessId: "kimi",
+      cwd: tempDir,
+      nativeSessionId: "",
+      title: "旧会话",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }]))
+
+    await manager.prompt("legacy", "继续")
+    expect(manager.listSessions()[0]).toMatchObject({
+      providerId: "moonshot",
+      modelId: "kimi-k3",
+    })
+    manager.disposeAll()
+  })
+})
+
+import type { CustomProviderConfig } from "../src/core/provider"
+import { CustomProviderStore, type SecretStore } from "./custom-providers"
+import { ProviderRoutingService } from "./provider-routing"
+
+function memorySecrets(): SecretStore {
+  const map = new Map<string, string>()
+  return {
+    get: (key) => map.get(key) ?? null,
+    set: (key, value) => map.set(key, value),
+    delete: (key) => map.delete(key),
+  }
+}
+
+describe("SessionManager user provider 路由", () => {
+  it("user provider 会话:issueRoute 组装 proxyEnv 传入 driver;revive 重签发;关闭吊销", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-user-provider-"))
+    const secrets = memorySecrets()
+    const store = new CustomProviderStore(tempDir, secrets)
+    const config: CustomProviderConfig = {
+      id: "user-relay",
+      name: "Relay",
+      auth: { method: "apiKey" },
+      runtimes: {
+        "claude-code": {
+          baseUrl: "https://relay.example.com",
+          wireProtocol: "anthropic-messages",
+          models: [{ id: "m1", name: "M1" }],
+        },
+      },
+    }
+    store.upsert(config, { "claude-code": "sk-relay" })
+    const routing = new ProviderRoutingService(tempDir, () => store)
+
+    const starts: HarnessStartOptions[] = []
+    const fakeDriver: HarnessDriver = {
+      id: "claude-code",
+      async start(options) {
+        starts.push(options)
+        return {
+          nativeSessionId: `native-${starts.length}`,
+          capabilities: { modelSwitch: "live", effortSwitch: "live" },
+          prompt: async () => ({ stopReason: "end_turn" }),
+          cancel: async () => {},
+          close: () => {},
+          onExit: () => () => {},
+        }
+      },
+    }
+    const manager = new SessionManager(tempDir, () => {}, () => fakeDriver, routing)
+
+    const { key } = await manager.createSession({
+      harnessId: "claude-code",
+      cwd: tempDir,
+      providerId: "user-relay",
+      modelId: "m1",
+    })
+    // 首次 start:拿到代理 env(隔离 config dir + 代理地址 + strip)
+    expect(starts[0]!.proxyEnv).toMatchObject({
+      env: {
+        ANTHROPIC_BASE_URL: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/s\//),
+        ANTHROPIC_AUTH_TOKEN: "bento-local-proxy",
+        CLAUDE_CONFIG_DIR: expect.stringContaining("cc-user-relay"),
+      },
+      strip: ["ANTHROPIC_"],
+    })
+
+    // revive 前先留 user_message,否则 closeSession 走空会话删档
+    await manager.prompt(key, "第一轮")
+
+    // revive(closeSession 杀进程 → prompt lazy 恢复):token 重签发,旧 token 失效
+    manager.closeSession(key)
+    await manager.prompt(key, "续聊")
+    expect(starts.length).toBe(2)
+    const firstToken = starts[0]!.proxyEnv!.env.ANTHROPIC_BASE_URL
+    const revivedToken = starts[1]!.proxyEnv!.env.ANTHROPIC_BASE_URL
+    expect(revivedToken).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/s\//)
+    expect(revivedToken).not.toBe(firstToken)
+
+    // 删除会话:token 吊销,占用计数归零
+    expect(routing.sessionsUsing("user-relay")).toBe(1)
+    manager.removeSession(key)
+    expect(routing.sessionsUsing("user-relay")).toBe(0)
+    routing.dispose()
+  })
+
+  it("runtime provider 会话不走代理:proxyEnv 不出现", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-runtime-provider-"))
+    const store = new CustomProviderStore(tempDir, memorySecrets())
+    const routing = new ProviderRoutingService(tempDir, () => store)
+    const starts: HarnessStartOptions[] = []
+    const fakeDriver: HarnessDriver = {
+      id: "kimi",
+      async start(options) {
+        starts.push(options)
+        return {
+          nativeSessionId: "n",
+          capabilities: { modelSwitch: "none", effortSwitch: "none" },
+          prompt: async () => ({ stopReason: "end_turn" }),
+          cancel: async () => {},
+          close: () => {},
+          onExit: () => () => {},
+        }
+      },
+    }
+    const manager = new SessionManager(tempDir, () => {}, () => fakeDriver, routing)
+    await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "moonshot", modelId: "kimi-k3" })
+    expect(starts[0]!.proxyEnv).toBeUndefined()
+    manager.disposeAll()
+    routing.dispose()
+  })
+
+  it("Pi user provider 注入隔离配置，会话内只允许同 Provider 切模型", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-pi-provider-"))
+    const store = new CustomProviderStore(tempDir, memorySecrets())
+    store.upsert({
+      id: "user-deepseek",
+      name: "DeepSeek",
+      auth: { method: "apiKey" },
+      runtimes: {
+        pi: {
+          baseUrl: "https://api.deepseek.com",
+          wireProtocol: "openai-chat",
+          models: [{ id: "m1", name: "M1" }, { id: "m2", name: "M2" }],
+        },
+      },
+    }, { "*": "sk-pi" })
+    const routing = new ProviderRoutingService(tempDir, () => store)
+    const starts: HarnessStartOptions[] = []
+    let currentModel = ""
+    const fakeDriver: HarnessDriver = {
+      id: "pi",
+      async start(options) {
+        starts.push(options)
+        return {
+          nativeSessionId: "pi-native",
+          capabilities: { modelSwitch: "live", effortSwitch: "live" },
+          prompt: async () => ({ stopReason: "end_turn" }),
+          cancel: async () => {},
+          close: () => {},
+          onExit: () => () => {},
+          setModel: async (modelId) => { currentModel = modelId },
+        }
+      },
+    }
+    const manager = new SessionManager(tempDir, () => {}, () => fakeDriver, routing)
+    const { key } = await manager.createSession({
+      harnessId: "pi",
+      cwd: tempDir,
+      providerId: "user-deepseek",
+      modelId: "bento/m1",
+    })
+    expect(starts[0]?.proxyEnv?.env).toMatchObject({
+      BENTO_PROVIDER_KEY: "sk-pi",
+      PI_CODING_AGENT_DIR: expect.stringContaining("pi-user-deepseek"),
+    })
+    await manager.setModel(key, "user-deepseek", "bento/m2")
+    expect(currentModel).toBe("bento/m2")
+    await expect(manager.setModel(key, "user-other", "bento/m2"))
+      .rejects.toThrow(/需要新会话/)
+    manager.disposeAll()
+  })
+
+  it("Bento 会话 kimi/opencode/omp 跨 Provider 在底层 setModel 前被拒绝,不留假切换", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-unsafe-switch-"))
+    const store = new CustomProviderStore(tempDir, memorySecrets())
+    store.upsert({
+      id: "user-relay-a",
+      name: "Relay A",
+      auth: { method: "apiKey" },
+      runtimes: { kimi: { baseUrl: "https://a.example.com/v1", wireProtocol: "openai-chat", models: [{ id: "m1", name: "M1" }] } },
+    }, { "*": "sk-a" })
+    store.upsert({
+      id: "user-relay-b",
+      name: "Relay B",
+      auth: { method: "apiKey" },
+      runtimes: { kimi: { baseUrl: "https://b.example.com/v1", wireProtocol: "openai-chat", models: [{ id: "m1", name: "M1" }] } },
+    }, { "*": "sk-b" })
+    const routing = new ProviderRoutingService(tempDir, () => store)
+    let setModelCalls = 0
+    const driver: HarnessDriver = {
+      id: "kimi",
+      async start() {
+        return {
+          nativeSessionId: "k-native",
+          capabilities: { modelSwitch: "live", effortSwitch: "live" },
+          prompt: async () => ({ stopReason: "end_turn" }),
+          cancel: async () => {},
+          close: () => {},
+          onExit: () => () => {},
+          setModel: async () => { setModelCalls += 1 },
+        }
+      },
+    }
+    const manager = new SessionManager(tempDir, () => {}, () => driver, routing)
+    const { key } = await manager.createSession({
+      harnessId: "kimi",
+      cwd: tempDir,
+      providerId: "user-relay-a",
+      modelId: "m1",
+    })
+    // 底层 setModel 从未被调,SessionRecord 不变:不存在「UI 已切、请求仍走旧 Provider」
+    await expect(manager.setModel(key, "user-relay-b", "m1"))
+      .rejects.toThrow(/切换供应商需要新会话/)
+    expect(setModelCalls).toBe(0)
+    expect(manager.listSessions()[0]).toMatchObject({ providerId: "user-relay-a", modelId: "m1" })
+    manager.disposeAll()
+    routing.dispose()
+  })
+
+  it("builtin OpenAI 会话同样走隔离代理,不继承宿主 Codex 登录态", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-builtin-provider-"))
+    const store = new CustomProviderStore(tempDir, memorySecrets())
+    store.writeOAuthTokens("openai", {
+      accessToken: "oauth-access",
+      refreshToken: "oauth-refresh",
+      expiresAt: Date.now() + 60 * 60 * 1_000,
+      accountId: "account-1",
+    })
+    const routing = new ProviderRoutingService(tempDir, () => store)
+    const starts: HarnessStartOptions[] = []
+    const driver: HarnessDriver = {
+      id: "codex",
+      async start(options) {
+        starts.push(options)
+        return {
+          nativeSessionId: "codex-native",
+          capabilities: { modelSwitch: "live", effortSwitch: "live" },
+          prompt: async () => ({ stopReason: "completed" }),
+          cancel: async () => {},
+          close: () => {},
+          onExit: () => () => {},
+        }
+      },
+    }
+    const manager = new SessionManager(tempDir, () => {}, () => driver, routing)
+    await manager.createSession({
+      harnessId: "codex",
+      cwd: tempDir,
+      providerId: "openai",
+      modelId: "gpt-5.4",
+    })
+    expect(starts[0]?.proxyEnv?.env).toMatchObject({
+      CODEX_HOME: expect.stringContaining("codex-home-"),
+      OPENAI_API_KEY: "bento-local-proxy",
+    })
+    manager.disposeAll()
+    routing.dispose()
+  })
+})
+
+describe("SessionManager 错误/中断路径(TRACE_DATA_PLAN §3.4 P0-1)", () => {
+  function lastTurnFinished(records: LogRecord[]) {
+    for (let i = records.length - 1; i >= 0; i--) {
+      const record = records[i]
+      if (record.kind === "event" && record.payload.type === "turn_finished") {
+        return record.payload
+      }
+    }
+    return undefined
+  }
+
+  it("流 end 后 catch 补写的 turn_finished 被守卫整条跳过:不落盘、不广播、seq 不变", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-session-guard-"))
+    let fireExit: ((code: number | null) => void) | undefined
+    let promptCalls = 0
+    const driver: HarnessDriver = {
+      id: "kimi",
+      async start() {
+        return {
+          nativeSessionId: "guard-1",
+          capabilities: { modelSwitch: "none", effortSwitch: "none" },
+          prompt: async () => {
+            promptCalls += 1
+            if (promptCalls === 1) {
+              // 模拟 claude-agent-sdk:for-await 抛错前先同步触发 exitListeners,
+              // main 侧 onExit handler 随之 append 退出 notice 并 logStream.end()
+              fireExit?.(1)
+              throw new Error("boom")
+            }
+            return { stopReason: "end_turn" }
+          },
+          cancel: async () => {},
+          close: () => {},
+          onExit: (callback) => {
+            fireExit = callback
+            return () => {
+              fireExit = undefined
+            }
+          },
+        }
+      },
+    }
+    const received: LogRecord[] = []
+    const manager = new SessionManager(tempDir, (_key, record) => received.push(record), () => driver)
+    const { key } = await manager.createSession({
+      harnessId: "kimi", cwd: tempDir, providerId: "moonshot", modelId: "kimi-k3",
+    })
+    received.length = 0
+
+    // 守卫缺失时这里会对已 end 的 WriteStream write(ERR_STREAM_WRITE_AFTER_END)
+    await expect(manager.prompt(key, "hi")).rejects.toThrow("boom")
+
+    // 不落盘:JSONL 最后一条是退出 notice,没有 turn_finished。
+    // write 是异步刷盘,读盘用 vi.waitFor 轮询
+    let exitNoticeSeq = -1
+    await vi.waitFor(() => {
+      const persisted = manager.readEvents(key)
+      const last = persisted.at(-1)
+      expect(last && last.kind === "event" && last.payload.type === "notice").toBe(true)
+      expect(lastTurnFinished(persisted)).toBeUndefined()
+      if (last && last.kind === "event") exitNoticeSeq = last.seq
+    })
+    // 不广播:catch 补写没有到达 onEvent
+    expect(
+      received.some((r) => r.kind === "event" && r.payload.type === "turn_finished"),
+    ).toBe(false)
+
+    // seq 不变:守卫没有消耗 seq,revive 后下一条落盘记录紧接退出 notice。
+    // (「只广播不落盘」的旧版守卫会在这里留下 seq 洞,renderer 去重误杀首块)
+    await manager.prompt(key, "第二轮")
+    await vi.waitFor(() => {
+      const after = manager.readEvents(key)
+      const userMessage = after.find(
+        (r): r is Extract<LogRecord, { kind: "event" }> =>
+          r.kind === "event" && r.payload.type === "user_message" &&
+          r.payload.text === "第二轮",
+      )
+      expect(userMessage?.seq).toBe(exitNoticeSeq + 1)
+      expect(lastTurnFinished(after)).toMatchObject({ reason: "end_turn" })
+    })
+    manager.disposeAll()
+  })
+
+  it("cancel 路径补落 cancelled,error 路径补落 error,prompt 入口清零防误标", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-session-cancel-"))
+    let rejectFirstPrompt: ((error: Error) => void) | undefined
+    let promptCalls = 0
+    const firstPromptStarted = Promise.withResolvers<void>()
+    const driver: HarnessDriver = {
+      id: "pi",
+      async start() {
+        return {
+          nativeSessionId: "cancel-1",
+          capabilities: { modelSwitch: "none", effortSwitch: "none" },
+          prompt: () => {
+            promptCalls += 1
+            if (promptCalls > 1) return Promise.reject(new Error("real failure"))
+            // 第一次挂起,直到 cancel() 触发 reject(模拟 Claude interrupt 走 throw 路径)
+            const { promise, reject } = Promise.withResolvers<{ stopReason?: string }>()
+            rejectFirstPrompt = reject
+            firstPromptStarted.resolve()
+            return promise
+          },
+          cancel: async () => {
+            rejectFirstPrompt?.(new Error("aborted"))
+          },
+          close: () => {},
+          onExit: () => () => {},
+        }
+      },
+    }
+    const manager = new SessionManager(tempDir, () => {}, () => driver)
+    const { key } = await manager.createSession({
+      harnessId: "pi", cwd: tempDir, providerId: "native-pi", modelId: "__native_default__",
+    })
+
+    // 真实 UI 只在回合运行中展示取消:等 prompt 真正进入飞行状态再 cancel
+    const cancelled = manager.prompt(key, "长任务")
+    await firstPromptStarted.promise
+    await manager.cancel(key)
+    await expect(cancelled).rejects.toThrow("aborted")
+    await vi.waitFor(() => {
+      expect(lastTurnFinished(manager.readEvents(key))).toMatchObject({ reason: "cancelled" })
+    })
+
+    // 入口清零:cancel 之后下一次真实 error 不得误标 cancelled
+    const failed = manager.prompt(key, "第二轮")
+    await expect(failed).rejects.toThrow("real failure")
+    await vi.waitFor(() => {
+      expect(lastTurnFinished(manager.readEvents(key))).toMatchObject({ reason: "error" })
+    })
+    manager.disposeAll()
+  })
+})
