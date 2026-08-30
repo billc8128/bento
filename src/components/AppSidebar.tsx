@@ -9,7 +9,6 @@ import {
   Moon,
   MoreHorizontal,
   Palette,
-  PanelLeft,
   Pencil,
   PenSquare,
   RotateCcw,
@@ -31,6 +30,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { BentoLogo } from "@/components/BentoLogo"
+import { PanelStateIcon, WindowPanelToggle } from "@/components/WindowPanelToggle"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -315,14 +315,12 @@ export function AppSidebar() {
           h-9:实测红绿灯中线约在内容顶 18px,h-7 时图标偏高 4px */}
       {window.bento && (
         <div className="app-window-drag flex h-9 shrink-0 items-center pl-[76px] [-webkit-app-region:drag]">
-          <button
-            type="button"
+          <WindowPanelToggle
             onClick={toggleSidebarPanel}
-            title="收起侧边栏 (⌘B)"
-            className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [-webkit-app-region:no-drag]"
+            label="收起侧边栏 (⌘B)"
           >
-            <PanelLeft className="size-4" strokeWidth={1.8} />
-          </button>
+            <PanelStateIcon side="left" expanded />
+          </WindowPanelToggle>
         </div>
       )}
       <SidebarHeader className="gap-2 px-4 pb-3 pt-1.5">

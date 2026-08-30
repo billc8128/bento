@@ -3,7 +3,7 @@
 import fixPath from "fix-path"
 import fs from "node:fs"
 import os from "node:os"
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, screen, type OpenDialogOptions } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, screen, webContents, type OpenDialogOptions } from "electron"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -35,6 +35,11 @@ import { RoutedBentoConfigAdapter } from "./session-config/routed"
 import { SessionConfigRegistry } from "./session-config/registry"
 import type { SessionProviderRuntime } from "./session-config/types"
 import type { HarnessId as CoreHarnessId } from "../src/core/harness"
+import { TerminalManager } from "./workspace/terminal-manager"
+import { WorkspaceFileService } from "./workspace/file-service"
+import { WorkspaceBrowserManager } from "./workspace/browser-manager"
+import { WorkspaceFileWatchManager } from "./workspace/file-watch-manager"
+import type { WorkspaceBounds } from "../src/types/workspace"
 
 // GUI app 不继承 login shell 的 PATH,打包后 spawn kimi/opencode 会 ENOENT。
 // fix-path 用 login shell 修 PATH;常见 bin 目录再兜一层(存在才加)
@@ -56,6 +61,10 @@ let win: BrowserWindow | null = null
 let sessions: SessionManager
 let providers: ProviderRegistry
 let routing: ProviderRoutingService | null = null
+let terminals: TerminalManager
+let workspaceBrowsers: WorkspaceBrowserManager
+const workspaceFiles = new WorkspaceFileService()
+let workspaceFileWatches: WorkspaceFileWatchManager
 const safeSecrets: SecretStore = {
   get: (key) => {
     if (!safeStorage.isEncryptionAvailable()) return null
@@ -207,6 +216,15 @@ function createWindow() {
   win.on("resize", scheduleSave)
   win.on("move", scheduleSave)
   win.on("close", saveState)
+  const ownerId = win.webContents.id
+  win.webContents.on("destroyed", () => {
+    terminals.disposeOwner(ownerId)
+    workspaceBrowsers.disposeOwner(ownerId)
+    workspaceFileWatches.disposeOwner(ownerId)
+  })
+  win.on("closed", () => {
+    win = null
+  })
 
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL)
@@ -216,6 +234,18 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  const sendWorkspaceEvent = (ownerId: number, channel: string, payload: unknown) => {
+    const contents = webContents.fromId(ownerId)
+    if (contents && !contents.isDestroyed()) contents.send(channel, payload)
+  }
+  terminals = new TerminalManager(sendWorkspaceEvent)
+  workspaceBrowsers = new WorkspaceBrowserManager((ownerId, state) => {
+    sendWorkspaceEvent(ownerId, "workspace-browser:state", state)
+  })
+  workspaceFileWatches = new WorkspaceFileWatchManager(workspaceFiles, (ownerId, change) => {
+    sendWorkspaceEvent(ownerId, "workspace-files:changed", change)
+  })
+
   configureBinaryManager(app.getPath("userData"), (progress) => {
     // 受管二进制下载进度走独立频道:不进会话事件流(connectSession 的
     // pending 缓冲会把连接前事件延迟到完成才显示,进度会完全不可见)
@@ -601,6 +631,150 @@ app.whenReady().then(async () => {
     }
   })
 
+  ipcMain.handle("workspace-terminal:create", (event, input: { cwd: string; cols: number; rows: number }) => {
+    try {
+      return { terminal: terminals.create(event.sender.id, input) }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.on("workspace-terminal:write", (event, id: string, data: string) => {
+    try {
+      terminals.write(event.sender.id, id, data)
+    } catch {
+      // 标签可能已在输入事件到达前关闭
+    }
+  })
+  ipcMain.on("workspace-terminal:resize", (event, id: string, cols: number, rows: number) => {
+    try {
+      terminals.resize(event.sender.id, id, cols, rows)
+    } catch {
+      // 标签可能已在 resize 到达前关闭
+    }
+  })
+  ipcMain.handle("workspace-terminal:kill", (event, id: string) => {
+    try {
+      terminals.kill(event.sender.id, id)
+      return { ok: true }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+
+  ipcMain.handle("workspace-files:list", async (_event, root: string, relativePath: string) => {
+    try {
+      return { entries: await workspaceFiles.list(root, relativePath) }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.handle("workspace-files:read", async (_event, root: string, relativePath: string) => {
+    try {
+      return { preview: await workspaceFiles.read(root, relativePath) }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.handle("workspace-files:watch", async (event, root: string, directory: string) => {
+    try {
+      return { subscriptionId: await workspaceFileWatches.watch(event.sender.id, root, directory) }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.on("workspace-files:unwatch", (event, subscriptionId: string) => {
+    workspaceFileWatches.unwatch(event.sender.id, subscriptionId)
+  })
+
+  ipcMain.handle("workspace-browser:create", (event) => {
+    try {
+      const owner = BrowserWindow.fromWebContents(event.sender)
+      if (!owner) throw new Error("主窗口不可用")
+      return { state: workspaceBrowsers.create(event.sender.id, owner) }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.handle("workspace-browser:list", (event) => workspaceBrowsers.list(event.sender.id))
+  ipcMain.handle("workspace-browser:navigate", async (event, id: string, url: string) => {
+    try {
+      await workspaceBrowsers.navigate(event.sender.id, id, url)
+      return { ok: true }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.on("workspace-browser:bounds", (event, id: string, bounds: WorkspaceBounds | null) => {
+    try {
+      workspaceBrowsers.setBounds(event.sender.id, id, bounds)
+    } catch {
+      // 标签可能已在 ResizeObserver 回调到达前关闭
+    }
+  })
+  ipcMain.on("workspace-browser:back", (event, id: string) => {
+    try { workspaceBrowsers.back(event.sender.id, id) } catch { /* closed tab */ }
+  })
+  ipcMain.on("workspace-browser:forward", (event, id: string) => {
+    try { workspaceBrowsers.forward(event.sender.id, id) } catch { /* closed tab */ }
+  })
+  ipcMain.on("workspace-browser:reload", (event, id: string) => {
+    try { workspaceBrowsers.reload(event.sender.id, id) } catch { /* closed tab */ }
+  })
+  ipcMain.handle("workspace-browser:open-external", async (event, id: string) => {
+    try {
+      await workspaceBrowsers.openExternal(event.sender.id, id)
+      return { ok: true }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.handle("workspace-browser:snapshot", async (event, id: string) => {
+    try {
+      return { snapshot: await workspaceBrowsers.snapshot(event.sender.id, id) }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.handle("workspace-browser:click", async (event, id: string, nodeId: number) => {
+    try {
+      await workspaceBrowsers.click(event.sender.id, id, nodeId)
+      return { ok: true }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.handle("workspace-browser:fill", async (event, id: string, nodeId: number, text: string) => {
+    try {
+      await workspaceBrowsers.fill(event.sender.id, id, nodeId, text)
+      return { ok: true }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.handle("workspace-browser:scroll", async (event, id: string, deltaY: number) => {
+    try {
+      await workspaceBrowsers.scroll(event.sender.id, id, deltaY)
+      return { ok: true }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.handle("workspace-browser:screenshot", async (event, id: string) => {
+    try {
+      return { base64: await workspaceBrowsers.screenshot(event.sender.id, id) }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.handle("workspace-browser:destroy", (event, id: string) => {
+    try {
+      workspaceBrowsers.destroy(event.sender.id, id)
+      return { ok: true }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+
 
   createWindow()
 
@@ -669,6 +843,9 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   void sessions?.disposeAll()
+  terminals?.disposeAll()
+  workspaceBrowsers?.disposeAll()
+  workspaceFileWatches?.disposeAll()
   if (process.platform !== "darwin") app.quit()
 })
 

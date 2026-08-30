@@ -5,6 +5,7 @@ import { MessageCircle, MoreHorizontal, X } from "lucide-react"
 
 import { ChatView } from "@/components/ChatView"
 import { Composer } from "@/components/Composer"
+import { PanelStateIcon, WindowPanelToggle } from "@/components/WindowPanelToggle"
 import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
@@ -34,6 +35,7 @@ import {
 import { getHarness, type HarnessId } from "@/core/harness"
 import type { SessionScope } from "@/core/types"
 import { CHAT_CONTENT_GUTTER, type ComposerShape } from "@/data/styles"
+import { toggleWorkspaceTools, useWorkspaceToolsOpen } from "@/lib/workspace-tools-store"
 
 type HeaderInfo = { title: string; path: string; branch?: string }
 
@@ -52,6 +54,7 @@ function PaneHeader({
   solo: boolean
   onClose: () => void
 }) {
+  const workspaceToolsOpen = useWorkspaceToolsOpen()
   return (
     <header
       className={cn(
@@ -84,6 +87,15 @@ function PaneHeader({
           <MoreHorizontal className="size-4" />
           <span className="sr-only">更多操作</span>
         </Button>
+      )}
+      {!workspaceToolsOpen && (
+        <WindowPanelToggle
+          label="打开工具面板 (⌘J)"
+          className={minimal ? "mt-1.5 self-start" : undefined}
+          onClick={toggleWorkspaceTools}
+        >
+          <PanelStateIcon side="right" expanded={false} />
+        </WindowPanelToggle>
       )}
       {!solo && (
         <Button

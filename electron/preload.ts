@@ -3,6 +3,13 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
 import type { HarnessId } from "../src/core/harness"
 import type { Effort, SessionScope } from "../src/core/types"
+import type {
+  WorkspaceBounds,
+  WorkspaceBrowserSnapshot,
+  WorkspaceBrowserState,
+  WorkspaceFileChange,
+  WorkspaceTerminalExit,
+} from "../src/types/workspace"
 
 const api = {
   /** renderer 判断自己跑在桌面壳里还是纯 web(纯 web 时 window.bento 不存在) */
@@ -80,6 +87,70 @@ const api = {
   pathForFile: (file: File) => webUtils.getPathForFile(file),
   createProject: (opts: { sourceDir: string; name: string }) =>
     ipcRenderer.invoke("project:create", opts),
+
+  workspace: {
+    terminal: {
+      create: (input: { cwd: string; cols: number; rows: number }) =>
+        ipcRenderer.invoke("workspace-terminal:create", input),
+      write: (id: string, data: string) => ipcRenderer.send("workspace-terminal:write", id, data),
+      resize: (id: string, cols: number, rows: number) =>
+        ipcRenderer.send("workspace-terminal:resize", id, cols, rows),
+      kill: (id: string) => ipcRenderer.invoke("workspace-terminal:kill", id),
+      onData: (cb: (event: { id: string; data: string }) => void) => {
+        const handler = (_event: unknown, payload: { id: string; data: string }) => cb(payload)
+        ipcRenderer.on("workspace-terminal:data", handler)
+        return () => ipcRenderer.removeListener("workspace-terminal:data", handler)
+      },
+      onExit: (cb: (event: WorkspaceTerminalExit) => void) => {
+        const handler = (_event: unknown, payload: WorkspaceTerminalExit) => cb(payload)
+        ipcRenderer.on("workspace-terminal:exit", handler)
+        return () => ipcRenderer.removeListener("workspace-terminal:exit", handler)
+      },
+    },
+    files: {
+      list: (root: string, relativePath: string) =>
+        ipcRenderer.invoke("workspace-files:list", root, relativePath),
+      read: (root: string, relativePath: string) =>
+        ipcRenderer.invoke("workspace-files:read", root, relativePath),
+      watch: (root: string, directory: string) =>
+        ipcRenderer.invoke("workspace-files:watch", root, directory),
+      unwatch: (subscriptionId: string) =>
+        ipcRenderer.send("workspace-files:unwatch", subscriptionId),
+      onChanged: (cb: (change: WorkspaceFileChange) => void) => {
+        const handler = (_event: unknown, payload: WorkspaceFileChange) => cb(payload)
+        ipcRenderer.on("workspace-files:changed", handler)
+        return () => ipcRenderer.removeListener("workspace-files:changed", handler)
+      },
+    },
+    browser: {
+      create: () => ipcRenderer.invoke("workspace-browser:create"),
+      list: () => ipcRenderer.invoke("workspace-browser:list") as Promise<WorkspaceBrowserState[]>,
+      navigate: (id: string, url: string) => ipcRenderer.invoke("workspace-browser:navigate", id, url),
+      setBounds: (id: string, bounds: WorkspaceBounds | null) =>
+        ipcRenderer.send("workspace-browser:bounds", id, bounds),
+      back: (id: string) => ipcRenderer.send("workspace-browser:back", id),
+      forward: (id: string) => ipcRenderer.send("workspace-browser:forward", id),
+      reload: (id: string) => ipcRenderer.send("workspace-browser:reload", id),
+      openExternal: (id: string) => ipcRenderer.invoke("workspace-browser:open-external", id),
+      automation: {
+        snapshot: (id: string) => ipcRenderer.invoke("workspace-browser:snapshot", id) as Promise<
+          { snapshot: WorkspaceBrowserSnapshot; error?: undefined } | { snapshot?: undefined; error: string }
+        >,
+        click: (id: string, nodeId: number) => ipcRenderer.invoke("workspace-browser:click", id, nodeId),
+        fill: (id: string, nodeId: number, text: string) =>
+          ipcRenderer.invoke("workspace-browser:fill", id, nodeId, text),
+        scroll: (id: string, deltaY: number) =>
+          ipcRenderer.invoke("workspace-browser:scroll", id, deltaY),
+        screenshot: (id: string) => ipcRenderer.invoke("workspace-browser:screenshot", id),
+      },
+      destroy: (id: string) => ipcRenderer.invoke("workspace-browser:destroy", id),
+      onState: (cb: (state: WorkspaceBrowserState) => void) => {
+        const handler = (_event: unknown, payload: WorkspaceBrowserState) => cb(payload)
+        ipcRenderer.on("workspace-browser:state", handler)
+        return () => ipcRenderer.removeListener("workspace-browser:state", handler)
+      },
+    },
+  },
 
   onSessionEvent: (cb: (e: { key: string; record: unknown }) => void) => {
     const handler = (_ev: unknown, payload: { key: string; record: unknown }) => cb(payload)

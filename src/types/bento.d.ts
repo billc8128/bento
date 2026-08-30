@@ -6,6 +6,16 @@ import type { CustomModelConfig, CustomProviderConfig, ProviderView } from "@/co
 import type { LocalProviderCandidate, ProviderPresetView } from "@/core/provider-preset"
 import type { BinaryProgress } from "../../electron/binaries/progress"
 import type { Effort, SessionScope } from "@/core/types"
+import type {
+  WorkspaceBounds,
+  WorkspaceBrowserState,
+  WorkspaceBrowserSnapshot,
+  WorkspaceFileEntry,
+  WorkspaceFileChange,
+  WorkspaceFilePreview,
+  WorkspaceTerminalCreated,
+  WorkspaceTerminalExit,
+} from "@/types/workspace"
 // BinaryProgress 单源定义在 electron/binaries/progress.ts(纯类型,无 node 依赖),
 // 这里 re-export 供 renderer 引用
 export type { BinaryProgress }
@@ -117,6 +127,56 @@ declare global {
       createProject(opts: { sourceDir: string; name: string }): Promise<
         { path: string; error?: undefined } | { path?: undefined; error: string }
       >
+      workspace: {
+        terminal: {
+          create(input: { cwd: string; cols: number; rows: number }): Promise<
+            { terminal: WorkspaceTerminalCreated; error?: undefined } | { terminal?: undefined; error: string }
+          >
+          write(id: string, data: string): void
+          resize(id: string, cols: number, rows: number): void
+          kill(id: string): Promise<{ ok: true } | { error: string }>
+          onData(cb: (event: { id: string; data: string }) => void): () => void
+          onExit(cb: (event: WorkspaceTerminalExit) => void): () => void
+        }
+        files: {
+          list(root: string, relativePath: string): Promise<
+            { entries: WorkspaceFileEntry[]; error?: undefined } | { entries?: undefined; error: string }
+          >
+          read(root: string, relativePath: string): Promise<
+            { preview: WorkspaceFilePreview; error?: undefined } | { preview?: undefined; error: string }
+          >
+          watch(root: string, directory: string): Promise<
+            { subscriptionId: string; error?: undefined } | { subscriptionId?: undefined; error: string }
+          >
+          unwatch(subscriptionId: string): void
+          onChanged(cb: (change: WorkspaceFileChange) => void): () => void
+        }
+        browser: {
+          create(): Promise<
+            { state: WorkspaceBrowserState; error?: undefined } | { state?: undefined; error: string }
+          >
+          list(): Promise<WorkspaceBrowserState[]>
+          navigate(id: string, url: string): Promise<{ ok: true } | { error: string }>
+          setBounds(id: string, bounds: WorkspaceBounds | null): void
+          back(id: string): void
+          forward(id: string): void
+          reload(id: string): void
+          openExternal(id: string): Promise<{ ok: true } | { error: string }>
+          automation: {
+            snapshot(id: string): Promise<
+              { snapshot: WorkspaceBrowserSnapshot; error?: undefined } | { snapshot?: undefined; error: string }
+            >
+            click(id: string, nodeId: number): Promise<{ ok: true } | { error: string }>
+            fill(id: string, nodeId: number, text: string): Promise<{ ok: true } | { error: string }>
+            scroll(id: string, deltaY: number): Promise<{ ok: true } | { error: string }>
+            screenshot(id: string): Promise<
+              { base64: string; error?: undefined } | { base64?: undefined; error: string }
+            >
+          }
+          destroy(id: string): Promise<{ ok: true } | { error: string }>
+          onState(cb: (state: WorkspaceBrowserState) => void): () => void
+        }
+      }
       onSessionEvent(cb: (e: { key: string; record: LogRecord }) => void): () => void
       onBinaryProgress(cb: (p: BinaryProgress) => void): () => void
     }

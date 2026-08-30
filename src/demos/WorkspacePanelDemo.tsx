@@ -8,9 +8,9 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { DEFAULT_STYLE, getStyle, type StyleId } from "@/data/styles"
 
 /**
- * THESIS: 单一受管右栏让聊天保持中心；不把四个工具拆成并列 dock。
+ * THESIS: 单一受管右栏让聊天保持中心；不把三种独立工作区拆成并列 dock。
  * OWN-WORLD: 延续主题 token、发丝分隔和紧凑排版；终端与当前深浅主题同源。
- * STORY: 四工具可扫读切换，文件进入预览，终端和浏览器保留各自上下文。
+ * STORY: 终端、文件和浏览器共享一级 tab；PDF、CSV、HTML 和文本预览进入 Files 二级 tab。
  * FIRST VIEWPORT: 224px 会话栏 + 对话 + 460px 工具栏；窄屏工具栏占满视口。
  * FORM: local-extension/no-roll；精确局部扩展按规范不运行 concept roll。
  */
@@ -40,16 +40,16 @@ function DemoConversation({ panelOpen, onOpenPanel }: { panelOpen: boolean; onOp
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex min-h-full w-full max-w-[720px] flex-col px-6 pb-8 pt-10">
-          <div className="ml-auto max-w-[82%] rounded-2xl rounded-br-md bg-muted px-4 py-3 text-sm leading-6">看下这个项目。接下来我准备做个类似 Codex 的右侧 panel，想先支持 terminal、文件浏览、文件预览和浏览器。调研一下应该怎么做，出一版 demo。</div>
+          <div className="ml-auto max-w-[82%] rounded-2xl rounded-br-md bg-muted px-4 py-3 text-sm leading-6">看下这个项目。接下来我准备做个类似 Codex 的右侧 panel，想先支持 terminal、带 PDF/CSV/HTML 预览的文件工作区，以及浏览器。调研一下应该怎么做，出一版 demo。</div>
           <div className="mt-9 max-w-[92%]">
             <div className="flex items-center gap-2 text-xs font-medium text-foreground/70"><Sparkles className="size-3.5" /><span>完成调研与 demo</span><ChevronDown className="size-3.5 text-muted-foreground" /></div>
             <div className="ml-[6px] mt-2 border-l pl-4 text-xs text-muted-foreground">
               <div className="flex h-7 items-center gap-2"><Check className="size-3.5 text-[var(--app-ok)]" /><span>检查面板与布局架构</span></div>
-              <div className="flex h-7 items-center gap-2"><Check className="size-3.5 text-[var(--app-ok)]" /><span>实现四种工作区工具</span></div>
+              <div className="flex h-7 items-center gap-2"><Check className="size-3.5 text-[var(--app-ok)]" /><span>实现三种工作区与富文件预览</span></div>
               <div className="flex h-7 items-center gap-2"><FileCode2 className="size-3.5" /><code className="font-mono text-foreground/80">WorkspaceToolsPanel.tsx</code><span className="ml-auto font-mono type-micro"><span className="text-[var(--app-ok)]">+418</span> <span className="text-[var(--app-err)]">−0</span></span></div>
             </div>
             <div className="mt-6 space-y-3 text-sm leading-6">
-              <p>右侧面板已经跑起来了。它保持一列宽度，四种工具共享同一个入口和生命周期；从文件树点文件会直接进入预览，终端和浏览器保留自己的上下文。</p>
+              <p>右侧面板已经跑起来了。终端、文件和浏览器共享一级 tab 生命周期；PDF、CSV、HTML 和文本预览保留在文件工作区的二级 tab。</p>
               <p>正式版本建议把 UI 保持为受控组件，系统能力放进 Electron 主进程，通过窄 IPC 接口接入。浏览器需要独立隔离，不能把本地文件能力暴露给远程页面。</p>
             </div>
           </div>

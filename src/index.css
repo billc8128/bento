@@ -22,6 +22,14 @@
   -webkit-app-region: no-drag !important;
 }
 
+.window-panel-toggle {
+  -webkit-app-region: no-drag;
+}
+
+.window-panel-toggle > svg {
+  pointer-events: none;
+}
+
 @theme inline {
     --font-heading: var(--app-font-heading);
     --font-sans: var(--app-font-sans);
@@ -183,6 +191,17 @@
 @keyframes browser-progress {
   from { transform: translateX(-110%); }
   to { transform: translateX(210%); }
+}
+
+.workspace-terminal .xterm {
+  height: 100%;
+  overflow: hidden;
+}
+
+.workspace-terminal .xterm-viewport {
+  overflow-x: hidden !important;
+  scrollbar-color: color-mix(in oklch, var(--foreground) 24%, transparent) transparent;
+  scrollbar-width: thin;
 }
 
 /* 侧栏文件夹分组的平滑展开/收起;高度取 Radix 的内容测量值,
