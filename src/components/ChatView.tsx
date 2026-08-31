@@ -255,16 +255,16 @@ function TraceBlock({
     )
 
   return (
-    <Collapsible open={open} onOpenChange={setManual} className="flex flex-col">
-      <CollapsibleTrigger className="group -ml-1.5 flex w-fit items-center gap-2 rounded-md px-1.5 py-1 text-sm font-medium text-foreground/70 transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+    <Collapsible open={open} onOpenChange={setManual} className="flex min-w-0 max-w-full flex-col">
+      <CollapsibleTrigger className="group -ml-1.5 flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-md px-1.5 py-1 text-sm font-medium text-foreground/70 transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
         <TraceStar working={active} />
         {active ? (
           <ShiningText
             text={tools.length > 0 ? "正在工作" : "正在思考"}
-            className="whitespace-nowrap"
+            className="min-w-0 truncate"
           />
         ) : (
-          <span className="whitespace-nowrap">
+          <span className="min-w-0 truncate">
             {summary}
             {m.durationMs !== undefined && ` · ${formatDuration(m.durationMs)}`}
             {usageText && ` · ${usageText}`}
@@ -303,7 +303,7 @@ function UserMessage({ m, shape }: { m: UserMsg; shape: MessageShape }) {
     )
 
   return (
-    <div className="flex flex-col items-end gap-1.5">
+    <div className="flex min-w-0 flex-col items-end gap-1.5">
       {/* 气泡保持胶囊感:3xl(20px)接近旧 --radius 1rem 时代的 2xl 观感 */}
       <div className="max-w-[75%] rounded-3xl rounded-br-lg bg-primary px-4 py-2.5 text-sm leading-relaxed text-primary-foreground">
         {m.text}
@@ -327,7 +327,7 @@ function AssistantMessage({
   running: boolean
 }) {
   return (
-    <div className="flex flex-col items-start gap-2.5">
+    <div className="flex min-w-0 flex-col items-start gap-2.5">
       {/* 轨迹(思考 + 工具)在回答之前:时序如此,正文第一眼就是答案 */}
       {(m.thinking || m.tools) && (
         <div className="w-full">
@@ -422,11 +422,11 @@ export function ChatView({ messages, pending = true, pendingLabel }: ChatViewPro
     last?.role === "assistant" && !last.thinking && !last.tools?.length && !last.text
 
   return (
-    <ScrollArea ref={rootRef} className="min-h-0 flex-1">
+    <ScrollArea ref={rootRef} className="chat-scroll-area min-h-0 flex-1">
       <div
         ref={contentRef}
         className={cn(
-          "flex w-full flex-col gap-8 pt-6",
+          "box-border flex w-full min-w-0 max-w-full flex-col gap-8 pt-6",
           CHAT_CONTENT_GUTTER[traits.composer],
           COLUMN[traits.width],
           BOTTOM_PAD[traits.composer],
@@ -439,7 +439,7 @@ export function ChatView({ messages, pending = true, pendingLabel }: ChatViewPro
         )}
 
         {groupTurns(messages).map((turn, ti, turns) => (
-          <div key={turn[0].id} className="flex flex-col gap-3">
+          <div key={turn[0].id} className="flex min-w-0 flex-col gap-3">
             {turn.map((m) =>
               m.role === "user" ? (
                 <UserMessage key={m.id} m={m} shape={traits.message} />

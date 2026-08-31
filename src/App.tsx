@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { PanelImperativeHandle } from "react-resizable-panels"
 
 import {
@@ -32,9 +32,11 @@ import {
   useWorkspaceToolsOpen,
   useWorkspaceToolsStarted,
 } from "@/lib/workspace-tools-store"
+import { useWorkspaceBrowserReveal } from "@/lib/workspace-browser-reveal"
 import "@/views/builtin"
 import { DEFAULT_STYLE, STYLES, getStyle, type StyleId } from "@/data/styles"
 import { cn } from "@/lib/utils"
+import { browserRevealPanelWidth } from "@/core/workspace-layout"
 
 /* 主题偏好持久化。localStorage 可能被禁用,全部 try/catch 静默降级 */
 function loadStyle(): StyleId {
@@ -63,6 +65,7 @@ export default function App() {
   const compact = useIsMobile()
   const workspaceToolsOpen = useWorkspaceToolsOpen()
   const workspaceToolsStarted = useWorkspaceToolsStarted()
+  const browserRevealId = useWorkspaceBrowserReveal()
   const { focusedSessionId } = useLayout()
   const { sessions } = useLive()
   const settings = useSettingsPage()
@@ -109,6 +112,17 @@ export default function App() {
   const workspaceInitialRef = useRef(true)
   const workspaceProgrammaticResizeRef = useRef(false)
   const sidebarCollapsed = useSidebarCollapsed()
+
+  const preferredBrowserPanelWidth = useCallback(() => {
+    const sidebarWidth = sidebarElRef.current?.getBoundingClientRect().width ?? sidebarLayout.default
+    return browserRevealPanelWidth(window.innerWidth, sidebarWidth)
+  }, [sidebarLayout.default])
+
+  useEffect(() => {
+    if (!browserRevealId) return
+    setWorkspaceToolsOpen(true)
+    window.requestAnimationFrame(() => workspacePanelRef.current?.resize(preferredBrowserPanelWidth()))
+  }, [browserRevealId, preferredBrowserPanelWidth])
 
   // ⌘B 与标题栏按钮共用同一个收折开关(收折是运行时状态,不持久化)。
   // 动画靠给面板元素临时挂 flex-grow transition:collapse/expand 改的是
@@ -158,8 +172,23 @@ export default function App() {
     }
     workspaceInitialRef.current = false
     workspaceProgrammaticResizeRef.current = true
-    if (workspaceToolsOpen) panel.expand()
-    else panel.collapse()
+    if (workspaceToolsOpen) {
+      const sidebarPanel = sidebarPanelRef.current
+      const sidebarWidth = sidebarElRef.current?.getBoundingClientRect().width ?? 0
+      const mainMinWidth = compact ? 320 : 420
+      const availableWidth = window.innerWidth
+      if (
+        sidebarPanel &&
+        !sidebarPanel.isCollapsed() &&
+        availableWidth < sidebarWidth + mainMinWidth + 320
+      ) {
+        setSidebarCollapsed(true)
+        sidebarPanel.collapse()
+      }
+      window.requestAnimationFrame(() => panel.expand())
+    } else {
+      panel.collapse()
+    }
     const timer = window.setTimeout(() => {
       if (element) element.style.transition = ""
       workspaceProgrammaticResizeRef.current = false
@@ -168,7 +197,7 @@ export default function App() {
       window.clearTimeout(timer)
       workspaceProgrammaticResizeRef.current = false
     }
-  }, [workspaceToolsOpen])
+  }, [compact, workspaceToolsOpen])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -199,6 +228,10 @@ export default function App() {
                   minSize={sidebarLayout.min}
                   maxSize={sidebarLayout.max}
                   groupResizeBehavior="preserve-pixel-size"
+                  onResize={(size) => {
+                    const collapsed = size.inPixels === 0
+                    if (collapsed !== sidebarCollapsed) setSidebarCollapsed(collapsed)
+                  }}
                 >
                   <Sessions />
                 </ResizablePanel>
@@ -206,7 +239,7 @@ export default function App() {
                 {/* 分隔线本体交给侧栏的边框画,拖柄平时隐形,悬停/拖动时才显出来 */}
                 <ResizableHandle className="-ml-1 w-1 bg-transparent transition-colors data-[separator=hover]:bg-primary/12 data-[separator=active]:bg-primary/25" />
 
-                <ResizablePanel minSize={320}>
+                <ResizablePanel minSize={compact ? 320 : 420}>
                   {/* 收起态:标题条占文档流(内容下移不重叠),兼作窗口拖拽区;
                       h-9 让按钮中线对齐 macOS 红绿灯(实测灯心约在内容顶 18px) */}
                   <div className="flex h-full flex-col">

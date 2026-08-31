@@ -201,7 +201,7 @@ function createWindow() {
     width: saved?.width ?? Math.min(1360, Math.round(workArea.width * 0.85)),
     height: saved?.height ?? Math.min(880, Math.round(workArea.height * 0.85)),
     ...(saved?.x !== undefined && saved.y !== undefined ? { x: saved.x, y: saved.y } : {}),
-    minWidth: 960,
+    minWidth: 680,
     minHeight: 600,
     title: "Bento",
     titleBarStyle: "hiddenInset",

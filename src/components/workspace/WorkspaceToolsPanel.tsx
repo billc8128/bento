@@ -17,6 +17,10 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { PanelStateIcon } from "@/components/WindowPanelToggle"
+import {
+  consumeWorkspaceBrowserReveal,
+  useWorkspaceBrowserReveal,
+} from "@/lib/workspace-browser-reveal"
 
 const BrowserWorkspacePane = lazy(() => import("@/components/workspace/BrowserWorkspacePane").then((module) => ({ default: module.BrowserWorkspacePane })))
 const FilesWorkspacePane = lazy(() => import("@/components/workspace/FilesWorkspacePane").then((module) => ({ default: module.FilesWorkspacePane })))
@@ -28,6 +32,7 @@ type WorkspaceTab = {
   id: string
   kind: WorkspaceTabKind
   title: string
+  browserId?: string
 }
 
 const TAB_KINDS: Array<{ id: WorkspaceTabKind; label: string; icon: typeof TerminalSquare }> = [
@@ -66,6 +71,7 @@ function loadWorkspaceState(workspaceRoot: string, defaultTool: WorkspaceTabKind
       typeof tab?.id === "string" &&
       typeof tab?.title === "string" &&
       TAB_KINDS.some((kind) => kind.id === tab.kind))
+      .map((tab) => ({ id: tab.id, kind: tab.kind, title: tab.title }))
     const activeId = tabs.some((tab) => tab.id === saved.activeId) ? saved.activeId! : tabs[0]?.id ?? null
     return { tabs, activeId }
   } catch {
@@ -213,14 +219,37 @@ export function WorkspaceToolsPanel({
   const [visited, setVisited] = useState(() => new Set(initial.activeId ? [initial.activeId] : []))
   const [overlayOpen, setOverlayOpen] = useState(false)
   const counters = useRef<Record<WorkspaceTabKind, number>>(tabCounters(initial.tabs))
+  const browserRevealId = useWorkspaceBrowserReveal()
 
   useEffect(() => {
     try {
-      localStorage.setItem(storageNamespace(workspaceRoot), JSON.stringify({ tabs, activeId }))
+      localStorage.setItem(storageNamespace(workspaceRoot), JSON.stringify({
+        tabs: tabs.map(({ id, kind, title }) => ({ id, kind, title })),
+        activeId,
+      }))
     } catch {
       /* ignore */
     }
   }, [activeId, tabs, workspaceRoot])
+
+  useEffect(() => {
+    if (!browserRevealId) return
+    const bound = tabs.find((tab) => tab.browserId === browserRevealId)
+    const available = bound ?? tabs.find((tab) => tab.kind === "browser" && !tab.browserId)
+    const target = available ?? {
+      id: `browser-${++counters.current.browser}`,
+      kind: "browser" as const,
+      title: tabTitle("browser", counters.current.browser),
+    }
+    if (!bound) {
+      setTabs((current) => available
+        ? current.map((tab) => tab.id === available.id ? { ...tab, browserId: browserRevealId } : tab)
+        : [...current, { ...target, browserId: browserRevealId }])
+    }
+    setActiveId(target.id)
+    setVisited((current) => current.has(target.id) ? current : new Set(current).add(target.id))
+    consumeWorkspaceBrowserReveal(browserRevealId)
+  }, [browserRevealId, tabs])
 
   function activateTab(tabId: string) {
     setActiveId(tabId)
@@ -251,6 +280,10 @@ export function WorkspaceToolsPanel({
     setTabs((current) => current.map((tab) => tab.id === tabId ? { ...tab, title } : tab))
   }
 
+  function bindBrowser(tabId: string, browserId: string) {
+    setTabs((current) => current.map((tab) => tab.id === tabId ? { ...tab, browserId } : tab))
+  }
+
   return (
     <aside className="flex h-full min-h-0 min-w-80 flex-col overflow-hidden bg-background text-foreground">
       <WorkspaceTabBar tabs={tabs} activeId={activeId} onActivate={activateTab} onCloseTab={closeTab} onAddTab={addTab} onClosePanel={onClose} onOverlayChange={setOverlayOpen} />
@@ -264,7 +297,7 @@ export function WorkspaceToolsPanel({
                 <Suspense fallback={<div className="grid h-full place-items-center text-xs text-muted-foreground">正在打开工具…</div>}>
                   {tab.kind === "terminal" && <TerminalWorkspacePane cwd={workspaceRoot} onTitleChange={(title) => renameTab(tab.id, title)} />}
                   {tab.kind === "files" && <FilesWorkspacePane root={workspaceRoot} instanceId={tab.id} storageKey={paneStorageKey(workspaceRoot, tab.id)} />}
-                  {tab.kind === "browser" && <BrowserWorkspacePane active={active} suspended={suspended || overlayOpen} storageKey={paneStorageKey(workspaceRoot, tab.id)} onTitleChange={(title) => renameTab(tab.id, title)} />}
+                  {tab.kind === "browser" && <BrowserWorkspacePane active={active} suspended={suspended || overlayOpen} storageKey={paneStorageKey(workspaceRoot, tab.id)} preferredBrowserId={tab.browserId} onBrowserIdChange={(browserId) => bindBrowser(tab.id, browserId)} onTitleChange={(title) => renameTab(tab.id, title)} />}
                 </Suspense>
               )}
             </div>

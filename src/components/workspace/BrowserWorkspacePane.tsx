@@ -33,11 +33,15 @@ export function BrowserWorkspacePane({
   suspended,
   storageKey,
   onTitleChange,
+  preferredBrowserId,
+  onBrowserIdChange,
 }: {
   active: boolean
   suspended: boolean
   storageKey: string
   onTitleChange: (title: string) => void
+  preferredBrowserId?: string
+  onBrowserIdChange?: (id: string) => void
 }) {
   const [restoredUrl] = useState(() => {
     try {
@@ -50,7 +54,9 @@ export function BrowserWorkspacePane({
   const restoredTitle = restoredUrl ? new URL(restoredUrl).hostname : "新标签页"
   const contentRef = useRef<HTMLDivElement>(null)
   const browserIdRef = useRef<string | null>(null)
+  const preferredBrowserIdRef = useRef(preferredBrowserId)
   const titleChangeRef = useRef(onTitleChange)
+  const browserIdChangeRef = useRef(onBrowserIdChange)
   const [state, setState] = useState<WorkspaceBrowserState>(() => restoredUrl
     ? { ...EMPTY_BROWSER, id: window.bento ? "" : "demo", url: restoredUrl, title: restoredTitle }
     : EMPTY_BROWSER)
@@ -59,7 +65,8 @@ export function BrowserWorkspacePane({
 
   useEffect(() => {
     titleChangeRef.current = onTitleChange
-  }, [onTitleChange])
+    browserIdChangeRef.current = onBrowserIdChange
+  }, [onBrowserIdChange, onTitleChange])
 
   useEffect(() => {
     const api = window.bento?.workspace.browser
@@ -74,7 +81,7 @@ export function BrowserWorkspacePane({
         try { localStorage.setItem(storageKey, next.url) } catch { /* ignore */ }
       }
     })
-    void api.create().then((result) => {
+    void api.create(preferredBrowserIdRef.current).then((result) => {
       if (disposed) {
         if (result.state) void api.destroy(result.state.id)
         return
@@ -84,8 +91,14 @@ export function BrowserWorkspacePane({
         return
       }
       browserIdRef.current = result.state.id
+      browserIdChangeRef.current?.(result.state.id)
       setState(result.state)
-      if (restoredUrl) {
+      setDraft(result.state.url)
+      titleChangeRef.current(result.state.title || "新标签页")
+      if (result.state.url) {
+        try { localStorage.setItem(storageKey, result.state.url) } catch { /* ignore */ }
+      }
+      if (restoredUrl && !preferredBrowserIdRef.current) {
         void api.navigate(result.state.id, restoredUrl).then((navigation) => {
           if ("error" in navigation) setState((current) => ({ ...current, error: navigation.error }))
         })

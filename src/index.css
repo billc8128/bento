@@ -224,6 +224,14 @@
   scrollbar-width: thin;
 }
 
+/* Radix ScrollArea 用 display:table 的内部 wrapper 计算内容固有宽度；双分栏时
+ * 长轨迹摘要会把它撑出 Panel。Chat 是单列布局，明确锁成 viewport 宽度。 */
+.chat-scroll-area [data-slot="scroll-area-viewport"] > div {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
 /* 侧栏文件夹分组的平滑展开/收起;高度取 Radix 的内容测量值,
  * Presence 会等 close 动画播完再卸载,无需 forceMount。 */
 .collapsible-section {
