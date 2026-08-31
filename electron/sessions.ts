@@ -8,7 +8,9 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-import type { HarnessEvent, LogRecord } from "../src/core/events"
+import type { HarnessEvent, HarnessUsage, LogRecord } from "../src/core/events"
+import type { CollaborationSession, MessageOrigin, SessionRuntimeStatus } from "../src/core/collaboration"
+import { CollaborationError } from "../src/core/collaboration"
 import { isNativeProviderId, NATIVE_MODEL_ID } from "../src/core/provider"
 import type { Effort, PromptAttachment, PromptInput, SessionScope } from "../src/core/types"
 import { getDriver } from "./drivers/registry"
@@ -58,6 +60,19 @@ type LiveSession = {
   disposeExit: () => void
   /** cancel() 打标,prompt() 入口清零;catch 据此区分 turn_finished 的 reason */
   cancelRequested: boolean
+  /** 当前运行中的根 Prompt;null = idle。startPrompt 原子占用。 */
+  activeTurn: ActiveTurn | null
+}
+
+/** 一次根 Prompt 的运行态:acceptedSeq 关联提交,completion 携带回合结果。 */
+type ActiveTurn = {
+  acceptedSeq: number
+  completion: Promise<TurnResult>
+}
+
+type TurnResult = {
+  stopReason?: string
+  usage?: HarnessUsage
 }
 
 type ProviderSelectionResolver = (record: Pick<SessionRecord,
@@ -100,6 +115,13 @@ function promptInput(value: string | PromptInput): PromptInput {
   return { text, attachments }
 }
 
+/** 协作层状态事件(main 内);waitForCollaborationState 的通知源。 */
+export type CollaborationStateEvent = {
+  key: string
+  type: "turn_started" | "turn_settled" | "message_appended" | "session_sleeping" | "session_removed"
+  seq?: number
+}
+
 export class SessionManager {
   private live = new Map<string, LiveSession>()
   private reviving = new Map<string, Promise<LiveSession>>()
@@ -118,6 +140,8 @@ export class SessionManager {
     private readonly configAdapters: SessionConfigRegistry | null = null,
     private readonly resolveProviderRuntimes: SessionProviderRuntimeResolver | null = null,
     private readonly resolveApps: SessionAppsResolver | null = null,
+    /** index 变化(create/rename/remove)后通知;main 转发 sessions:changed。 */
+    private readonly onSessionsChanged?: () => void,
   ) {
     this.dir = path.join(userDataDir, "sessions")
     this.chatRoot = path.join(userDataDir, "chat-workspaces")
@@ -166,14 +190,14 @@ export class SessionManager {
     }
   }
 
-  private append(session: LiveSession, event: HarnessEvent) {
+  private append(session: LiveSession, event: HarnessEvent): number {
     // §3.4 规则 1:流已 end(进程退出/会话关闭)后整条 append 跳过——
     // 不递增 seq、不落盘、不广播。若只广播不落盘,内存消耗的 seq 与 revive
     // 时从磁盘重建的 seq 会撞车,renderer 按 seq 去重会误杀回合首个事件;
     // 而 UI 不需要这条记录:退出路径的 notice 已在 end 前落盘并终结 draft,
     // stopLive 路径(disposeExit 后无 notice)由 renderer 回放终界规则
     // (finalizeTrailing)兜底。
-    if (session.logStream.writableEnded) return
+    if (session.logStream.writableEnded) return -1
     const record: LogRecord = {
       seq: ++session.seq,
       at: new Date().toISOString(),
@@ -184,6 +208,20 @@ export class SessionManager {
     if (event.type === "user_message") session.hasUserMessage = true
     session.record.updatedAt = record.at
     this.onEvent(session.record.key, record)
+    // 只有真正"可读消息"才通知 message_appended;thought/tool/metadata/
+    // turn_finished 不算,避免 next_message 被非正文事件误唤醒。
+    if (
+      event.type === "user_message" ||
+      event.type === "agent_message_chunk" ||
+      event.type === "notice"
+    ) {
+      this.notifyCollaboration({
+        key: session.record.key,
+        type: "message_appended",
+        seq: record.seq,
+      })
+    }
+    return record.seq
   }
 
   private async connectSession(record: SessionRecord): Promise<LiveSession> {
@@ -323,6 +361,7 @@ export class SessionManager {
       ),
       disposeExit: () => {},
       cancelRequested: false,
+      activeTurn: null,
     }
     for (const event of pending) this.append(session, event)
 
@@ -402,6 +441,7 @@ export class SessionManager {
   }) {
     const record = this.newRecord(opts)
     this.upsertRecord(record)
+    this.onSessionsChanged?.()
     return { key: record.key, record }
   }
 
@@ -424,6 +464,7 @@ export class SessionManager {
     }
     this.live.set(record.key, session)
     this.upsertRecord(record)
+    this.onSessionsChanged?.()
     this.append(session, { type: "metadata", name: "session_started", data: { record } })
     return { key: record.key, record }
   }
@@ -449,32 +490,191 @@ export class SessionManager {
   }
 
   async prompt(key: string, value: string | PromptInput) {
+    const { completion } = await this.startPrompt(key, value)
+    return completion
+  }
+
+  /** 协作 send 入口:原子占用目标 Session 的 active turn,落原文+origin,
+   * 只把 wireText(envelope)送进 Harness。不等待回合完成;调用方按需
+   * await completion 或用 waitForTurn(acceptedSeq) 等 settled。 */
+  async startPrompt(
+    key: string,
+    value: string | PromptInput,
+    opts: { wireText?: string; origin?: MessageOrigin } = {},
+  ): Promise<{ acceptedSeq: number; completion: Promise<TurnResult> }> {
+    // 每 key 串行化 guard 检查与 activeTurn 占用,保证并发 send 原子地一胜一败。
+    const previous = this.turnChains.get(key) ?? Promise.resolve()
+    const chained = previous.catch(() => {}).then(() => this.beginTurn(key, value, opts))
+    // map 里存 gate(catch 链),cleanup 比较同一个 gate 才能真正删掉。
+    const gate = chained.catch(() => {})
+    this.turnChains.set(key, gate)
+    void gate.then(() => {
+      if (this.turnChains.get(key) === gate) this.turnChains.delete(key)
+    })
+    return chained
+  }
+
+  private async beginTurn(
+    key: string,
+    value: string | PromptInput,
+    opts: { wireText?: string; origin?: MessageOrigin },
+  ): Promise<{ acceptedSeq: number; completion: Promise<TurnResult> }> {
     const session = await this.ensureLive(key)
+    if (session.activeTurn) throw new CollaborationError("session_busy")
     const input = promptInput(value)
     // 入口清零:上一次 cancel 若走 happy path(ACP/Codex 的 prompt 正常
     // resolve)标记会残留,不清零会让同会话下一次真实 error 被误标 cancelled。
     session.cancelRequested = false
-    this.append(session, {
+    const acceptedSeq = this.append(session, {
       type: "user_message",
       text: input.text,
+      ...(opts.origin ? { origin: opts.origin } : {}),
       ...(input.attachments.length ? {
         attachments: input.attachments.map(({ name, kind }) => ({ name, kind })),
       } : {}),
     })
-    try {
-      const result = await session.connection.prompt(input)
-      this.append(session, { type: "turn_finished", reason: result.stopReason, ...(result.usage ? { usage: result.usage } : {}) })
-      this.upsertRecord(session.record)
-      return result
-    } catch (error) {
-      // §3.4 规则 2:错误/中断路径同样要有回合终点。Claude 的 interrupt 与
-      // 出错走同一条 throw 路径,只能靠 cancelRequested 区分;流若已 end
-      // (exitListeners 先于本 catch 触发),append 守卫会整条跳过。
-      this.append(session, {
-        type: "turn_finished",
-        reason: session.cancelRequested ? "cancelled" : "error",
+    // JSONL/UI 落原文;Harness 只收到 wireText(envelope),envelope 不落盘。
+    const wire: PromptInput = {
+      text: opts.wireText ?? input.text,
+      attachments: input.attachments,
+    }
+    const completion = session.connection.prompt(wire)
+      .then((result) => {
+        this.append(session, { type: "turn_finished", reason: result.stopReason, ...(result.usage ? { usage: result.usage } : {}) })
+        this.upsertRecord(session.record)
+        return result
       })
-      throw error
+      .catch((error: unknown) => {
+        // §3.4 规则 2:错误/中断路径同样要有回合终点。Claude 的 interrupt 与
+        // 出错走同一条 throw 路径,只能靠 cancelRequested 区分;流若已 end
+        // (exitListeners 先于本 catch 触发),append 守卫会整条跳过。
+        this.append(session, {
+          type: "turn_finished",
+          reason: session.cancelRequested ? "cancelled" : "error",
+        })
+        throw error
+      })
+      .finally(() => {
+        if (session.activeTurn?.acceptedSeq === acceptedSeq) session.activeTurn = null
+        this.notifyCollaboration({ key, type: "turn_settled", seq: acceptedSeq })
+      })
+    session.activeTurn = { acceptedSeq, completion }
+    this.notifyCollaboration({ key, type: "turn_started", seq: acceptedSeq })
+    return { acceptedSeq, completion }
+  }
+
+  /** 精确等待:只等同一 Session 且 acceptedSeq 匹配的 active turn;seq 不匹配
+   * 或无 active turn 说明目标 turn 已 settled,立即返回。其它 Session 的完成
+   * 绝不能唤醒本等待。超时只终止等待,不 cancel 目标。 */
+  async waitForTurn(key: string, acceptedSeq: number, timeoutMs = 30_000): Promise<void> {
+    const turn = this.live.get(key)?.activeTurn
+    if (!turn || turn.acceptedSeq !== acceptedSeq) return
+    await new Promise<void>((resolve, reject) => {
+      let settled = false
+      const finish = () => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        resolve()
+      }
+      const timer = setTimeout(() => {
+        if (settled) return
+        settled = true
+        reject(new CollaborationError("timeout"))
+      }, timeoutMs)
+      turn.completion.then(finish, finish)
+    })
+  }
+
+  private turnChains = new Map<string, Promise<unknown>>()
+
+  /** test-only:未清理的 turn chain gate 数量,验证链 cleanup。 */
+  pendingTurnChainCount(): number {
+    return this.turnChains.size
+  }
+
+  // ---- 协作状态订阅(事件驱动,无 polling) ----
+
+  async waitForCollaborationState(
+    key: string,
+    accept: (event: CollaborationStateEvent) => boolean,
+    timeoutMs: number,
+    /** 注册完成后同步执行的当前状态探测;消除"检查与订阅"之间的竞态。 */
+    probe?: () => CollaborationStateEvent | undefined,
+  ): Promise<CollaborationStateEvent> {
+    return new Promise((resolve, reject) => {
+      const waiter = {
+        key,
+        accept,
+        resolve: (event: CollaborationStateEvent) => {
+          const index = this.collaborationWaiters.indexOf(waiter)
+          if (index >= 0) this.collaborationWaiters.splice(index, 1)
+          clearTimeout(timer)
+          resolve(event)
+        },
+      }
+      const timer = setTimeout(() => {
+        const index = this.collaborationWaiters.indexOf(waiter)
+        if (index >= 0) this.collaborationWaiters.splice(index, 1)
+        reject(new CollaborationError("timeout"))
+      }, timeoutMs)
+      this.collaborationWaiters.push(waiter)
+      // 先注册,后 probe:probe 命中即同步完成;之后的 notify 走 waiter。
+      const probed = probe?.()
+      if (probed && accept(probed)) waiter.resolve(probed)
+    })
+  }
+
+  private collaborationWaiters: Array<{
+    key: string
+    accept: (event: CollaborationStateEvent) => boolean
+    resolve: (event: CollaborationStateEvent) => void
+  }> = []
+
+  private notifyCollaboration(event: CollaborationStateEvent) {
+    // 换出遍历:waiter.resolve 会从 collaborationWaiters splice 自身,
+    // 直接迭代原数组会跳元素;期间新注册的 waiter 保留在新数组里。
+    const waiters = this.collaborationWaiters
+    this.collaborationWaiters = []
+    const keep: typeof waiters = []
+    for (const waiter of waiters) {
+      if (waiter.key === event.key && waiter.accept(event)) waiter.resolve(event)
+      else keep.push(waiter)
+    }
+    this.collaborationWaiters = [...keep, ...this.collaborationWaiters]
+  }
+
+  /** 当前 active turn 的 acceptedSeq;无运行中 turn 返回 null。 */
+  activeTurnSeq(key: string): number | null {
+    return this.live.get(key)?.activeTurn.acceptedSeq ?? null
+  }
+
+  /** 协作 runtime 投影:sleeping/idle/working。 */
+  runtimeStatus(key: string): SessionRuntimeStatus {
+    const session = this.live.get(key)
+    if (!session) return "sleeping"
+    return session.activeTurn ? "working" : "idle"
+  }
+
+  /** CollaborationSession 投影;不存在返回 null。 */
+  collaborationSession(key: string): CollaborationSession | null {
+    const record = this.listSessions().find((item) => item.key === key)
+    if (!record) return null
+    const live = this.live.get(key)
+    return {
+      id: record.key,
+      title: record.title,
+      workspace: record.scope === "chat"
+        ? { scope: "chat" }
+        : { scope: "project", cwd: record.cwd },
+      // legacy glm 会话恢复时已迁移为 claude-code;投影不得产出非法 HarnessId。
+      harnessId: (record.harnessId === "glm" ? "claude-code" : record.harnessId) as CollaborationSession["harnessId"],
+      providerId: record.providerId ?? "",
+      modelId: record.modelId ?? "",
+      ...(record.effort ? { effort: record.effort } : {}),
+      runtime: this.runtimeStatus(key),
+      updatedAt: record.updatedAt,
+      lastSeq: live?.seq ?? this.readEvents(key).at(-1)?.seq ?? 0,
     }
   }
 
@@ -576,6 +776,7 @@ export class SessionManager {
     const online = this.live.get(key)
     if (online) online.record.title = title
     this.upsertRecord(record)
+    this.onSessionsChanged?.()
     return record
   }
 
@@ -627,6 +828,8 @@ export class SessionManager {
     await this.removeAdapterState(key)
     this.removeChatWorkspace(record)
     this.saveIndex(this.listSessions().filter((item) => item.key !== key))
+    this.onSessionsChanged?.()
+    this.notifyCollaboration({ key, type: "session_removed" })
     try {
       fs.rmSync(this.jsonlPath(key))
     } catch {
@@ -646,7 +849,13 @@ export class SessionManager {
     // 普通关闭:仅 dispose(routes),保留隔离目录供 revive 复用;
     // 空会话(无 user_message)关闭即删档,连同 adapter 状态一起清理。
     await this.stopLive(key)
-    if (empty) await this.removeSession(key)
+    if (empty) {
+      // 空会话直接删档,removed 由 removeSession 统一发出,不重复。
+      await this.removeSession(key)
+    } else {
+      // 普通 close:record 保留,只是 Harness 下线。
+      this.notifyCollaboration({ key, type: "session_sleeping" })
+    }
   }
 
   async disposeAll() {

@@ -12,7 +12,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"
 import { z } from "zod"
 
-import { BROWSER_APP_ID } from "../src/core/apps"
+import { BROWSER_APP_ID, COLLABORATION_APP_ID } from "../src/core/apps"
+import type { SessionListInput } from "../src/core/collaboration"
+import { CollaborationError } from "../src/core/collaboration"
+import type { CollaborationService } from "./collaboration-service"
 import type { HarnessMcpServer } from "./drivers/types"
 import type { AppsStore, RuntimeApp } from "./apps"
 import type { WorkspaceBrowserManager } from "./workspace/browser-manager"
@@ -32,6 +35,7 @@ type RuntimeLease = {
   cwd: string
   token: string
   browserEnabled: boolean
+  collaborationEnabled: boolean
   configuredUserApps: number
   clients: Client[]
   appClients: Map<string, { name: string; client: Client }>
@@ -75,6 +79,8 @@ export class AppRuntimeHost {
     private readonly relayScriptPath: string,
     piExtensionSourcePath: string,
     private readonly revealBrowser: (id: string) => void = () => {},
+    /** 协作服务 getter:main 在 SessionManager 就绪后注入,避免初始化循环。 */
+    private readonly collaboration: () => CollaborationService | null = () => null,
   ) {
     const runtimeDir = path.join(userDataDir, "apps", "runtime")
     fs.mkdirSync(runtimeDir, { recursive: true, mode: 0o700 })
@@ -98,13 +104,15 @@ export class AppRuntimeHost {
     if (!this.server) throw new Error("App Runtime Host 尚未启动")
     await this.disposeLease(sessionKey)
     const browserEnabled = this.apps.isEnabled(BROWSER_APP_ID)
+    const collaborationEnabled = this.apps.isEnabled(COLLABORATION_APP_ID)
     const runtimeApps = this.apps.enabledRuntimeApps()
-    if (!browserEnabled && runtimeApps.length === 0) return null
+    if (!browserEnabled && !collaborationEnabled && runtimeApps.length === 0) return null
     const lease: RuntimeLease = {
       sessionKey,
       cwd,
       token: randomUUID(),
       browserEnabled,
+      collaborationEnabled,
       configuredUserApps: runtimeApps.length,
       clients: [],
       appClients: new Map(),
@@ -183,6 +191,7 @@ export class AppRuntimeHost {
   private makeServer(lease: RuntimeLease): McpServer {
     const server = new McpServer({ name: "bento-apps", version: "0.1.0" })
     if (lease.browserEnabled) this.registerBrowserTools(server)
+    if (lease.collaborationEnabled) this.registerCollaborationTools(server, lease)
     if (lease.configuredUserApps > 0) {
     server.registerTool("apps_status", {
       description: "查看当前会话用户 Apps 的连接状态。",
@@ -270,6 +279,148 @@ export class AppRuntimeHost {
     })
     }
     return server
+  }
+
+  /** 协作 App 稳定工具:caller 只来自 lease.sessionKey,Agent 不能伪造来源。 */
+  private registerCollaborationTools(server: McpServer, lease: RuntimeLease): void {
+    const caller = lease.sessionKey
+    const requireService = (): CollaborationService => {
+      const service = this.collaboration()
+      if (!service) throw new CollaborationError("session_unavailable")
+      return service
+    }
+    const wrap = (handler: (args: Record<string, unknown>) => Promise<unknown>) =>
+      async (args: Record<string, unknown>) => {
+        try {
+          return {
+            content: [{ type: "text", text: JSON.stringify(await handler(args)) }],
+          }
+        } catch (error) {
+          if (error instanceof CollaborationError) {
+            // 只保留稳定 code/message,不泄露堆栈与内部细节。
+            return {
+              content: [{
+                type: "text",
+                text: JSON.stringify({ error: { code: error.code, message: error.message } }),
+              }],
+            }
+          }
+          throw error
+        }
+    }
+
+    server.registerTool("runtime_snapshot", {
+      description: "读取当前 Bento runtime 的协作拓扑快照(workspaces/sessions/ui)。",
+    }, wrap(async () => requireService().snapshot(caller)))
+
+    server.registerTool("workspace_list", {
+      description: "列出当前 runtime 的全部 Workspace(session 归并投影)。",
+    }, wrap(async () => {
+      const snapshot = requireService().snapshot(caller)
+      return { selfSessionId: snapshot.selfSessionId, workspaces: snapshot.workspaces }
+    }))
+
+    server.registerTool("session_list", {
+      description: "列出全部可协作 Session;默认跨项目,含 sleeping。",
+      inputSchema: {
+        scope: z.enum(["chat", "project"]).optional(),
+        cwd: z.string().optional(),
+        runtime: z.enum(["sleeping", "idle", "working"]).optional(),
+      },
+    }, wrap(async (args) => {
+      const input: SessionListInput = {}
+      if (typeof args.scope === "string") input.scope = args.scope as SessionListInput["scope"]
+      if (typeof args.cwd === "string") input.cwd = args.cwd
+      if (typeof args.runtime === "string") input.runtime = args.runtime as SessionListInput["runtime"]
+      return requireService().list(caller, input)
+    }))
+
+    server.registerTool("session_create", {
+      description: "创建新的协作者 Session;默认继承调用者的 harness/provider/model/effort/cwd。",
+      inputSchema: {
+        title: z.string().optional(),
+        prompt: z.string().optional(),
+        scope: z.enum(["chat", "project"]).optional(),
+        cwd: z.string().optional(),
+        harnessId: z.string().optional(),
+        providerId: z.string().optional(),
+        modelId: z.string().optional(),
+        effort: z.enum(["off", "auto", "low", "medium", "high", "max"]).optional(),
+        show: z.boolean().optional(),
+        placement: z.enum(["auto", "right", "down"]).optional(),
+        focus: z.boolean().optional(),
+        wait: z.boolean().optional(),
+        timeoutMs: z.number().int().positive().max(600_000).optional(),
+      },
+    }, wrap(async (args) => requireService().create(caller, args as never)))
+
+    server.registerTool("session_send", {
+      description: "向目标 Session 发送消息;working 目标返回 session_busy,第一版不排队。",
+      inputSchema: {
+        targetSessionId: z.string(),
+        text: z.string(),
+        wait: z.boolean().optional(),
+        timeoutMs: z.number().int().positive().max(600_000).optional(),
+      },
+    }, wrap(async (args) => requireService().send(caller, args as never)))
+
+    server.registerTool("session_read", {
+      description: "读取目标 Session 的脱敏消息历史(afterSeq 游标 + limit)。",
+      inputSchema: {
+        targetSessionId: z.string(),
+        afterSeq: z.number().int().nonnegative().optional(),
+        limit: z.number().int().positive().max(50).optional(),
+        includeTools: z.boolean().optional(),
+      },
+    }, wrap(async (args) => requireService().read(caller, args as never)))
+
+    server.registerTool("ui_state", {
+      description: "读取协作 UI 状态(可见会话/焦点/布局模式/空间邻接)。",
+    }, wrap(async () => requireService().uiState(caller)))
+
+    server.registerTool("ui_neighbor", {
+      description: "把左侧/右侧/上方/下方的空间指代解析成相邻 Session；缺省从调用者自身开始。",
+      inputSchema: {
+        direction: z.enum(["left", "right", "above", "below"]),
+        fromSessionId: z.string().optional(),
+      },
+    }, wrap(async (args) => requireService().uiNeighbor(caller, {
+      direction: args.direction as "left" | "right" | "above" | "below",
+      ...(typeof args.fromSessionId === "string" ? { fromSessionId: args.fromSessionId } : {}),
+    })))
+
+    server.registerTool("ui_show_session", {
+      description: "在主区展示目标 Session 的面板;幂等,默认不抢焦点。",
+      inputSchema: {
+        sessionId: z.string(),
+        placement: z.enum(["auto", "right", "down"]).optional(),
+        focus: z.boolean().optional(),
+      },
+    }, wrap(async (args) => requireService().uiShow(caller, {
+      sessionId: String(args.sessionId),
+      ...(typeof args.placement === "string" ? { placement: args.placement as "auto" | "right" | "down" } : {}),
+      ...(typeof args.focus === "boolean" ? { focus: args.focus } : {}),
+    })))
+
+    server.registerTool("ui_hide_session", {
+      description: "只移除目标 Session 的面板,不关闭或删除 Session。",
+      inputSchema: { sessionId: z.string() },
+    }, wrap(async (args) => requireService().uiHide(caller, { sessionId: String(args.sessionId) })))
+
+    server.registerTool("ui_focus_session", {
+      description: "聚焦目标 Session 的面板。",
+      inputSchema: { sessionId: z.string() },
+    }, wrap(async (args) => requireService().uiFocus(caller, { sessionId: String(args.sessionId) })))
+
+    server.registerTool("session_wait", {
+      description: "等待目标 Session 状态(settled/working/next_message);超时不 cancel 目标。",
+      inputSchema: {
+        targetSessionId: z.string(),
+        until: z.enum(["working", "settled", "next_message"]).optional(),
+        afterSeq: z.number().int().nonnegative().optional(),
+        timeoutMs: z.number().int().positive().max(600_000).optional(),
+      },
+    }, wrap(async (args) => requireService().wait(caller, args as never)))
   }
 
   private registerBrowserTools(server: McpServer): void {

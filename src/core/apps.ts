@@ -30,6 +30,25 @@ export type BentoAppView = {
   connection?: UserAppTransport
 }
 
+export const COLLABORATION_APP_ID = "collaboration"
+
+export const COLLABORATION_APP = {
+  id: COLLABORATION_APP_ID,
+  name: "协作",
+  description: [
+    "让 Agent 发现并协作同一 Bento runtime 内的全部会话：",
+    "可读取 Bento 会话列表与脱敏消息历史；",
+    "可跨项目向其它会话发送消息并等待回复；",
+    "可按调用者配置创建新的 Agent 会话；",
+    "caller 身份由 lease 绑定，Agent 不能伪造来源。",
+  ].join(""),
+  source: "builtin",
+  enabledByDefault: true,
+  transport: "builtin",
+  editable: false,
+  hasSecrets: false,
+} as const
+
 export const BROWSER_APP = {
   id: BROWSER_APP_ID,
   name: "浏览器",

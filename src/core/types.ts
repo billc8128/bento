@@ -3,6 +3,7 @@
  */
 
 import type { HarnessToolDiff, HarnessUsage } from "./events"
+import type { MessageOrigin } from "./collaboration"
 
 export type Effort = "off" | "auto" | "low" | "medium" | "high" | "max"
 export type SessionScope = "chat" | "project"
@@ -57,7 +58,7 @@ export type ToolCall = {
 }
 
 export type Message =
-  | { id: string; role: "user"; text: string; attachments?: { name: string; kind: "image" | "file" }[] }
+  | { id: string; role: "user"; text: string; attachments?: { name: string; kind: "image" | "file" }[]; origin?: MessageOrigin }
   | {
       id: string
       role: "assistant"

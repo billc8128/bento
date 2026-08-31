@@ -20,15 +20,18 @@ import { normalizePromptInput, type Effort, type Message, type PromptInput, type
 
 type LiveSnapshot = {
   version: number
+  initialized: boolean
   sessions: LiveSessionRecord[]
   /** 最新一次受管二进制进度;null = 无进行中的安装 */
   binaryProgress: BinaryProgress | null
 }
 
-let snapshot: LiveSnapshot = { version: 0, sessions: [], binaryProgress: null }
+let snapshot: LiveSnapshot = { version: 0, initialized: false, sessions: [], binaryProgress: null }
 const accs = new Map<string, Accumulator>()
 const loaded = new Set<string>()
 const running = new Set<string>()
+const unreadSessionMessages = new Set<string>()
+let focusedSessionId: string | null = null
 const listeners = new Set<() => void>()
 
 function bump(patch?: Partial<Omit<LiveSnapshot, "version">>) {
@@ -39,11 +42,14 @@ function bump(patch?: Partial<Omit<LiveSnapshot, "version">>) {
 /** 模块加载即初始化(桌面模式);web 模式静默什么都不做 */
 async function init() {
   const bento = window.bento
-  if (!bento) return
+  if (!bento) {
+    snapshot = { ...snapshot, initialized: true }
+    return
+  }
   try {
-    bump({ sessions: await bento.listSessions() })
+    bump({ sessions: await bento.listSessions(), initialized: true })
   } catch {
-    /* ignore */
+    bump({ initialized: true })
   }
   bento.onSessionEvent(({ key, record }) => {
     const acc = accs.get(key)
@@ -71,7 +77,37 @@ async function init() {
       applyRecord(acc, record)
       bump()
     }
-    // 未打开的会话只更新 updatedAt 概念,打开时会整段回放
+    // Session runtime 以 main 的真实事件推进。这样即使 sessions:changed 恰好在
+    // caller working 时刷新，turn_finished 也会把侧栏/Composer 收回 idle。
+    if (record.kind === "event") {
+      const payload = record.payload as HarnessEvent
+      if (payload.type === "user_message") {
+        if (payload.origin?.kind === "session") {
+          running.add(key)
+          if (key !== focusedSessionId) unreadSessionMessages.add(key)
+        }
+        bump({
+          sessions: snapshot.sessions.map((session) =>
+            session.key === key
+              ? { ...session, live: true, runtime: "working", updatedAt: record.at }
+              : session,
+          ),
+        })
+      } else if (payload.type === "turn_finished") {
+        running.delete(key)
+        bump({
+          sessions: snapshot.sessions.map((session) =>
+            session.key === key
+              ? { ...session, live: true, runtime: "idle", updatedAt: record.at }
+              : session,
+          ),
+        })
+      }
+    }
+  })
+  // 协作创建/重命名/删除:index 变化即重拉,Agent 建的 Session 立刻进侧栏
+  bento.onSessionsChanged?.(() => {
+    void refreshSessions()
   })
   bento.onBinaryProgress((progress) => {
     // done/error 都终止进度展示;error 文案经 create 返回的 error 另行
@@ -104,6 +140,26 @@ export function liveMessages(sessionId: string): Message[] {
 
 export function isRunning(sessionId: string): boolean {
   return running.has(sessionId)
+}
+
+export function hasUnreadSessionMessage(sessionId: string): boolean {
+  return unreadSessionMessages.has(sessionId)
+}
+
+export function setFocusedSession(sessionId: string | null): void {
+  focusedSessionId = sessionId
+  if (sessionId && unreadSessionMessages.delete(sessionId)) bump()
+}
+
+/** 重拉 session 列表(桌面模式);sessions:changed / 协作 UI 初始化用 */
+export async function refreshSessions(): Promise<void> {
+  const bento = window.bento
+  if (!bento) return
+  try {
+    bump({ sessions: await bento.listSessions() })
+  } catch {
+    /* ignore */
+  }
 }
 
 /** 打开会话:未加载则整段回放事件日志(与实时共用 applyRecord) */
@@ -240,6 +296,7 @@ export async function removeLive(sessionId: string) {
   accs.delete(sessionId)
   loaded.delete(sessionId)
   running.delete(sessionId)
+  unreadSessionMessages.delete(sessionId)
   bump({ sessions: snapshot.sessions.filter((s) => s.key !== sessionId) })
 }
 

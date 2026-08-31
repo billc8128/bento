@@ -125,6 +125,16 @@ describe("translatePiEvent diff 统计(TRACE_DATA_PLAN §4)", () => {
 })
 
 describe("translatePiEvent 错误终态", () => {
+  it("把扩展错误变成脱敏 notice", () => {
+    expect(
+      translatePiEvent({
+        type: "extension_error",
+        extensionPath: "/tmp/bento-pi-mcp.mjs",
+        error: "request failed for 123e4567-e89b-12d3-a456-426614174000",
+      }),
+    ).toEqual({ type: "notice", text: "Pi 扩展错误:request failed for <redacted>" })
+  })
+
   it("turn_end 的 error 停止原因翻译成 notice,并提取 JSON 里的 message", () => {
     expect(
       translatePiEvent({

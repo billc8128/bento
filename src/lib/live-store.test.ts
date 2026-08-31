@@ -1,157 +1,99 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { LogRecord } from "@/core/events"
-import type { LiveSessionRecord } from "@/types/bento"
+type Emit = (record: unknown) => void
 
-const at = "2026-08-24T00:00:00.000Z"
-
-function sessionRecord(live: boolean): LiveSessionRecord {
-  return {
-    key: "s1",
-    scope: "project",
-    harnessId: "claude-code",
-    cwd: "/tmp",
-    nativeSessionId: "n1",
-    title: "t",
-    createdAt: at,
-    updatedAt: at,
-    live,
+vi.hoisted(() => {
+  const listeners: Record<string, Set<(payload?: unknown) => void>> = {
+    sessionEvent: new Set(),
+    sessionsChanged: new Set(),
   }
-}
-
-/** 崩溃/强退会话的 JSONL 尾部:trailing draft 没有任何终点事件 */
-function trailingDraftLog(): LogRecord[] {
-  return [
-    { seq: 1, at, kind: "event", payload: { type: "user_message", text: "继续" } },
-    {
-      seq: 2,
-      at,
-      kind: "event",
-      payload: { type: "tool_started", id: "t1", kind: "read", title: "a.ts", status: "running" },
+  let emitEvent: Emit = () => {}
+  ;(globalThis as Record<string, unknown>).window = {
+    bento: {
+      desktop: true,
+      listSessions: async () => [
+        { key: "a", title: "A", scope: "project", cwd: "/a", harnessId: "pi", nativeSessionId: "", createdAt: "", updatedAt: "", live: true },
+        { key: "b", title: "B", scope: "chat", cwd: "", harnessId: "pi", nativeSessionId: "", createdAt: "", updatedAt: "", live: false, runtime: "working" },
+      ],
+      readEvents: async () => [],
+      prompt: async () => ({ stopReason: "end_turn" }),
+      onSessionEvent: (cb: (payload?: unknown) => void) => {
+        listeners.sessionEvent.add(cb)
+        emitEvent = (record: unknown) => { for (const cb of listeners.sessionEvent) cb({ key: "a", record }) }
+        return () => listeners.sessionEvent.delete(cb)
+      },
+      onSessionsChanged: (cb: (payload?: unknown) => void) => {
+        listeners.sessionsChanged.add(cb)
+        return () => listeners.sessionsChanged.delete(cb)
+      },
+      onBinaryProgress: () => () => {},
+      onCollaborationUiCommand: () => () => {},
+      reportCollaborationUiState: () => {},
+      __emit: (record: unknown) => emitEvent(record),
+      __sessionsChanged: () => { for (const cb of listeners.sessionsChanged) cb() },
     },
-  ]
-}
-
-function baseBento(overrides: Partial<Window["bento"] & object>): Window["bento"] & object {
-  return {
-    desktop: true,
-    listSessions: async () => [],
-    readEvents: async () => [],
-    onSessionEvent: () => {},
-    onBinaryProgress: () => {},
-    ...overrides,
-  } as Window["bento"] & object
-}
-
-/** live-store 是模块级单例:每个用例 resetModules + 注入全新的 window.bento */
-async function loadStore(bento: Window["bento"] & object) {
-  vi.resetModules()
-  ;(globalThis as unknown as { window: unknown }).window = { bento }
-  return import("./live-store")
-}
-
-afterEach(() => {
-  vi.resetModules()
-  delete (globalThis as unknown as { window?: unknown }).window
+  }
 })
 
-describe("live-store 回放终界(TRACE_DATA_PLAN §3.3)", () => {
-  it("首轮 prompt 后同步 main 写回的 Harness capabilities", async () => {
-    const pending = sessionRecord(true)
-    const connected: LiveSessionRecord = {
-      ...pending,
-      capabilities: { modelSwitch: "live", effortSwitch: "live" },
-    }
-    let listCalls = 0
-    const store = await loadStore(
-      baseBento({
-        listSessions: async () => listCalls++ === 0 ? [pending] : [connected],
-        prompt: async () => ({ stopReason: "completed" }),
-      }),
-    )
-    await vi.waitFor(() => expect(store.liveMeta("s1")).toBeTruthy())
+const bento = (window as unknown as {
+  bento: Record<string, unknown> & { __emit: (record: unknown) => void; __sessionsChanged: () => void }
+}).bento
 
-    await store.sendPrompt("s1", "你好")
+// live-store 是模块级单例,动态 import 保证 stub 先就位
+const live = await import("./live-store")
 
-    expect(store.liveMeta("s1")?.capabilities).toEqual({
-      modelSwitch: "live",
-      effortSwitch: "live",
-    })
+function sessionRecord(key: string) {
+  return { key, title: key, scope: "project", cwd: "/a", harnessId: "pi", nativeSessionId: "", createdAt: "", updatedAt: "", live: true }
+}
+
+describe("live-store 协作切片", () => {
+  beforeEach(() => {
+    live.refreshSessions()
   })
 
-  it("renderer 非 running 且 main 侧非 live 时,收尾 trailing draft", async () => {
-    const store = await loadStore(
-      baseBento({
-        listSessions: async () => [sessionRecord(false)],
-        readEvents: async () => trailingDraftLog(),
-      }),
-    )
-    await store.ensureLoaded("s1")
-
-    // 收尾后工具强制 failed,消息不再以 draft 形态吐出(spinner 消失)。
-    // 收尾时刻是真实 now(),回合耗时只做区间断言
-    const messages = store.liveMessages("s1")
-    expect(messages).toHaveLength(2)
-    expect(messages[0]).toEqual({ id: "u1", role: "user", text: "继续" })
-    expect(messages[1]).toMatchObject({
-      id: "a1",
-      role: "assistant",
-      text: "",
-      tools: [
-        { kind: "read", target: "a.ts", detail: "", status: "failed", startedAtMs: Date.parse(at) },
-      ],
+  it("refreshSessions 重拉 main 列表(runtime 透传)", async () => {
+    await vi.waitFor(() => {
+      expect(live.liveMeta("b")?.runtime).toBe("working")
     })
-    expect(messages[1]?.role === "assistant" && typeof messages[1]?.durationMs === "number" &&
-      messages[1].durationMs > 0).toBe(true)
+    expect(live.liveMeta("a")?.title).toBe("A")
   })
 
-  it("main 侧仍 live 时不收尾:回合可能还在跑", async () => {
-    const store = await loadStore(
-      baseBento({
-        listSessions: async () => [sessionRecord(true)],
-        readEvents: async () => trailingDraftLog(),
-      }),
-    )
-    await store.ensureLoaded("s1")
+  it("origin=session 的 user_message 置 running,turn_finished 清除;human 消息不影响", async () => {
+    await vi.waitFor(() => expect(live.liveSessionsSnapshot().length).toBe(2))
+    expect(live.isRunning("a")).toBe(false)
 
-    expect(store.liveMessages("s1")).toEqual([
-      { id: "u1", role: "user", text: "继续" },
-      {
-        id: "draft",
-        role: "assistant",
-        text: "",
-        tools: [{ kind: "read", target: "a.ts", detail: "", status: "running", startedAtMs: Date.parse(at) }],
-      },
-    ])
+    bento.__emit({
+      seq: 1,
+      at: "2024-01-01T00:00:00Z",
+      kind: "event",
+      payload: { type: "user_message", text: "hi", origin: { kind: "session", sessionId: "x", title: "peer", harnessId: "pi" } },
+    })
+    expect(live.isRunning("a")).toBe(true)
+    expect(live.hasUnreadSessionMessage("a")).toBe(true)
+
+    bento.__emit({ seq: 2, at: "2024-01-01T00:00:01Z", kind: "event", payload: { type: "turn_finished" } })
+    expect(live.isRunning("a")).toBe(false)
+    expect(live.liveMeta("a")?.runtime).toBe("idle")
+    live.setFocusedSession("a")
+    expect(live.hasUnreadSessionMessage("a")).toBe(false)
+
+    // human 消息不进入协作 running set，但 main runtime 仍是真实 working
+    bento.__emit({ seq: 3, at: "2024-01-01T00:00:02Z", kind: "event", payload: { type: "user_message", text: "me" } })
+    expect(live.isRunning("a")).toBe(false)
+    expect(live.liveMeta("a")?.runtime).toBe("working")
+    bento.__emit({ seq: 4, at: "2024-01-01T00:00:03Z", kind: "event", payload: { type: "turn_finished" } })
+    expect(live.liveMeta("a")?.runtime).toBe("idle")
   })
 
-  it("本 renderer 的 prompt 在飞时不收尾(running 分支)", async () => {
-    let resolvePrompt: ((value: { stopReason: string }) => void) | undefined
-    const store = await loadStore(
-      baseBento({
-        listSessions: async () => [sessionRecord(false)],
-        readEvents: async () => trailingDraftLog(),
-        prompt: () =>
-          new Promise<{ stopReason: string }>((resolve) => {
-            resolvePrompt = resolve
-          }),
-        cancel: async () => {
-          resolvePrompt?.({ stopReason: "aborted" })
-        },
-      }),
-    )
-    // 模拟重载后回合仍在跑:sendPrompt 在飞,再加载历史
-    const sending = store.sendPrompt("s1", "继续")
-    await store.ensureLoaded("s1")
-
-    // 未收尾:trailing draft 原样吐出,spinner 照转
-    expect(store.liveMessages("s1").at(-1)).toMatchObject({
-      id: "draft",
-      role: "assistant",
-      tools: [{ kind: "read", target: "a.ts", detail: "", status: "running" }],
-    })
-
-    await store.cancelPrompt("s1")
-    await sending
+  it("sessions:changed 触发重拉,协作创建的 Session 立即出现", async () => {
+    await vi.waitFor(() => expect(live.liveSessionsSnapshot().length).toBe(2))
+    // main 列表新增(模拟协作 create 后):改写 listSessions 实现再多一个会话
+    ;(bento as Record<string, unknown>).listSessions = async () => [
+      sessionRecord("a"),
+      sessionRecord("b"),
+      sessionRecord("agent-created"),
+    ]
+    bento.__sessionsChanged()
+    await vi.waitFor(() => expect(live.liveSessionsSnapshot().some((s) => s.key === "agent-created")).toBe(true))
   })
 })

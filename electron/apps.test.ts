@@ -35,16 +35,17 @@ describe("AppsStore", () => {
       transport: { type: "stdio", command: "npx", args: ["-y", "github-mcp"] },
       env: { GITHUB_TOKEN: "secret-token" },
     })
-    expect(store.list()).toMatchObject([
-      { id: "browser", source: "builtin", enabled: true },
-      {
-        id: "user-github",
-        source: "user",
-        transport: "stdio",
-        hasSecrets: true,
-        connection: { type: "stdio", command: "npx", args: ["-y", "github-mcp"] },
-      },
-    ])
+    const listed = store.list()
+    expect(listed).toHaveLength(3) // browser + collaboration + user
+    expect(listed[0]).toMatchObject({ id: "browser", source: "builtin", enabled: true })
+    expect(listed[1]).toMatchObject({ id: "collaboration", source: "builtin", enabled: true, editable: false })
+    expect(listed[2]).toMatchObject({
+      id: "user-github",
+      source: "user",
+      transport: "stdio",
+      hasSecrets: true,
+      connection: { type: "stdio", command: "npx", args: ["-y", "github-mcp"] },
+    })
     expect(store.enabledRuntimeApps()[0]).toMatchObject({
       id: "user-github",
       env: { GITHUB_TOKEN: "secret-token" },
@@ -54,7 +55,7 @@ describe("AppsStore", () => {
     store.setEnabled("user-github", false)
     expect(store.enabledRuntimeApps()).toEqual([])
     store.remove("user-github")
-    expect(store.list()).toHaveLength(1)
+    expect(store.list()).toHaveLength(2) // browser + collaboration
     expect(changed).toHaveBeenCalled()
   })
 
@@ -83,7 +84,7 @@ describe("AppsStore", () => {
       name: "GitHub MCP",
       transport: { type: "stdio", command: "bunx", args: ["github-mcp"] },
     })
-    expect(store.list()[1]).toMatchObject({
+    expect(store.list().find((app) => app.id === "user-github")).toMatchObject({
       id: "user-github",
       name: "GitHub MCP",
       connection: { type: "stdio", command: "bunx", args: ["github-mcp"] },
@@ -97,7 +98,7 @@ describe("AppsStore", () => {
       transport: { type: "http", url: "https://example.com/mcp" },
       clearSecrets: true,
     })
-    expect(store.list()[1]).toMatchObject({ transport: "http", hasSecrets: false })
+    expect(store.list().find((app) => app.id === "user-github")).toMatchObject({ transport: "http", hasSecrets: false })
     expect(store.enabledRuntimeApps()[0]).toMatchObject({ env: {}, headers: {} })
   })
 

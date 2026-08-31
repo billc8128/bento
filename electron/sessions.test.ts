@@ -3,8 +3,9 @@ import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { LogRecord } from "../src/core/events"
+import type { HarnessEvent, LogRecord } from "../src/core/events"
 import type { PromptInput } from "../src/core/types"
+import type { MessageOrigin } from "../src/core/collaboration"
 import type { HarnessDriver, HarnessStartOptions } from "./drivers/types"
 import { SessionManager } from "./sessions"
 
@@ -848,5 +849,211 @@ describe("SessionManager 错误/中断路径(TRACE_DATA_PLAN §3.4 P0-1)", () =>
       expect(lastTurnFinished(manager.readEvents(key))).toMatchObject({ reason: "error" })
     })
     manager.disposeAll()
+  })
+})
+
+type Deferred = { resolve: (value: { stopReason?: string }) => void; reject: (e: unknown) => void }
+
+function deferredDriver() {
+  const received: Array<string | PromptInput> = []
+  const deferreds: Deferred[] = []
+  const driver: HarnessDriver = {
+    id: "kimi",
+    async start() {
+      return {
+        nativeSessionId: "collab-native",
+        capabilities: { modelSwitch: "none", effortSwitch: "none" },
+        prompt: async (input) => {
+          received.push(input)
+          return new Promise((resolve, reject) => deferreds.push({ resolve, reject }))
+        },
+        cancel: async () => {},
+        close: () => {},
+        onExit: () => () => {},
+      }
+    },
+  }
+  return { driver, received, deferreds }
+}
+
+function collabManager(dir: string, driver: HarnessDriver) {
+  const emitted: LogRecord[] = []
+  const manager = new SessionManager(dir, (_key, record) => emitted.push(record), () => driver)
+  return { manager, emitted }
+}
+
+describe("SessionManager 协作切片(active turn / origin / wait)", () => {
+  it("startPrompt 落原文+origin,connection 只收 wireText;现有 prompt 行为不变", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-collab-turn-"))
+    const { driver, received, deferreds } = deferredDriver()
+    const { manager, emitted } = collabManager(tempDir, driver)
+    const { key } = await manager.createSession({
+      harnessId: "kimi",
+      cwd: tempDir,
+      providerId: "native-kimi",
+      modelId: "model",
+    })
+
+    const origin: MessageOrigin = { kind: "session", sessionId: "caller-1", title: "caller", harnessId: "pi" }
+    const { acceptedSeq, completion } = await manager.startPrompt(key, "原文消息", {
+      wireText: "[Bento message from \"caller\"]\n\n原文消息",
+      origin,
+    })
+    expect(received).toEqual([{ text: "[Bento message from \"caller\"]\n\n原文消息", attachments: [] }])
+    // JSONL 存原文+origin,envelope 不落盘
+    const userRecord = emitted.find(
+      (record) => record.kind === "event" && (record.payload as HarnessEvent).type === "user_message",
+    )
+    expect(userRecord).toMatchObject({
+      seq: acceptedSeq,
+      payload: {
+        type: "user_message",
+        text: "原文消息",
+        origin,
+      },
+    })
+    expect(JSON.stringify(userRecord)).not.toContain("[Bento message from")
+
+    expect(manager.runtimeStatus(key)).toBe("working")
+    deferreds[0].resolve({ stopReason: "end_turn" })
+    await expect(completion).resolves.toMatchObject({ stopReason: "end_turn" })
+    expect(manager.runtimeStatus(key)).toBe("idle")
+
+    // 现有 prompt API:无 origin 时事件不带 origin 字段,等待 completion
+    const plainPromise = manager.prompt(key, "人类输入")
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    deferreds[1].resolve({ stopReason: "end_turn" })
+    const plain = await plainPromise
+    expect(plain).toMatchObject({ stopReason: "end_turn" })
+    const lastUser = [...emitted].reverse().find(
+      (record) => record.kind === "event" && (record.payload as HarnessEvent).type === "user_message",
+    )!
+    expect(lastUser.payload).toEqual({ type: "user_message", text: "人类输入" })
+  })
+
+  it("busy guard:并发第二笔 session_busy;上一回合落定后可再提交", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-collab-busy-"))
+    const { driver, deferreds } = deferredDriver()
+    const { manager } = collabManager(tempDir, driver)
+    const { key } = await manager.createSession({
+      harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "model",
+    })
+
+    const first = await manager.startPrompt(key, "第一笔")
+    await expect(manager.startPrompt(key, "第二笔")).rejects.toMatchObject({
+      name: "CollaborationError",
+      code: "session_busy",
+    })
+    deferreds[0].resolve({ stopReason: "end_turn" })
+    await first.completion
+    const second = await manager.startPrompt(key, "第二笔")
+    deferreds[1].resolve({ stopReason: "end_turn" })
+    await second.completion
+  })
+
+  it("wait=false 早返回;后台 rejection 被 completion 承接,waitForTurn 超时不 cancel", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-collab-wait-"))
+    const { driver, deferreds } = deferredDriver()
+    const { manager, emitted } = collabManager(tempDir, driver)
+    const { key } = await manager.createSession({
+      harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "model",
+    })
+
+    const { acceptedSeq, completion } = await manager.startPrompt(key, "后台任务")
+    // startPrompt 已返回,turn 仍在跑
+    expect(deferreds).toHaveLength(1)
+    const settled = manager.waitForTurn(key, acceptedSeq, 20)
+    await expect(settled).rejects.toMatchObject({ code: "timeout" })
+    expect(deferreds).toHaveLength(1) // 超时不 cancel 目标
+    deferreds[0].reject(new Error("harness boom"))
+    await expect(completion).rejects.toThrow("harness boom")
+    // 错误路径仍有 turn_finished 回合终点
+    expect(emitted.some(
+      (record) => record.kind === "event" && (record.payload as HarnessEvent).type === "turn_finished",
+    )).toBe(true)
+    expect(manager.runtimeStatus(key)).toBe("idle")
+    // 落定后 waitForTurn 立即 resolve
+    await expect(manager.waitForTurn(key, acceptedSeq, 100)).resolves.toBeUndefined()
+  })
+
+  it("runtime 投影与 collaborationSession:close 后 sleeping,跨投影保留 scope/cwd", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-collab-proj-"))
+    const { driver, deferreds } = deferredDriver()
+    const { manager } = collabManager(tempDir, driver)
+    const { key } = await manager.createSession({
+      harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "model", title: "peer",
+    })
+    expect(manager.collaborationSession(key)).toMatchObject({
+      id: key,
+      title: "peer",
+      workspace: { scope: "project", cwd: tempDir },
+      harnessId: "kimi",
+      providerId: "native-kimi",
+      runtime: "idle",
+    })
+    const turn = await manager.startPrompt(key, "hi")
+    expect(manager.runtimeStatus(key)).toBe("working")
+    deferreds[0].resolve({})
+    await turn.completion
+    await manager.closeSession(key)
+    expect(manager.runtimeStatus(key)).toBe("sleeping")
+    expect(manager.collaborationSession(key)).toMatchObject({ runtime: "sleeping", id: key })
+    expect(manager.collaborationSession("missing")).toBeNull()
+  })
+})
+
+describe("SessionManager waitForTurn 精确匹配", () => {
+  it("等待 B 的 acceptedSeq 时,A 的完成不能提前唤醒", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-collab-precise-"))
+    const { driver, deferreds } = deferredDriver()
+    const { manager } = collabManager(tempDir, driver)
+    const createdA = await manager.createSession({
+      harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "model", title: "A",
+    })
+    const createdB = await manager.createSession({
+      harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "model", title: "B",
+    })
+    const turnA = await manager.startPrompt(createdA.key, "A 的回合")
+    const turnB = await manager.startPrompt(createdB.key, "B 的回合")
+
+    let resolved = false
+    const waitB = manager.waitForTurn(createdB.key, turnB.acceptedSeq, 2_000)
+      .then(() => { resolved = true })
+
+    // A 先完成:B 的等待绝不能被唤醒
+    deferreds[0].resolve({ stopReason: "end_turn" })
+    await turnA.completion
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(resolved).toBe(false)
+
+    deferreds[1].resolve({ stopReason: "end_turn", usage: { cost: 0.01 } })
+    await waitB
+    expect(resolved).toBe(true)
+    // TurnResult 保留 usage
+    await expect(turnB.completion).resolves.toMatchObject({ usage: { cost: 0.01 } })
+  })
+
+  it("旧 acceptedSeq 在新 turn 运行中立即视为已 settled,不等待新 turn", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-collab-stale-"))
+    const { driver, deferreds } = deferredDriver()
+    const { manager } = collabManager(tempDir, driver)
+    const { key } = await manager.createSession({
+      harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "model",
+    })
+
+    const first = await manager.startPrompt(key, "第一回合")
+    deferreds[0].resolve({ stopReason: "end_turn" })
+    await first.completion
+
+    const second = await manager.startPrompt(key, "第二回合")
+    expect(deferreds[1]).toBeDefined()
+
+    const started = Date.now()
+    await manager.waitForTurn(key, first.acceptedSeq, 5_000)
+    expect(Date.now() - started).toBeLessThan(100)
+    // 新 turn 仍未被打扰
+    expect(manager.runtimeStatus(key)).toBe("working")
+    deferreds[1].resolve({})
+    await second.completion
   })
 })

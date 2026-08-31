@@ -174,6 +174,24 @@ const api = {
     return () => ipcRenderer.removeListener("session:event", handler)
   },
 
+  /** index 变化(协作创建/重命名/删除)后触发;renderer 重拉 session:list */
+  onSessionsChanged: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on("sessions:changed", handler)
+    return () => ipcRenderer.removeListener("sessions:changed", handler)
+  },
+
+  /** 协作 UI 命令(main → renderer),单主窗口 */
+  onCollaborationUiCommand: (cb: (command: unknown) => void) => {
+    const handler = (_ev: unknown, command: unknown) => cb(command)
+    ipcRenderer.on("collaboration:ui-command", handler)
+    return () => ipcRenderer.removeListener("collaboration:ui-command", handler)
+  },
+
+  /** renderer 把布局 presence 上报 main(脱敏,只有 sessionId) */
+  reportCollaborationUiState: (presence: unknown) =>
+    ipcRenderer.send("collaboration:ui-state", presence),
+
   /** main 侧 custom provider CRUD 后推送;renderer store 收到即作废重取 */
   onProvidersChanged: (cb: () => void) => {
     const handler = () => cb()

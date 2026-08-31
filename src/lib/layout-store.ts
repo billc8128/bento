@@ -10,6 +10,8 @@
 import { useSyncExternalStore } from "react"
 import type { AddPanelOptions, DockviewApi } from "dockview"
 
+import { deriveUiAdjacency } from "@/core/collaboration"
+import type { UiSessionAdjacency, UiSessionRect } from "@/core/collaboration"
 import { liveMeta } from "@/lib/live-store"
 
 type PanelPosition = AddPanelOptions["position"]
@@ -23,6 +25,8 @@ export type LayoutSnapshot = {
   focusedSessionId: string | null
   /** 焦点在应用面板(单例,见 openAppsView) */
   appsFocused: boolean
+  /** 实际可见 Session 的瞬时空间邻接关系。 */
+  adjacency: UiSessionAdjacency[]
   mode: LayoutMode
 }
 
@@ -42,6 +46,7 @@ let snapshot: LayoutSnapshot = {
   openSessionIds: [],
   focusedSessionId: null,
   appsFocused: false,
+  adjacency: [],
   mode: loadMode(),
 }
 
@@ -112,6 +117,7 @@ export function refresh() {
   const open: string[] = []
   let focused: string | null = null
   let appsFocused = false
+  let adjacency: UiSessionAdjacency[] = []
   if (api) {
     applyHeaderMode()
     for (const p of api.panels) {
@@ -120,15 +126,17 @@ export function refresh() {
     }
     focused = api.activePanel ? sessionIdOf(api.activePanel.id) : null
     appsFocused = api.activePanel?.id === APPS_PANEL_ID
+    adjacency = currentUiAdjacency()
     schedulePersist()
   }
   // 无变化不通知,避免无谓重渲染
   if (
     open.join(",") !== snapshot.openSessionIds.join(",") ||
     focused !== snapshot.focusedSessionId ||
-    appsFocused !== snapshot.appsFocused
+    appsFocused !== snapshot.appsFocused ||
+    JSON.stringify(adjacency) !== JSON.stringify(snapshot.adjacency)
   ) {
-    snapshot = { ...snapshot, openSessionIds: open, focusedSessionId: focused, appsFocused }
+    snapshot = { ...snapshot, openSessionIds: open, focusedSessionId: focused, appsFocused, adjacency }
     emit()
   }
 }
@@ -138,12 +146,13 @@ export function titleOf(sessionId: string): string {
   return liveMeta(sessionId)?.title ?? sessionId
 }
 
-function addChatPanel(sessionId: string, position?: PanelPosition) {
+function addChatPanel(sessionId: string, position?: PanelPosition, inactive?: boolean) {
   api!.addPanel({
     id: panelIdOf(sessionId),
     component: "view",
     title: titleOf(sessionId),
     params: { viewId: "core.chat", instanceState: { sessionId } },
+    ...(inactive ? { inactive: true } : {}),
     ...(position ? { position } : {}),
   })
 }
@@ -253,6 +262,102 @@ export function resetLayout() {
 let resetRequested: (() => void) | null = null
 export function onResetRequest(fn: (() => void) | null) {
   resetRequested = fn
+}
+
+// ---- 协作 UI(agent 面向的布局操作;仍只接 sessionId)----
+
+/** auto 放置:容器足够宽且横向占优时向右分栏,否则向下(窄屏/纵向)。 */
+export function choosePlacement(width: number, height: number): "right" | "down" {
+  return width >= 680 && width >= height ? "right" : "down"
+}
+
+function chatPanelIds(): string[] {
+  return snapshot.openSessionIds.map((id) => panelIdOf(id))
+}
+
+/**
+ * agent 面向的 show。幂等:已有面板时只在 focus 时激活。
+ * anchor 优先 caller session 的面板;auto 依容器尺寸选 right/down;
+ * focus=false 直接 inactive 添加,绝不抢焦点。
+ */
+export function agentShowSession(
+  sessionId: string,
+  options: { anchorSessionId?: string; placement?: "auto" | "right" | "down"; focus?: boolean } = {},
+) {
+  if (!api) return
+  const existing = api.getPanel(panelIdOf(sessionId))
+  if (existing) {
+    if (options.focus) existing.api.setActive()
+    refresh()
+    return
+  }
+  const previousActive = api.activePanel
+  const anchor = (options.anchorSessionId && api.getPanel(panelIdOf(options.anchorSessionId))) ||
+    (previousActive && sessionIdOf(previousActive.id) !== null ? previousActive : null)
+
+  let position: PanelPosition | undefined
+  if (anchor) {
+    // "auto" 表示由容器尺寸决定:right/down 显式指定则照用
+    const placement = !options.placement || options.placement === "auto"
+      ? choosePlacement(api.width, api.height)
+      : options.placement
+    position = { direction: placement === "right" ? "right" : "below", referencePanel: anchor.id }
+  }
+  // focus=false 直接以 inactive 添加,不抢焦点也不做"抢了再还"
+  addChatPanel(sessionId, position, !options.focus)
+  refresh()
+}
+
+/** agent 面向的 hide:只移除面板,不关 Session;最后一个聊天面板保留(产品兜底,不白屏)。 */
+export function agentHideSession(sessionId: string) {
+  if (!api) return
+  const panel = api.getPanel(panelIdOf(sessionId))
+  if (!panel) return
+  if (chatPanelIds().length <= 1) return
+  api.removePanel(panel)
+  refresh()
+}
+
+/** agent 面向的 focus。 */
+export function agentFocusSession(sessionId: string) {
+  if (!api) return
+  api.getPanel(panelIdOf(sessionId))?.api.setActive()
+  refresh()
+}
+
+/** 非 React 订阅(collaboration-ui 上报 presence 用) */
+export function subscribeLayoutChange(cb: () => void): () => void {
+  listeners.add(cb)
+  return () => listeners.delete(cb)
+}
+
+/** 非 React 场景的当前快照(collaboration-ui presence 上报用) */
+export function currentLayoutSnapshot(): LayoutSnapshot {
+  return snapshot
+}
+
+/**
+ * 从 Dockview 当前真正可见的聊天内容区域计算 Session 邻接。
+ * 同组未激活的标签不会进入投影；Dockview 的 group DOM 只在 renderer 内读取，
+ * main/Agent 只会看到 sessionId 之间的关系。
+ */
+export function currentUiAdjacency(): UiSessionAdjacency[] {
+  if (!api) return []
+  const rects: UiSessionRect[] = []
+  for (const panel of api.panels) {
+    const sessionId = sessionIdOf(panel.id)
+    if (!sessionId || !panel.api.isVisible) continue
+    const rect = panel.group.element.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) continue
+    rects.push({
+      sessionId,
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+    })
+  }
+  return deriveUiAdjacency(rects)
 }
 
 export function useLayout(): LayoutSnapshot {

@@ -25,6 +25,7 @@ import { DockWorkspace } from "@/views/DockWorkspace"
 import { getView } from "@/views/registry"
 import { liveMeta, useLive } from "@/lib/live-store"
 import { useLayout } from "@/lib/layout-store"
+import { initCollaborationUi } from "@/lib/collaboration-ui"
 import { requestNewSession } from "@/lib/new-session-store"
 import { useSettingsPage } from "@/lib/settings-store"
 import {
@@ -64,6 +65,8 @@ export default function App() {
   const [style, setStyleState] = useState<StyleId>(loadStyle)
   const [dark, setDark] = useState<boolean>(() => loadDark(loadStyle()))
   const compact = useIsMobile()
+  // 协作 UI 桥:main→renderer 的 show/hide/focus 命令 + presence 上报(Phase 2)
+  useEffect(() => initCollaborationUi(), [])
   const workspaceToolsOpen = useWorkspaceToolsOpen()
   const workspaceToolsStarted = useWorkspaceToolsStarted()
   const browserRevealId = useWorkspaceBrowserReveal()

@@ -557,3 +557,34 @@ describe("plan 与 usage(TRACE_DATA_PLAN §7 P4)", () => {
     expect(notice).not.toHaveProperty("usage")
   })
 })
+
+describe("user_message origin(协作来源)", () => {
+  it("带 origin 的 user_message 回放后 origin 不丢", () => {
+    const acc = createAccumulator()
+    applyRecord(acc, {
+      seq: 1,
+      at,
+      kind: "event",
+      payload: {
+        type: "user_message",
+        text: "帮我 review",
+        origin: { kind: "session", sessionId: "s-123456789", title: "reviewer", harnessId: "pi" },
+      },
+    })
+    expect(messagesOf(acc)).toEqual([{
+      id: "u1",
+      role: "user",
+      text: "帮我 review",
+      origin: { kind: "session", sessionId: "s-123456789", title: "reviewer", harnessId: "pi" },
+    }])
+  })
+
+  it("无 origin 的事件与 v0.3 legacy user_message 均不带 origin(按 human 处理)", () => {
+    const acc = createAccumulator()
+    applyRecord(acc, { seq: 1, at, kind: "event", payload: { type: "user_message", text: "人类消息" } })
+    applyRecord(acc, { seq: 2, at, kind: "user_message", payload: { text: "legacy 消息" } })
+    const messages = messagesOf(acc)
+    expect(messages[0]).toEqual({ id: "u1", role: "user", text: "人类消息" })
+    expect(messages[1]).toEqual({ id: "u2", role: "user", text: "legacy 消息" })
+  })
+})

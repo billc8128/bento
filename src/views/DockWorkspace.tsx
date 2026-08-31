@@ -131,19 +131,20 @@ function isSessionDrag(e: DragEvent | PointerEvent): e is DragEvent {
 
 export function DockWorkspace() {
   const { mode, appsFocused } = useLayout()
-  const { sessions: liveSessions } = useLive()
+  const { initialized, sessions: liveSessions } = useLive()
   const newSession = useNewSession()
   const apiRef = useRef<DockviewApi | null>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const managed = mode === "managed"
 
-  // 首屏竞态:布局初始化可能早于会话列表加载(空布局)。
-  // 会话到达且工作区仍无面板时,自动打开最近一个;用户已开过面板则不抢
+  // Session index 真正加载后再清理恢复布局。不能在初始空数组阶段 prune，
+  // 否则会把所有持久化 Panel 误判为已删除，再退化成单 Panel。
   useEffect(() => {
     const api = apiRef.current
-    if (!api || api.panels.length > 0 || liveSessions.length === 0) return
-    openSession(liveSessions[0].key)
-  }, [liveSessions])
+    if (!api || !initialized) return
+    pruneStalePanels(api)
+    if (api.panels.length === 0 && liveSessions.length > 0) openSession(liveSessions[0].key)
+  }, [initialized, liveSessions])
 
 
   function onReady(event: DockviewReadyEvent) {
@@ -155,12 +156,11 @@ export function DockWorkspace() {
     if (saved) {
       try {
         api.fromJSON(saved)
-        pruneStalePanels(api)
       } catch {
         api.clear()
-        defaultLayout(api)
+        if (initialized) defaultLayout(api)
       }
-    } else {
+    } else if (initialized) {
       defaultLayout(api)
     }
 

@@ -1,5 +1,7 @@
 /** 可持久化的统一会话事件。Driver 必须先把 vendor 事件翻译到这里。 */
 
+import type { MessageOrigin } from "./collaboration"
+
 export type HarnessToolKind = "read" | "edit" | "bash" | "search"
 export type HarnessToolStatus = "running" | "completed" | "failed"
 export const TOOL_OUTPUT_LIMIT = 8 * 1024
@@ -26,6 +28,8 @@ export type HarnessEvent =
       type: "user_message"
       text: string
       attachments?: Array<{ name: string; kind: "image" | "file" }>
+      /** 跨 Session 消息的可信来源;缺省按 human 处理(历史兼容)。 */
+      origin?: MessageOrigin
     }
   | { type: "agent_message_chunk"; text: string }
   | { type: "agent_thought_chunk"; text: string }

@@ -83,7 +83,7 @@ import {
   toggleFolderPin,
   useFolderPreferences,
 } from "@/lib/folder-preferences"
-import { isRunning, removeLive, renameLive, useLive } from "@/lib/live-store"
+import { hasUnreadSessionMessage, isRunning, liveMeta, removeLive, renameLive, useLive } from "@/lib/live-store"
 import { togglePin, usePinnedSessions } from "@/lib/pinned-sessions"
 import { toggleSidebarPanel } from "@/lib/sidebar-toggle"
 import { openSettings } from "@/lib/settings-store"
@@ -194,7 +194,9 @@ export function AppSidebar() {
     // 起始页覆盖层打开时,它是唯一的"当前位置":压掉会话行的焦点高亮,
     // 否则点新对话后与底层焦点会话双高亮(真实事故)
     const active = key === focusedSessionId && !newSessionOpen
-    const running = isRunning(key)
+    // 本地发送集合之外,main 侧 runtime working(协作唤醒)同样算 running
+    const running = isRunning(key) || liveMeta(key)?.runtime === "working"
+    const unread = hasUnreadSessionMessage(key)
     const isPinned = pinned.has(key)
     if (renaming === key) {
       return (
@@ -243,6 +245,9 @@ export function AppSidebar() {
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-brand opacity-70 motion-reduce:animate-none" />
               <span className="relative inline-flex size-1.5 rounded-full bg-brand" />
             </span>
+          )}
+          {!running && unread && (
+            <span className="size-1.5 shrink-0 rounded-full bg-brand" aria-label="有来自其它会话的新消息" />
           )}
           {/* 平时只露置顶标;hover 换成 时间 + pin + ⋯ 快捷操作 */}
           {!running && allowPin && isPinned && (

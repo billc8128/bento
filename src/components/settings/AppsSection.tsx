@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Compass, Globe, Pencil, Plus, RotateCw, TerminalSquare, Trash2 } from "lucide-react"
+import { Compass, Globe, Network, Pencil, Plus, RotateCw, TerminalSquare, Trash2 } from "lucide-react"
 
 import {
   AlertDialog,
@@ -128,7 +128,13 @@ export function AppsSection() {
 
       <div className="mt-6 divide-y divide-border border-y border-border">
         {apps.map((app) => {
-          const Icon = app.transport === "builtin" ? Compass : app.transport === "stdio" ? TerminalSquare : Globe
+          const Icon = app.id === "collaboration"
+            ? Network
+            : app.transport === "builtin"
+              ? Compass
+              : app.transport === "stdio"
+                ? TerminalSquare
+                : Globe
           return (
             <section key={app.id} className="flex items-start gap-4 py-5">
               <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted text-foreground">

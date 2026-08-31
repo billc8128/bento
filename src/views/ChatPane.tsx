@@ -140,7 +140,8 @@ export function ChatPane() {
     )
   }
 
-  const running = isRunning(sessionId)
+  // 本地发送集合之外,main runtime working(后台协作任务)也显示生成态
+  const running = isRunning(sessionId) || live.runtime === "working"
   const harness = getHarness(live.harnessId as HarnessId)
   return (
     <main className="relative flex h-full min-h-0 min-w-0 flex-col">

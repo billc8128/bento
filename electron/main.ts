@@ -44,6 +44,9 @@ import { WorkspaceFileWatchManager } from "./workspace/file-watch-manager"
 import type { WorkspaceBounds } from "../src/types/workspace"
 import { AppsStore } from "./apps"
 import { AppRuntimeHost } from "./app-runtime-host"
+import { CollaborationService } from "./collaboration-service"
+import { UiCommandBridge } from "./ui-command-bridge"
+import { SessionCollaborationBackend } from "./collaboration-session-backend"
 
 // GUI app 不继承 login shell 的 PATH,打包后 spawn kimi/opencode 会 ENOENT。
 // fix-path 用 login shell 修 PATH;常见 bin 目录再兜一层(存在才加)
@@ -68,6 +71,9 @@ let routing: ProviderRoutingService | null = null
 let terminals: TerminalManager
 let workspaceBrowsers: WorkspaceBrowserManager
 let appRuntime: AppRuntimeHost
+/** 协作服务:SessionManager 建好后初始化;AppRuntimeHost 经 getter 惰性取用。 */
+let collaborationService: CollaborationService | null = null
+let uiBridge: UiCommandBridge | null = null
 const workspaceFiles = new WorkspaceFileService()
 let workspaceFileWatches: WorkspaceFileWatchManager
 const safeSecrets: SecretStore = {
@@ -266,6 +272,9 @@ app.whenReady().then(async () => {
     (id) => {
       if (win && !win.isDestroyed()) win.webContents.send("workspace-browser:reveal", id)
     },
+    // SessionManager/appRuntime 互相引用,这里用 getter 打破初始化循环;
+    // 协作 App 关闭时 lease 不签发,getter 也不会被调用。
+    () => collaborationService,
   )
   await appRuntime.start()
   workspaceFileWatches = new WorkspaceFileWatchManager(workspaceFiles, (ownerId, change) => {
@@ -368,7 +377,34 @@ app.whenReady().then(async () => {
     configAdapters,
     resolveProviderRuntimes,
     ({ sessionKey, cwd }) => appRuntime.prepare(sessionKey, cwd),
+    () => {
+      if (win && !win.isDestroyed()) win.webContents.send("sessions:changed")
+    },
   )
+
+  // UI 桥:协作命令发主窗口;presence 由 renderer 上报(Phase 2)。
+  uiBridge = new UiCommandBridge((command) => {
+    if (!win || win.isDestroyed()) return false
+    win.webContents.send("collaboration:ui-command", command)
+    return true
+  })
+
+  // Phase 1d:协作服务接线。selection 校验要求 exact providerId/modelId。
+  const collaborationBackend = new SessionCollaborationBackend(sessions, async (request) => {
+    const resolved = await providers.resolveSelection({
+      harnessId: request.harnessId === "glm" ? "claude-code" : (request.harnessId as Parameters<typeof providers.resolveSelection>[0]["harnessId"]),
+      cwd: request.cwd,
+      providerId: request.providerId,
+      modelId: request.modelId,
+    })
+    return Boolean(resolved) &&
+      resolved!.providerId === request.providerId &&
+      resolved!.modelId === request.modelId
+  })
+  collaborationService = new CollaborationService(collaborationBackend, {
+    ui: uiBridge!,
+    uiAvailable: () => Boolean(win && !win.isDestroyed()),
+  })
 
   // IPC:renderer 经 preload 调这些;错误统一转成 { error } 而不是抛穿
   ipcMain.handle("session:create", async (_e, opts: {
@@ -441,8 +477,15 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle("session:close", async (_e, key: string) => sessions.closeSession(key))
   ipcMain.handle("session:list", () =>
-    sessions.listSessions().map((r) => ({ ...r, live: sessions.isLive(r.key) })),
+    sessions.listSessions().map((r) => ({
+      ...r,
+      live: sessions.isLive(r.key),
+      runtime: sessions.runtimeStatus(r.key),
+    })),
   )
+  ipcMain.on("collaboration:ui-state", (_e, presence: unknown) => {
+    uiBridge?.report(presence)
+  })
   ipcMain.handle("session:rename", (_e, key: string, title: string) => {
     try {
       return { record: sessions.renameSession(key, title) }

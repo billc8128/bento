@@ -8,6 +8,7 @@ import type { BinaryProgress } from "../../electron/binaries/progress"
 import type { Effort, SessionScope } from "@/core/types"
 import type { PromptInput } from "@/core/types"
 import type { BentoAppId, BentoAppView, UserAppInput } from "@/core/apps"
+import type { UiCommand, UiPresence } from "@/core/collaboration"
 import type {
   WorkspaceBounds,
   WorkspaceBrowserState,
@@ -39,6 +40,8 @@ export type LiveSessionRecord = {
   createdAt: string
   updatedAt: string
   live: boolean
+  /** main 侧 runtime 投影;协作唤醒的侧栏 running 判定用 */
+  runtime?: "sleeping" | "idle" | "working"
 }
 
 declare global {
@@ -186,6 +189,9 @@ declare global {
         }
       }
       onSessionEvent(cb: (e: { key: string; record: LogRecord }) => void): () => void
+      onSessionsChanged(cb: () => void): () => void
+      onCollaborationUiCommand(cb: (command: UiCommand) => void): () => void
+      reportCollaborationUiState(presence: UiPresence): void
       onBinaryProgress(cb: (p: BinaryProgress) => void): () => void
     }
   }

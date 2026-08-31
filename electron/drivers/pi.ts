@@ -90,6 +90,12 @@ export function translatePiEvent(value: unknown): HarnessEvent | undefined {
   if (!value || typeof value !== "object") return undefined
   const event = value as Record<string, unknown>
 
+  if (event.type === "extension_error") {
+    const message = String(event.error ?? "未知错误")
+      .replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, "<redacted>")
+    return { type: "notice", text: `Pi 扩展错误:${message}` }
+  }
+
   if (event.type === "message_update") {
     const update = event.assistantMessageEvent as Record<string, unknown> | undefined
     if (update?.type === "text_delta") {

@@ -288,14 +288,29 @@ function AttachmentChip({ name, kind }: { name: string; kind: "image" | "file" }
 }
 
 function UserMessage({ m, shape }: { m: UserMsg; shape: MessageShape }) {
+  // 协作来源:envelope 不落 JSONL,这里只展示可信 origin,不当正文渲染
+  const fromSession = m.origin?.kind === "session" ? m.origin.title : null
   // 无气泡的风格里,说话人靠一个标签和左侧竖线交代,读起来像日志
   if (shape === "plain")
     return (
-      <div className="flex flex-col items-start gap-1.5">
-        <span className="type-micro font-mono font-medium uppercase tracking-wider text-primary">
-          你
+      <div
+        data-message-origin={fromSession ? "session" : "human"}
+        className="flex flex-col items-start gap-1.5"
+      >
+        <span className={cn(
+          "type-micro font-mono font-medium uppercase tracking-wider",
+          fromSession ? "text-muted-foreground" : "text-primary",
+        )}>
+          {fromSession ? `来自 ${fromSession}` : "你"}
         </span>
-        <div className="border-l-2 border-primary/40 pl-3 text-sm leading-relaxed">{m.text}</div>
+        <div className={cn(
+          "border-l-2 pl-3 text-sm leading-relaxed",
+          fromSession
+            ? "rounded-r-lg border-secondary-foreground/25 bg-secondary px-3 py-2 text-secondary-foreground"
+            : "border-primary/40",
+        )}>
+          {m.text}
+        </div>
         {m.attachments?.map((a) => (
           <AttachmentChip key={a.name} name={a.name} kind={a.kind} />
         ))}
@@ -303,11 +318,22 @@ function UserMessage({ m, shape }: { m: UserMsg; shape: MessageShape }) {
     )
 
   return (
-    <div className="flex min-w-0 flex-col items-end gap-1.5">
+    <div
+      data-message-origin={fromSession ? "session" : "human"}
+      className="flex min-w-0 flex-col items-end gap-1.5"
+    >
       {/* 气泡保持胶囊感:3xl(20px)接近旧 --radius 1rem 时代的 2xl 观感 */}
-      <div className="max-w-[75%] rounded-3xl rounded-br-lg bg-primary px-4 py-2.5 text-sm leading-relaxed text-primary-foreground">
+      <div className={cn(
+        "max-w-[75%] rounded-3xl rounded-br-lg px-4 py-2.5 text-sm leading-relaxed",
+        fromSession
+          ? "bg-secondary text-secondary-foreground"
+          : "bg-primary text-primary-foreground",
+      )}>
         {m.text}
       </div>
+      {fromSession && (
+        <span className="type-micro font-mono text-muted-foreground">来自 {fromSession}</span>
+      )}
       {m.attachments?.map((a) => (
         <AttachmentChip key={a.name} name={a.name} kind={a.kind} />
       ))}

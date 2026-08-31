@@ -39,6 +39,7 @@ export default async function bentoMcpExtension(pi) {
     clientInfo: { name: "bento-pi-extension", version: "0.1.0" },
   })
   let cursor
+  const registered = []
   do {
     const listed = await request("tools/list", cursor ? { cursor } : {})
     for (const tool of listed.tools ?? []) {
@@ -53,7 +54,13 @@ export default async function bentoMcpExtension(pi) {
           return { content: result?.content ?? [{ type: "text", text: "(empty result)" }], details: result?.structuredContent ?? {} }
         },
       })
+      registered.push(tool.name)
     }
     cursor = listed.nextCursor
   } while (cursor)
+  if (registered.length > 0 && pi.getActiveTools && pi.setActiveTools) {
+    pi.on("session_start", () => {
+      pi.setActiveTools([...new Set([...pi.getActiveTools(), ...registered])])
+    })
+  }
 }

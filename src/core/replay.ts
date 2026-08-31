@@ -129,6 +129,7 @@ function applyEvent(acc: Accumulator, event: HarnessEvent, seq: number, atMs: nu
         role: "user",
         text: event.text,
         ...(event.attachments?.length ? { attachments: event.attachments } : {}),
+        ...(event.origin ? { origin: event.origin } : {}),
       })
       return
     case "turn_finished":
