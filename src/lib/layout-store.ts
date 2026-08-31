@@ -21,6 +21,8 @@ export type LayoutSnapshot = {
   openSessionIds: string[]
   /** 焦点面板绑定的会话 */
   focusedSessionId: string | null
+  /** 焦点在应用面板(单例,见 openAppsView) */
+  appsFocused: boolean
   mode: LayoutMode
 }
 
@@ -39,6 +41,7 @@ let api: DockviewApi | null = null
 let snapshot: LayoutSnapshot = {
   openSessionIds: [],
   focusedSessionId: null,
+  appsFocused: false,
   mode: loadMode(),
 }
 
@@ -108,6 +111,7 @@ function applyHeaderMode() {
 export function refresh() {
   const open: string[] = []
   let focused: string | null = null
+  let appsFocused = false
   if (api) {
     applyHeaderMode()
     for (const p of api.panels) {
@@ -115,14 +119,16 @@ export function refresh() {
       if (sid) open.push(sid)
     }
     focused = api.activePanel ? sessionIdOf(api.activePanel.id) : null
+    appsFocused = api.activePanel?.id === APPS_PANEL_ID
     schedulePersist()
   }
   // 无变化不通知,避免无谓重渲染
   if (
     open.join(",") !== snapshot.openSessionIds.join(",") ||
-    focused !== snapshot.focusedSessionId
+    focused !== snapshot.focusedSessionId ||
+    appsFocused !== snapshot.appsFocused
   ) {
-    snapshot = { ...snapshot, openSessionIds: open, focusedSessionId: focused }
+    snapshot = { ...snapshot, openSessionIds: open, focusedSessionId: focused, appsFocused }
     emit()
   }
 }
@@ -191,6 +197,33 @@ export function closeSession(sessionId: string) {
   // 最后一个聊天面板不许关——工作台不允许空到没有对话
   if (snapshot.openSessionIds.length <= 1) return
   api.removePanel(panel)
+  refresh()
+}
+
+/** 应用面板的固定 id:单例,一点即活 */
+export const APPS_PANEL_ID = "apps"
+
+/**
+ * 打开应用主视图。已开则聚焦;未开则在当前焦点组里加单例面板——
+ * 之后点会话走 openSession 的默认路径,应用面板作为隐藏标签留在组里,
+ * 再点「应用」即切回,布局持久化自动覆盖它
+ */
+export function openAppsView() {
+  if (!api) return
+  const existing = api.getPanel(APPS_PANEL_ID)
+  if (existing) {
+    existing.api.setActive()
+    refresh()
+    return
+  }
+  const active = api.activePanel
+  api.addPanel({
+    id: APPS_PANEL_ID,
+    component: "view",
+    title: "应用",
+    params: { viewId: "core.apps" },
+    ...(active ? { position: { referenceGroup: active.group } } : {}),
+  })
   refresh()
 }
 

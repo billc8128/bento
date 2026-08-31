@@ -1,12 +1,13 @@
 /**
  * 快捷键板块:只读清单,与代码里的真实绑定一一对应。
- * (⌘B 在 ui/sidebar.tsx,⏎/⇧⏎ 在 Composer.tsx;新增快捷键时同步这里。)
+ * (⌘B 在 ui/sidebar.tsx 与 App.tsx,⌘N 在 App.tsx,⏎/⇧⏎ 在 Composer.tsx;新增快捷键时同步这里。)
  */
 
 const GROUPS: { title: string; items: { label: string; keys: string[] }[] }[] = [
   {
     title: "通用",
     items: [
+      { label: "新对话", keys: ["⌘", "N"] },
       { label: "切换侧边栏", keys: ["⌘", "B"] },
       { label: "关闭弹层 / 设置页", keys: ["Esc"] },
     ],

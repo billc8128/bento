@@ -52,8 +52,8 @@ export function AppsSection() {
   const [clearSecrets, setClearSecrets] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  if (!window.bento) return <p className="text-sm text-muted-foreground">Apps 仅在桌面版可用。</p>
-  if (!loaded) return <p className="text-sm text-muted-foreground">正在读取 Apps…</p>
+  if (!window.bento) return <p className="text-sm text-muted-foreground">应用仅在桌面版可用。</p>
+  if (!loaded) return <p className="text-sm text-muted-foreground">正在读取应用…</p>
 
   function resetForm() {
     setEditing(null)
@@ -108,17 +108,17 @@ export function AppsSection() {
     <div>
       <div className="flex items-start justify-between gap-6">
         <p className="max-w-xl text-sm text-muted-foreground">
-          Apps 通过同一套 MCP Runtime 向所有兼容 Harness 提供工具。内置 App 直接暴露稳定工具，用户 App 按需发现。
+          应用通过同一套 MCP Runtime 向所有兼容 Harness 提供工具。内置应用直接暴露稳定工具，用户应用按需发现。
         </p>
         <Button size="sm" className="shrink-0 gap-1.5" onClick={openAdd}>
           <Plus className="size-4" />
-          添加 App
+          添加应用
         </Button>
       </div>
 
       {error && (
         <div className="mt-5 flex items-center justify-between gap-4 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2.5">
-          <p className="text-sm text-destructive">Apps 读取失败：{error}</p>
+          <p className="text-sm text-destructive">应用读取失败：{error}</p>
           <Button variant="ghost" size="sm" className="shrink-0 gap-1.5" onClick={retryApps}>
             <RotateCw className="size-3.5" />
             重试
@@ -198,8 +198,8 @@ export function AppsSection() {
       <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm() }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editing ? `编辑 ${editing.name}` : "添加 MCP App"}</DialogTitle>
-            <DialogDescription>App 由 Bento Main 托管，一次配置即可用于全部兼容 Harness。</DialogDescription>
+            <DialogTitle>{editing ? `编辑 ${editing.name}` : "添加 MCP 应用"}</DialogTitle>
+            <DialogDescription>应用由 Bento Main 托管，一次配置即可用于全部兼容 Harness。</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">

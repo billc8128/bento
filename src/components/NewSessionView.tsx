@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react"
 import { ArrowUp, Folder, Loader2, MessageCircle, X } from "lucide-react"
 
-import { BentoLogo } from "@/components/BentoLogo"
+import { WelcomeHero } from "@/components/WelcomeHero"
 import { ProjectPicker } from "@/components/ProjectPicker"
 import { RuntimePicker } from "@/components/RuntimePicker"
 import { Button } from "@/components/ui/button"
@@ -135,19 +135,12 @@ export function NewSessionView({
 
       <div className="mx-auto flex min-h-full w-full flex-col justify-center px-4 py-10 sm:px-8 lg:px-12">
         <section className="mx-auto w-full max-w-[var(--app-onboarding-max)]">
-          <div className="mb-[var(--app-onboarding-title-gap)] flex items-center justify-center gap-3 sm:gap-4">
-            <span className="flex size-10 shrink-0 items-center justify-center sm:size-12">
-              <BentoLogo className="size-8 sm:size-10" />
-            </span>
-            <h1 className="type-display text-balance">
-              今天想做点什么？
-            </h1>
-          </div>
+          <WelcomeHero />
 
-          <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-pop">
-            {/* 模式切换住在输入框内部:原来那条外凸的灰带是第二个「卡片」,
-                和下面的输入框拼不成一个物件 */}
-            <div className="flex items-center justify-center px-3 pt-3 sm:px-4">
+          <div>
+            {/* 模式切换戴灰帽子:帽子外凸半卡在输入卡上沿,两个面叠成一个物件
+                (按用户偏好 revert 5c190f7 的"并入卡片") */}
+            <div className="relative z-0 mx-3 -mb-px flex min-h-[var(--app-project-row-height)] w-[calc(100%-1.5rem)] items-center justify-center rounded-t-2xl bg-muted/45 px-4 pb-2 pt-3 sm:mx-5 sm:w-[calc(100%-2.5rem)] sm:rounded-t-3xl sm:px-5">
               <div className="flex items-center justify-center">
                 <div className="inline-flex shrink-0 gap-0.5 rounded-xl bg-muted p-1" role="tablist" aria-label="对话模式">
                   <button
@@ -165,7 +158,7 @@ export function NewSessionView({
                     )}
                   >
                     <MessageCircle className="size-4" />
-                    Chat
+                    对话
                   </button>
                   <button
                     type="button"
@@ -210,6 +203,7 @@ export function NewSessionView({
               </div>
             </div>
 
+            <div className="relative z-10 overflow-hidden rounded-2xl border border-border bg-card shadow-pop sm:rounded-3xl">
             <Textarea
               ref={inputRef}
               autoFocus
@@ -285,6 +279,7 @@ export function NewSessionView({
                 )}
               </div>
             )}
+            </div>
           </div>
           {error && (
             <p role="alert" className="mt-2 text-center text-xs text-err">

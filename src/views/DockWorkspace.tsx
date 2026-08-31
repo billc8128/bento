@@ -130,7 +130,7 @@ function isSessionDrag(e: DragEvent | PointerEvent): e is DragEvent {
 }
 
 export function DockWorkspace() {
-  const { mode } = useLayout()
+  const { mode, appsFocused } = useLayout()
   const { sessions: liveSessions } = useLive()
   const newSession = useNewSession()
   const apiRef = useRef<DockviewApi | null>(null)
@@ -214,8 +214,9 @@ export function DockWorkspace() {
         disableFloatingGroups={managed}
         hideBorders={false}
       />
-      {/* 无会话自动 onboarding;已有会话时点「新对话」覆盖到同一完整起始页 */}
-      {(liveSessions.length === 0 || newSession.open) && (
+      {/* 无会话自动 onboarding;已有会话时点「新对话」覆盖到同一完整起始页。
+          「新对话」是显式意图,始终优先;仅自动 onboarding 给聚焦的应用面板让位 */}
+      {(newSession.open || (liveSessions.length === 0 && !appsFocused)) && (
         <div className="absolute inset-0 z-20">
           <NewSessionView
             key={newSession.revision}

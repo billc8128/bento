@@ -266,6 +266,69 @@
   to { opacity: 1; transform: none; }
 }
 
+/* 新会话欢迎语(WelcomeHero):便当拼装 + 逐字弹簧 + 琥珀接力波。
+ * 逐字 transform 会建合成层,流光只能做逐字变色接力,不能用父级 background-clip:text。 */
+.welcome-logo-block {
+  opacity: 0;
+  transform: translate(var(--wx), var(--wy)) rotate(var(--wr));
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: welcome-block-in 550ms cubic-bezier(0.34, 1.4, 0.64, 1) forwards;
+}
+
+.welcome-logo-block-l { --wx: -30; --wy: 0; --wr: -8deg; fill: var(--foreground); }
+.welcome-logo-block-t { --wx: 20; --wy: -25; --wr: 10deg; fill: #fdb102; animation-delay: 120ms; }
+.welcome-logo-block-b { --wx: 20; --wy: 25; --wr: 6deg; fill: var(--foreground); animation-delay: 220ms; }
+
+@keyframes welcome-block-in {
+  to { opacity: 1; transform: none; }
+}
+
+.welcome-title {
+  font-family: "Plus Jakarta Sans Variable", "Geist Variable", sans-serif;
+  font-weight: 800;
+}
+
+.welcome-word {
+  display: inline-block;
+  white-space: pre;
+}
+
+.welcome-char {
+  display: inline-block;
+  color: var(--foreground);
+  opacity: 0;
+  animation:
+    welcome-char-in 600ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards,
+    welcome-wave 3.5s ease-in-out infinite;
+}
+
+.welcome-word .welcome-char:nth-child(odd) { transform: translateY(-0.45em) rotate(-6deg); }
+.welcome-word .welcome-char:nth-child(even) { transform: translateY(0.45em) rotate(6deg); }
+
+@keyframes welcome-char-in {
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes welcome-wave {
+  0% { color: var(--foreground); }
+  6% { color: var(--welcome-wave-peak); }
+  14% { color: var(--foreground); }
+  100% { color: var(--foreground); }
+}
+
+.welcome-title { --welcome-wave-peak: #c47f00; }
+.dark .welcome-title { --welcome-wave-peak: #fdb102; }
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-logo-block,
+  .welcome-char {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .collapsible-section[data-state="open"],
   .collapsible-section[data-state="closed"],

@@ -75,8 +75,8 @@ import {
 import { cn } from "@/lib/utils"
 import { useTraits } from "@/lib/style-context"
 import { useTheme } from "@/lib/theme-context"
-import { closeSession, openSession, resetLayout, setLayoutMode, useLayout } from "@/lib/layout-store"
-import { closeNewSession } from "@/lib/new-session-store"
+import { closeSession, openAppsView, openSession, resetLayout, setLayoutMode, useLayout } from "@/lib/layout-store"
+import { closeNewSession, requestNewSession, useNewSession } from "@/lib/new-session-store"
 import {
   hideFolder,
   renameFolder,
@@ -86,7 +86,6 @@ import {
 import { isRunning, removeLive, renameLive, useLive } from "@/lib/live-store"
 import { togglePin, usePinnedSessions } from "@/lib/pinned-sessions"
 import { toggleSidebarPanel } from "@/lib/sidebar-toggle"
-import { requestNewSession } from "@/lib/new-session-store"
 import { openSettings } from "@/lib/settings-store"
 import { SESSION_MIME } from "@/views/DockWorkspace"
 import { STYLES, type SidebarShape, type StyleId } from "@/data/styles"
@@ -131,11 +130,12 @@ function relativeTime(iso: string): string {
 
 export function AppSidebar() {
   const { sidebar: shape } = useTraits()
-  const { focusedSessionId, mode } = useLayout()
+  const { focusedSessionId, mode, appsFocused } = useLayout()
   const { sessions: liveSessions } = useLive()
   const theme = useTheme()
   const pinned = usePinnedSessions()
   const folderPreferences = useFolderPreferences()
+  const newSessionOpen = useNewSession().open
   /** 行内重命名:Electron 不支持 window.prompt,换成输入框就地编辑 */
   const [renaming, setRenaming] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<{ key: string; title: string } | null>(null)
@@ -191,13 +191,15 @@ export function AppSidebar() {
   function renderRow(key: string, options: { allowPin?: boolean } = {}) {
     const allowPin = options.allowPin ?? true
     const s = liveSessions.find((x) => x.key === key)!
-    const active = key === focusedSessionId
+    // 起始页覆盖层打开时,它是唯一的"当前位置":压掉会话行的焦点高亮,
+    // 否则点新对话后与底层焦点会话双高亮(真实事故)
+    const active = key === focusedSessionId && !newSessionOpen
     const running = isRunning(key)
     const isPinned = pinned.has(key)
     if (renaming === key) {
       return (
         <SidebarMenuItem key={key}>
-          <div className="flex h-8 items-center px-2.5">
+          <div className="flex h-7 items-center pl-11 pr-5">
             <Input
               autoFocus
               defaultValue={s.title}
@@ -228,10 +230,12 @@ export function AppSidebar() {
             e.dataTransfer.effectAllowed = "move"
           }}
           className={cn(
-            "h-8 gap-2 px-2.5 group-hover/menu-item:pr-24 group-focus-within/menu-item:pr-24",
+            "h-7 rounded-none pl-11 pr-5 group-hover/menu-item:pr-24 group-focus-within/menu-item:pr-24",
             openSessionMenu === key && "pr-24",
           )}
         >
+          {/* 会话行不带图标:标题落文字轴(pl-11 = 44px),层级靠错落缩进表达,
+              不靠压父级颜色(Codex 式) */}
           <span className="flex-1 truncate text-sm">{s.title}</span>
           {running && (
             <span className="relative flex size-1.5 shrink-0">
@@ -247,7 +251,7 @@ export function AppSidebar() {
         </SidebarMenuButton>
         <span
           className={cn(
-            "invisible absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5 group-hover/menu-item:visible group-focus-within/menu-item:visible",
+            "invisible absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-0.5 group-hover/menu-item:visible group-focus-within/menu-item:visible",
             openSessionMenu === key && "visible",
           )}
         >
@@ -328,11 +332,11 @@ export function AppSidebar() {
       <SidebarHeader className="gap-2 px-3 pb-3 pt-1.5">
         <div className="app-window-drag flex items-center justify-between pl-1 [-webkit-app-region:drag]">
           <span className="flex items-center gap-2.5">
-            <BentoLogo className="size-9" />
+            <BentoLogo className="size-7" />
             <span className="app-title text-base font-semibold tracking-tight">Bento</span>
           </span>
           <span className="flex items-center gap-0.5 [-webkit-app-region:no-drag]">
-            {/* 搜索先复用「全部 Chat」对话框;⌘K 全局面板落地后(v0.4)换成它 */}
+            {/* 搜索先复用「全部对话」对话框;⌘K 全局面板落地后(v0.4)换成它 */}
             <Button
               variant="ghost"
               size="icon-sm"
@@ -343,39 +347,52 @@ export function AppSidebar() {
               <Search className="size-4" />
               <span className="sr-only">搜索对话</span>
             </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-muted-foreground hover:text-foreground"
-              title="新对话"
-              onClick={() => requestNewSession()}
-            >
-              <PenSquare className="size-4" />
-              <span className="sr-only">新对话</span>
-            </Button>
           </span>
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="px-3">
+      {/* px-0:行的 hover/选中背景通栏 bleed,不留内缩药丸(对齐轴在各行自己的 px-5) */}
+      <SidebarContent className="px-0">
         <SidebarGroup className="p-0">
           <div className="space-y-4 pb-2">
-              <section className="group/chat border-b border-sidebar-border pb-2">
-                <div className="flex h-7 items-center px-1 text-sm font-medium text-sidebar-foreground">
-                  <span className="flex min-w-0 flex-1 items-center gap-2">
-                    <MessageCircle className="size-4" />
-                    Chat
-                  </span>
-                  <button
-                    type="button"
-                    title="新建 Chat"
-                    aria-label="新建 Chat"
-                    onClick={() => requestNewSession({ scope: "chat" })}
-                    className="grid size-6 place-items-center rounded-md text-muted-foreground opacity-0 transition-[color,background-color,opacity] hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none group-hover/chat:opacity-100 group-focus-within/chat:opacity-100"
+              {/* 主导航:新对话是唯一新建入口(头部不再放 compose 图标,避免双入口);
+                  应用收在同一组,底部只留用户卡。两行都带当前态,与会话行一样给方位反馈 */}
+              <SidebarMenu className="gap-0.5">
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={newSessionOpen || (liveSessions.length === 0 && !appsFocused)}
+                    className="h-8 gap-2 rounded-none px-5 text-sm"
+                    onClick={() => requestNewSession()}
                   >
-                    <PenSquare className="size-3.5" />
-                  </button>
+                    <PenSquare className="size-4" />
+                    <span>新对话</span>
+                    <span className="ml-auto type-micro text-muted-foreground">⌘N</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={appsFocused && !newSessionOpen}
+                    className="h-8 gap-2 rounded-none px-5 text-sm text-muted-foreground hover:text-sidebar-foreground"
+                    onClick={() => {
+                      openAppsView()
+                      closeNewSession()
+                    }}
+                  >
+                    <Blocks className="size-4" />
+                    <span>应用</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+              {/* 小节标签:type-micro 灰色 quiet 标签,图标落 px-5 图标轴、
+                  文字落 +24px 文字轴(size-3.5 + gap-2.5),不上分隔线 */}
+              <section className="pb-2">
+                <div className="flex h-7 items-center gap-2.5 px-5 text-muted-foreground">
+                  <MessageCircle className="size-3.5" />
+                  <span className="type-micro font-semibold tracking-[0.08em]">对话</span>
                 </div>
+                {chatKeys.length === 0 && (
+                  <p className="pl-11 pr-5 type-micro text-muted-foreground">还没有对话</p>
+                )}
                 {chatKeys.length > 0 && (
                   <SidebarMenu className="gap-0.5">
                     {renderRow(chatKeys[0], { allowPin: false })}
@@ -391,7 +408,7 @@ export function AppSidebar() {
                       </div>
                     </CollapsibleContent>
                     <div className="mt-1 flex h-6 items-center">
-                      <CollapsibleTrigger className="flex h-6 items-center gap-1 rounded px-2 type-micro text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+                      <CollapsibleTrigger className="flex h-6 items-center gap-1 rounded px-5 type-micro text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
                         {chatExpanded ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
                         {chatExpanded ? "收起" : `更多 ${chatKeys.length - 1} 条`}
                       </CollapsibleTrigger>
@@ -417,8 +434,8 @@ export function AppSidebar() {
               {/* 置顶区:脱离文件夹组,集中在顶部 */}
               {pinnedKeys.length > 0 && (
                 <Collapsible defaultOpen>
-                  <CollapsibleTrigger className="flex w-full items-center gap-1.5 px-1 pb-1.5 text-muted-foreground transition-colors hover:text-sidebar-foreground">
-                    <PinIcon className="size-3" />
+                  <CollapsibleTrigger className="flex w-full items-center gap-2.5 px-5 pb-1.5 text-muted-foreground transition-colors hover:text-sidebar-foreground">
+                    <PinIcon className="size-3.5" />
                     <span className="type-micro font-semibold tracking-[0.08em]">置顶</span>
                   </CollapsibleTrigger>
                   <CollapsibleContent className="collapsible-section">
@@ -448,7 +465,7 @@ export function AppSidebar() {
                     >
                       {/* 分组小节标题:点击名称收折;hover 时右侧出现管理与新对话。 */}
                       {renamingFolder === g.cwd ? (
-                        <div className="flex h-7 items-center px-1">
+                        <div className="flex h-7 items-center px-5">
                           <Input
                             autoFocus
                             defaultValue={label}
@@ -464,14 +481,14 @@ export function AppSidebar() {
                         </div>
                       ) : (
                         <div className="group/folder relative flex h-7 items-center">
-                          <CollapsibleTrigger className="flex h-full w-full items-center gap-2 px-1 pr-14 text-sm font-medium text-sidebar-foreground/75 transition-colors hover:text-sidebar-foreground">
+                          <CollapsibleTrigger className="flex h-full w-full items-center gap-2 px-5 pr-14 text-sm font-medium text-sidebar-foreground transition-colors hover:text-sidebar-foreground">
                             <FolderIcon open={open} className="size-4" />
                             <span className="truncate">{label}</span>
                             {isPinnedFolder && <PinIcon className="size-3 shrink-0 text-muted-foreground" />}
                           </CollapsibleTrigger>
                           <span
                             className={cn(
-                              "absolute right-0.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/folder:opacity-100 group-focus-within/folder:opacity-100",
+                              "absolute right-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/folder:opacity-100 group-focus-within/folder:opacity-100",
                               openFolderMenu === g.cwd && "opacity-100",
                             )}
                           >
@@ -534,18 +551,7 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-        <SidebarFooter className="gap-1 px-2 pb-3">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                className="h-8 gap-2.5 px-2 text-sm text-muted-foreground hover:text-sidebar-foreground"
-                onClick={() => openSettings("apps")}
-              >
-                <Blocks className="size-4" />
-                <span>Apps</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
+        <SidebarFooter className="gap-1 px-3 pb-3">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton className="h-auto gap-2.5 px-2 py-1.5">
@@ -639,8 +645,8 @@ export function AppSidebar() {
       >
         <DialogContent className="flex h-[min(34rem,calc(100vh-3rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
           <DialogHeader className="border-b border-border px-5 py-4">
-            <DialogTitle>全部 Chat</DialogTitle>
-            <DialogDescription className="sr-only">搜索或浏览全部 Chat 会话</DialogDescription>
+            <DialogTitle>全部对话</DialogTitle>
+            <DialogDescription className="sr-only">搜索或浏览全部对话</DialogDescription>
           </DialogHeader>
           <div className="border-b border-border px-4 py-3">
             {/* 自动聚焦的唯一输入位:光标即焦点提示,focus-within 只做轻微提亮,
@@ -651,8 +657,8 @@ export function AppSidebar() {
                 autoFocus
                 value={chatQuery}
                 onChange={(event) => setChatQuery(event.target.value)}
-                placeholder="搜索 Chat"
-                aria-label="搜索全部 Chat"
+                placeholder="搜索对话"
+                aria-label="搜索全部对话"
                 className="h-full border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
               />
             </div>
@@ -682,7 +688,7 @@ export function AppSidebar() {
               ))}
               {filteredChats.length === 0 && (
                 <div className="grid min-h-48 place-items-center text-sm text-muted-foreground">
-                  没有匹配的 Chat
+                  没有匹配的对话
                 </div>
               )}
             </div>

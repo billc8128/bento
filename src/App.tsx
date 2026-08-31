@@ -25,6 +25,7 @@ import { DockWorkspace } from "@/views/DockWorkspace"
 import { getView } from "@/views/registry"
 import { liveMeta, useLive } from "@/lib/live-store"
 import { useLayout } from "@/lib/layout-store"
+import { requestNewSession } from "@/lib/new-session-store"
 import { useSettingsPage } from "@/lib/settings-store"
 import {
   setWorkspaceToolsOpen,
@@ -161,6 +162,17 @@ export default function App() {
       unregister()
       window.removeEventListener("keydown", onKeyDown)
     }
+  }, [])
+
+  // ⌘N 新对话:与侧栏「新对话」行同一入口
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "n" || (!e.metaKey && !e.ctrlKey) || e.shiftKey || e.altKey) return
+      e.preventDefault()
+      requestNewSession()
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
   }, [])
 
   useEffect(() => {
