@@ -71,10 +71,11 @@ export function SettingsPage() {
       {window.bento && (
         <div
           aria-hidden
-          className="absolute left-52 right-0 top-0 z-10 h-10 [-webkit-app-region:drag]"
+          className="absolute left-55 right-0 top-0 z-10 h-10 [-webkit-app-region:drag]"
         />
       )}
-      <nav className="flex w-52 shrink-0 flex-col gap-0.5 border-r border-border bg-muted/40 p-3">
+      {/* w-55 = 220px,与主侧栏同宽:进出设置时左栏不跳宽 */}
+      <nav className="flex w-55 shrink-0 flex-col gap-0.5 border-r border-border bg-muted/40 p-3">
         {/* 桌面模式:给 macOS 红绿灯让位,兼作窗口拖拽区(同 AppSidebar) */}
         {window.bento && <div className="-mx-3 -mt-3 mb-1 h-7 shrink-0 [-webkit-app-region:drag]" />}
         <Button
@@ -104,10 +105,7 @@ export function SettingsPage() {
 
       <div className="min-w-0 flex-1">
         <ScrollArea className="h-full">
-          <div className={cn(
-            "mx-auto px-8 pb-16 pt-10",
-            section === "providers" ? "max-w-6xl" : "max-w-2xl",
-          )}>
+          <div className="mx-auto max-w-2xl px-8 pb-16 pt-10">
             <h1 className="text-lg font-semibold">{active.label}</h1>
             <div className="mt-6">
               {section === "providers" && (

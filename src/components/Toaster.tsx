@@ -21,7 +21,7 @@ export function Toaster() {
           <div
             key={item.id}
             className={cn(
-              "flex items-center gap-2 rounded-full border border-border bg-background px-4 py-2 text-sm shadow-lg animate-in fade-in slide-in-from-bottom-2 duration-200",
+              "flex items-center gap-2 rounded-full border border-border bg-background px-4 py-2 text-sm shadow-pop animate-in fade-in slide-in-from-bottom-2 duration-200 motion-reduce:animate-none",
               item.kind === "error" && "text-destructive",
             )}
           >

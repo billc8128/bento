@@ -4,7 +4,6 @@ import {
   ChevronUp,
   ChevronsUpDown,
   Keyboard,
-  LogOut,
   MessageCircle,
   Moon,
   MoreHorizontal,
@@ -101,7 +100,7 @@ const FRAME: Record<SidebarShape, string> = {
 /** 面板本身:边界是画一条线、描一圈框,还是干脆不画 */
 const PANEL: Record<SidebarShape, string> = {
   flush: "border-r border-sidebar-border",
-  island: "rounded-xl border border-sidebar-border shadow-lg",
+  island: "rounded-xl border border-sidebar-border shadow-pop",
   bare: "",
 }
 
@@ -202,7 +201,7 @@ export function AppSidebar() {
               autoFocus
               defaultValue={s.title}
               aria-label="重命名会话"
-              className="h-6 flex-1 rounded-md px-1 text-sm"
+              className="h-6 flex-1 rounded-md px-1 text-sm focus-visible:border-foreground/25 focus-visible:ring-1 focus-visible:ring-foreground/15"
               onFocus={(e) => e.currentTarget.select()}
               onKeyDown={(e) => {
                 if (e.key === "Enter") confirmRename(key, e.currentTarget.value)
@@ -235,8 +234,9 @@ export function AppSidebar() {
           <span className="flex-1 truncate text-sm">{s.title}</span>
           {running && (
             <span className="relative flex size-1.5 shrink-0">
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-ok opacity-70" />
-              <span className="relative inline-flex size-1.5 rounded-full bg-ok" />
+              {/* 运行态用品牌琥珀:ok 绿留给「完成」,进行中和完成不共用一个颜色 */}
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-brand opacity-70 motion-reduce:animate-none" />
+              <span className="relative inline-flex size-1.5 rounded-full bg-brand" />
             </span>
           )}
           {/* 平时只露置顶标;hover 换成 时间 + pin + ⋯ 快捷操作 */}
@@ -323,22 +323,29 @@ export function AppSidebar() {
           </WindowPanelToggle>
         </div>
       )}
-      <SidebarHeader className="gap-2 px-4 pb-3 pt-1.5">
-        <div className="app-window-drag flex items-center justify-between [-webkit-app-region:drag]">
+      {/* px-3 与下方列表同一条内缩线:头、列表、底栏共用一个左对齐轴 */}
+      <SidebarHeader className="gap-2 px-3 pb-3 pt-1.5">
+        <div className="app-window-drag flex items-center justify-between pl-1 [-webkit-app-region:drag]">
           <span className="flex items-center gap-2.5">
             <BentoLogo className="size-9" />
             <span className="app-title text-base font-semibold tracking-tight">Bento</span>
           </span>
-          {/* 方案 A:新对话收成 icon,与搜索并排,侧栏不再有重色块 */}
           <span className="flex items-center gap-0.5 [-webkit-app-region:no-drag]">
-            <Button variant="ghost" size="icon" className="size-7" title="搜索对话">
+            {/* 搜索先复用「全部 Chat」对话框;⌘K 全局面板落地后(v0.4)换成它 */}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground hover:text-foreground"
+              title="搜索对话"
+              onClick={() => setChatArchiveOpen(true)}
+            >
               <Search className="size-4" />
               <span className="sr-only">搜索对话</span>
             </Button>
             <Button
               variant="ghost"
-              size="icon"
-              className="size-7 text-muted-foreground hover:text-foreground"
+              size="icon-sm"
+              className="text-muted-foreground hover:text-foreground"
               title="新对话"
               onClick={() => requestNewSession()}
             >
@@ -445,7 +452,7 @@ export function AppSidebar() {
                             autoFocus
                             defaultValue={label}
                             aria-label="重命名文件夹分组"
-                            className="h-6 flex-1 rounded-md px-1 text-sm"
+                            className="h-6 flex-1 rounded-md px-1 text-sm focus-visible:border-foreground/25 focus-visible:ring-1 focus-visible:ring-foreground/15"
                             onFocus={(event) => event.currentTarget.select()}
                             onKeyDown={(event) => {
                               if (event.key === "Enter") confirmFolderRename(g.cwd, event.currentTarget.value)
@@ -544,7 +551,8 @@ export function AppSidebar() {
                 <ChevronsUpDown className="size-3.5 shrink-0 opacity-50" />
               </SidebarMenuButton>
             </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" align="start" className="w-56">
+            {/* 菜单不宽过侧栏本体(220px),不然弹出会盖到正文区 */}
+            <DropdownMenuContent side="top" align="start" className="w-51">
               <DropdownMenuLabel className="flex flex-col gap-0 text-xs">
                 <span className="font-medium text-foreground">dev</span>
                 <span className="type-micro font-normal text-muted-foreground">
@@ -605,11 +613,6 @@ export function AppSidebar() {
                 <Keyboard className="size-4 opacity-70" />
                 快捷键
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="gap-2 text-sm text-destructive focus:text-destructive">
-                <LogOut className="size-4 opacity-70" />
-                退出登录
-              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </SidebarFooter>
@@ -628,7 +631,9 @@ export function AppSidebar() {
             <DialogDescription className="sr-only">搜索或浏览全部 Chat 会话</DialogDescription>
           </DialogHeader>
           <div className="border-b border-border px-4 py-3">
-            <div className="flex h-9 items-center gap-2 rounded-lg bg-muted/70 px-3 focus-within:ring-1 focus-within:ring-ring">
+            {/* 自动聚焦的唯一输入位:光标即焦点提示,focus-within 只做轻微提亮,
+                不上品牌色焦点环(那是键盘 Tab 导航的信号) */}
+            <div className="flex h-9 items-center gap-2 rounded-lg bg-muted/70 px-3 focus-within:ring-1 focus-within:ring-foreground/15">
               <Search className="size-4 shrink-0 text-muted-foreground" />
               <Input
                 autoFocus

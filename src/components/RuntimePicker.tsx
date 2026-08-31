@@ -239,7 +239,7 @@ export function RuntimePicker({
           <div
             key={view}
             className={cn(
-              "absolute bottom-0 overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-md animate-in fade-in zoom-in-95 duration-150",
+              "absolute bottom-0 overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-pop animate-in fade-in zoom-in-95 duration-150 motion-reduce:animate-none",
               "right-[calc(100%+0.5rem)] slide-in-from-right-2",
               flyoutSize,
             )}

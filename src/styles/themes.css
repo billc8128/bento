@@ -32,12 +32,13 @@
     --app-weight-normal: 400;
     --app-weight-medium: 500;
     --app-weight-semibold: 700;
-    --app-content-max: 76rem;
-    --app-onboarding-max: 68rem;
+    --app-content-max: 58rem;
+    --app-onboarding-max: 58rem;
     --app-onboarding-title-gap: 2.5rem;
     --app-onboarding-composer-height: 8.5rem;
     --app-project-row-height: 3.5rem;
-    --radius: 0.125rem;
+    /* 4px 起步:再小的圆角在等宽字排版里等于直角,但 0 会让 focus 环出现尖角 */
+    --radius: 0.25rem;
 
     --background: oklch(0.97 0.008 150);
     --foreground: oklch(0.22 0.015 160);
@@ -67,6 +68,8 @@
     --sidebar-border: oklch(0.86 0.014 150);
     --sidebar-ring: oklch(0.5 0.13 150);
 
+    --app-brand: oklch(0.5 0.13 150);
+    --app-brand-foreground: oklch(0.98 0.01 150);
     --app-ok: oklch(0.5 0.13 150);
     --app-warn: oklch(0.6 0.14 75);
     --app-err: oklch(0.55 0.2 27);
@@ -103,6 +106,8 @@
     --sidebar-border: oklch(0.26 0.014 160);
     --sidebar-ring: oklch(0.78 0.16 148);
 
+    --app-brand: oklch(0.78 0.16 148);
+    --app-brand-foreground: oklch(0.16 0.03 155);
     --app-ok: oklch(0.78 0.16 148);
     --app-warn: oklch(0.8 0.14 80);
     --app-err: oklch(0.68 0.19 25);
@@ -131,12 +136,12 @@
     --app-weight-normal: 400;
     --app-weight-medium: 500;
     --app-weight-semibold: 600;
-    --app-content-max: 58rem;
-    --app-onboarding-max: 58rem;
+    --app-content-max: 50rem;
+    --app-onboarding-max: 50rem;
     --app-onboarding-title-gap: 3.5rem;
     --app-onboarding-composer-height: 11rem;
     --app-project-row-height: 4.25rem;
-    --radius: 0.875rem;
+    --radius: 0.75rem;
 
     --background: oklch(0.985 0.006 85);
     --foreground: oklch(0.24 0.015 60);
@@ -166,6 +171,8 @@
     --sidebar-border: oklch(0.9 0.012 78);
     --sidebar-ring: oklch(0.52 0.135 42);
 
+    --app-brand: oklch(0.52 0.135 42);
+    --app-brand-foreground: oklch(0.99 0.01 60);
     --app-ok: oklch(0.5 0.09 175);
     --app-warn: oklch(0.6 0.13 68);
     --app-err: oklch(0.55 0.19 28);
@@ -201,6 +208,8 @@
     --sidebar-border: oklch(0.31 0.024 60);
     --sidebar-ring: oklch(0.73 0.125 48);
 
+    --app-brand: oklch(0.73 0.125 48);
+    --app-brand-foreground: oklch(0.2 0.03 45);
     --app-ok: oklch(0.72 0.1 175);
     --app-warn: oklch(0.78 0.13 72);
     --app-err: oklch(0.67 0.18 27);
@@ -228,6 +237,8 @@
 .bg-warn { background-color: var(--app-warn); }
 .bg-err { background-color: var(--app-err); }
 .bg-chrome { background-color: var(--app-chrome); }
+/* 品牌色 (--app-brand) 经 index.css 的 @theme 映射成 bg-brand/text-brand 等
+ * 真 utility,可与 hover:/disabled: 变体正常叠加,不在这里手写类 */
 
 /* === C. soft — 柔和浮岛 ================================================== */
 /* 背景是「桌面」,卡片和侧栏浮在上面。莓紫强调色,和其余四套都不撞 */
@@ -251,8 +262,8 @@
     --app-weight-normal: 400;
     --app-weight-medium: 500;
     --app-weight-semibold: 600;
-    --app-content-max: 62rem;
-    --app-onboarding-max: 60rem;
+    --app-content-max: 52rem;
+    --app-onboarding-max: 52rem;
     --app-onboarding-title-gap: 3.25rem;
     --app-onboarding-composer-height: 10.5rem;
     --app-project-row-height: 4.25rem;
@@ -287,6 +298,8 @@
     --sidebar-border: oklch(0.91 0.012 285);
     --sidebar-ring: oklch(0.56 0.15 320);
 
+    --app-brand: oklch(0.56 0.15 320);
+    --app-brand-foreground: oklch(0.99 0.008 320);
     --app-ok: oklch(0.55 0.13 160);
     --app-warn: oklch(0.62 0.14 65);
     --app-err: oklch(0.56 0.2 25);
@@ -322,6 +335,8 @@
     --sidebar-border: oklch(0.32 0.024 295);
     --sidebar-ring: oklch(0.7 0.14 320);
 
+    --app-brand: oklch(0.7 0.14 320);
+    --app-brand-foreground: oklch(0.16 0.02 320);
     --app-ok: oklch(0.73 0.14 160);
     --app-warn: oklch(0.79 0.14 68);
     --app-err: oklch(0.67 0.19 25);
@@ -357,12 +372,14 @@
     --app-weight-normal: 400;
     --app-weight-medium: 500;
     --app-weight-semibold: 600;
-    --app-content-max: 64rem;
-    --app-onboarding-max: 62rem;
+    /* 正文、气泡、轨迹、输入框共用这一条轴。宽度按每行 75-85 个西文字符定,
+     * 再宽眼睛回到行首就会丢行。 */
+    --app-content-max: 44rem;
+    --app-onboarding-max: 44rem;
     --app-onboarding-title-gap: 3rem;
     --app-onboarding-composer-height: 10rem;
     --app-project-row-height: 4rem;
-    --radius: 1rem;
+    --radius: 0.5rem;
 
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
@@ -379,9 +396,10 @@
     --accent: oklch(0.95 0 0);
     --accent-foreground: oklch(0.205 0 0);
     --destructive: oklch(0.583 0.239 28.494);
-    --border: oklch(0.92 0 0);
+    /* 边框只做发丝线:分隔靠明度差,不靠深色描边 */
+    --border: oklch(0.94 0 0);
     --input: oklch(0.97 0 0);
-    --ring: oklch(0.708 0 0);
+    --ring: var(--app-brand);
 
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
@@ -389,8 +407,13 @@
     --sidebar-primary-foreground: oklch(0.985 0 0);
     --sidebar-accent: oklch(0.94 0 0);
     --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    --sidebar-border: oklch(0.94 0 0);
+    --sidebar-ring: var(--app-brand);
+
+    /* 单色主题里唯一的彩色:琥珀取自 Bento 标志,只用在焦点环、运行态、
+     * 主操作这三处,不铺面积 */
+    --app-brand: oklch(0.72 0.15 72);
+    --app-brand-foreground: oklch(0.98 0.01 72);
 
     /* 单色系里语义色刻意压低彩度,只在状态上露一点颜色 */
     --app-ok: oklch(0.55 0.1 155);
@@ -415,9 +438,9 @@
     --accent: oklch(0.371 0 0);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.702 0.19 22.16);
-    --border: oklch(0.269 0 0);
+    --border: oklch(0.275 0 0);
     --input: oklch(0.269 0 0);
-    --ring: oklch(0.556 0 0);
+    --ring: var(--app-brand);
 
     --sidebar: oklch(0.269 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
@@ -425,8 +448,11 @@
     --sidebar-primary-foreground: oklch(0.205 0 0);
     --sidebar-accent: oklch(0.32 0 0);
     --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(0.275 0 0);
-    --sidebar-ring: oklch(0.439 0 0);
+    --sidebar-border: oklch(0.31 0 0);
+    --sidebar-ring: var(--app-brand);
+
+    --app-brand: oklch(0.8 0.145 75);
+    --app-brand-foreground: oklch(0.2 0.04 70);
 
     --app-ok: oklch(0.75 0.11 155);
     --app-warn: oklch(0.8 0.12 85);
@@ -456,8 +482,8 @@
     --app-weight-normal: 400;
     --app-weight-medium: 500;
     --app-weight-semibold: 600;
-    --app-content-max: 70rem;
-    --app-onboarding-max: 64rem;
+    --app-content-max: 56rem;
+    --app-onboarding-max: 56rem;
     --app-onboarding-title-gap: 2.75rem;
     --app-onboarding-composer-height: 9.5rem;
     --app-project-row-height: 3.75rem;
@@ -491,6 +517,8 @@
     --sidebar-border: oklch(0.92 0 0);
     --sidebar-ring: oklch(0.514 0.16 267.44);
 
+    --app-brand: oklch(0.514 0.16 267.44);
+    --app-brand-foreground: oklch(0.97 0.014 254.604);
     --app-ok: oklch(0.55 0.13 155);
     --app-warn: oklch(0.62 0.13 75);
     --app-err: oklch(0.58 0.22 27);
@@ -526,6 +554,8 @@
     --sidebar-border: oklch(0.26 0 0);
     --sidebar-ring: oklch(0.514 0.16 267.44);
 
+    --app-brand: oklch(0.62 0.17 267.44);
+    --app-brand-foreground: oklch(0.97 0.014 254.604);
     --app-ok: oklch(0.75 0.14 155);
     --app-warn: oklch(0.8 0.13 85);
     --app-err: oklch(0.702 0.19 22.16);

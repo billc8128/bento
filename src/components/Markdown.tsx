@@ -54,10 +54,11 @@ export function Markdown({ text, className }: { text: string; className?: string
               <table className="w-full border-collapse text-xs">{children}</table>
             </div>
           ),
+          // 表格只画横向行线:满格描边会让表格变成整段正文里最重的元素
           th: ({ children }) => (
-            <th className="border border-border bg-muted px-2.5 py-1.5 text-left font-medium">{children}</th>
+            <th className="border-b border-border px-2.5 py-1.5 text-left font-semibold">{children}</th>
           ),
-          td: ({ children }) => <td className="border border-border px-2.5 py-1.5">{children}</td>,
+          td: ({ children }) => <td className="border-b border-border/60 px-2.5 py-1.5">{children}</td>,
           hr: () => <hr className="my-4 border-border" />,
           strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
         }}

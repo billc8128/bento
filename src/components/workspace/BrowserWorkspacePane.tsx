@@ -165,7 +165,7 @@ export function BrowserWorkspacePane({
         <BrowserIconButton label="后退" disabled={!state.canGoBack} onClick={() => browserId && browser?.back(browserId)}><ArrowLeft className="size-3.5" /></BrowserIconButton>
         <BrowserIconButton label="前进" disabled={!state.canGoForward} onClick={() => browserId && browser?.forward(browserId)}><ArrowRight className="size-3.5" /></BrowserIconButton>
         <BrowserIconButton label="刷新" disabled={!state.url} onClick={() => browserId && browser?.reload(browserId)}><RefreshCw className="size-3.5" /></BrowserIconButton>
-        <label className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border bg-background px-3 focus-within:ring-2 focus-within:ring-ring">
+        <label className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border bg-background px-3 focus-within:border-foreground/25 focus-within:ring-1 focus-within:ring-foreground/15">
           <Compass className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="sr-only">网址</span>
           <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="输入 URL" className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/60" />

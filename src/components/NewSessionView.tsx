@@ -138,12 +138,14 @@ export function NewSessionView({
               <BentoLogo className="size-8 sm:size-10" />
             </span>
             <h1 className="type-display text-balance">
-              让 Bento 来帮你完成任务
+              今天想做点什么？
             </h1>
           </div>
 
-          <div>
-            <div className="relative z-0 mx-3 -mb-px flex min-h-[var(--app-project-row-height)] w-[calc(100%-1.5rem)] items-center justify-center rounded-t-2xl bg-muted/45 px-4 pb-2 pt-3 sm:mx-5 sm:w-[calc(100%-2.5rem)] sm:rounded-t-[1.75rem] sm:px-5">
+          <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-pop">
+            {/* 模式切换住在输入框内部:原来那条外凸的灰带是第二个「卡片」,
+                和下面的输入框拼不成一个物件 */}
+            <div className="flex items-center justify-center px-3 pt-3 sm:px-4">
               <div className="flex items-center justify-center">
                 <div className="inline-flex shrink-0 gap-0.5 rounded-xl bg-muted p-1" role="tablist" aria-label="对话模式">
                   <button
@@ -206,7 +208,6 @@ export function NewSessionView({
               </div>
             </div>
 
-            <div className="relative z-10 overflow-hidden rounded-2xl border border-border bg-card shadow-[0_14px_34px_-28px_color-mix(in_oklch,var(--foreground)_40%,transparent)] sm:rounded-[1.75rem]">
             <Textarea
               ref={inputRef}
               autoFocus
@@ -276,7 +277,6 @@ export function NewSessionView({
                 )}
               </div>
             )}
-          </div>
           </div>
           {error && (
             <p role="alert" className="mt-2 text-center text-xs text-err">

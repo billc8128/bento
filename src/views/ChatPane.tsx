@@ -74,7 +74,8 @@ function PaneHeader({
         </span>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
-        <h1 className="app-title truncate text-sm font-semibold leading-tight">{info.title}</h1>
+        {/* 标题比正文高一级(text-base):它是这个面板的名字,不是一条列表项 */}
+        <h1 className="app-title truncate text-base font-semibold leading-tight">{info.title}</h1>
         {!minimal && (
           <p className="type-micro truncate font-mono text-muted-foreground">
             {info.path}

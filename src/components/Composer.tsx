@@ -20,16 +20,20 @@ type Attachment = { id: string; name: string; kind: "image" | "file"; url?: stri
 const OUTER: Record<ComposerShape, string> = {
   docked: "shrink-0 border-t border-border bg-card px-4 py-2.5",
   card: "shrink-0 px-4 pb-4 pt-2",
-  // 悬浮:脱离文档流盖在消息上,靠 App 的 relative main 定位
-  floating: "pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-5",
+  // 悬浮:脱离文档流盖在消息上,靠 App 的 relative main 定位。
+  // before 是那道渐隐:消息滚到输入框附近先淡出,而不是被硬生生切一刀
+  floating:
+    "pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-5 before:pointer-events-none before:absolute before:inset-x-0 before:-top-12 before:bottom-0 before:bg-gradient-to-t before:from-background before:via-background before:to-transparent",
   inline: "shrink-0 border-t border-border px-4 pb-4 pt-3",
 }
 
 /** 输入框本体:边框、圆角、投影三件事全看风格 */
 const SHELL: Record<ComposerShape, string> = {
   docked: "rounded-none border-0 bg-transparent shadow-none",
-  card: "rounded-lg border bg-card shadow-sm",
-  floating: "pointer-events-auto rounded-[1.75rem] border bg-card/80 shadow-xl backdrop-blur-xl",
+  card: "rounded-lg border bg-card shadow-flat",
+  // 悬浮态用实底 + 投影分层,不用毛玻璃:消息从下面滚过去的遮挡交给
+  // ChatView 底部那道渐隐,半透明输入框会让底下的代码块糊成噪点
+  floating: "pointer-events-auto rounded-3xl border bg-card shadow-float",
   inline: "rounded-none border-0 bg-transparent shadow-none",
 }
 
@@ -137,9 +141,9 @@ export function Composer({
           onDragLeave={() => setDragging(false)}
           onDrop={drop}
           className={cn(
-            "relative transition-colors",
+            "relative transition-[border-color,box-shadow] duration-150 ease-out motion-reduce:transition-none",
             SHELL[shape],
-            dragging && "border-primary ring-2 ring-ring/40",
+            dragging && "border-ring ring-2 ring-ring/60",
             dragging && shape === "inline" && "border",
           )}
         >
@@ -257,8 +261,7 @@ export function Composer({
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
-                  size="icon"
-                  className="size-7"
+                  size="icon-sm"
                   onClick={() => imageRef.current?.click()}
                 >
                   <ImageIcon className="size-4" />
@@ -271,8 +274,7 @@ export function Composer({
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
-                  size="icon"
-                  className="size-7"
+                  size="icon-sm"
                   onClick={() => fileRef.current?.click()}
                 >
                   <Paperclip className="size-4" />
@@ -309,12 +311,12 @@ export function Composer({
 
             {/* 发送 / 停止 */}
             {running ? (
-              <Button size="sm" variant="secondary" onClick={onToggleRun} className="h-7 gap-1.5 px-2.5 text-sm">
+              <Button size="sm" variant="secondary" onClick={onToggleRun} className="h-7 gap-1.5 rounded-full px-2.5 text-sm">
                 <Square className="size-3 fill-current" />
                 停止
               </Button>
             ) : (
-              <Button size="icon" className="size-7" disabled={!canSend} onClick={send}>
+              <Button size="icon" className="size-7 rounded-full" disabled={!canSend} onClick={send}>
                 <ArrowUp className="size-4" />
                 <span className="sr-only">发送</span>
               </Button>

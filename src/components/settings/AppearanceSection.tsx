@@ -41,7 +41,7 @@ export function AppearanceSection() {
                 className={cn(
                   "rounded-xl border p-3 text-left transition-colors",
                   activeItem
-                    ? "border-primary ring-1 ring-primary/30"
+                    ? "border-brand ring-1 ring-brand/40"
                     : "border-border hover:border-foreground/25",
                 )}
               >
@@ -57,7 +57,7 @@ export function AppearanceSection() {
                 </div>
                 <div className="mt-2.5 flex items-center justify-between gap-2">
                   <span className="text-sm font-medium">{s.name}</span>
-                  {activeItem && <Check className="size-4 shrink-0 text-primary" />}
+                  {activeItem && <Check className="size-4 shrink-0 text-brand" />}
                 </div>
                 <p className="type-micro mt-0.5 text-muted-foreground">{s.desc}</p>
               </button>

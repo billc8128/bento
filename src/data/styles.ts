@@ -73,7 +73,7 @@ export const STYLES = [
   {
     id: "graphite",
     name: "石墨单色",
-    desc: "全灰零彩度 · 大圆角 · 悬浮输入",
+    desc: "石墨灰阶 · 琥珀点睛 · 悬浮输入",
     tone: "light",
     layout: { sidebar: { default: 220, min: 196, max: 304 } },
     traits: {

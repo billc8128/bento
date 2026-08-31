@@ -127,7 +127,7 @@ function ToolRowMain({ tool, open }: { tool: ToolCall; open?: boolean }) {
       )}
       {tool.status === "done" && <Check className="size-3.5 shrink-0 text-ok" />}
       {tool.status === "running" && (
-        <span className="size-3 shrink-0 animate-spin rounded-full border-[1.5px] border-muted-foreground/30 border-t-muted-foreground" />
+        <span className="size-3 shrink-0 animate-spin rounded-full border-2 border-current/25 border-t-current text-brand" />
       )}
       {tool.status === "failed" && <TriangleAlert className="size-3.5 shrink-0 text-err" />}
       {tool.output && (
@@ -216,10 +216,10 @@ function TraceBlock({
           <div key={i} className="flex items-center gap-2 px-1.5 py-0.5 text-xs text-muted-foreground">
             {item.status === "completed" && <Check className="size-3.5 shrink-0 text-ok" />}
             {item.status === "in_progress" && (
-              <span className="size-3 shrink-0 animate-spin rounded-full border-[1.5px] border-muted-foreground/30 border-t-muted-foreground" />
+              <span className="size-3 shrink-0 animate-spin rounded-full border-2 border-current/25 border-t-current text-brand" />
             )}
             {item.status === "pending" && (
-              <span className="size-3.5 shrink-0 rounded-full border-[1.5px] border-muted-foreground/30" />
+              <span className="size-3.5 shrink-0 rounded-full border-2 border-muted-foreground/30" />
             )}
             <span className="min-w-0 truncate">{item.content}</span>
           </div>
@@ -304,7 +304,8 @@ function UserMessage({ m, shape }: { m: UserMsg; shape: MessageShape }) {
 
   return (
     <div className="flex flex-col items-end gap-1.5">
-      <div className="max-w-[75%] rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm leading-relaxed text-primary-foreground">
+      {/* 气泡保持胶囊感:3xl(20px)接近旧 --radius 1rem 时代的 2xl 观感 */}
+      <div className="max-w-[75%] rounded-3xl rounded-br-lg bg-primary px-4 py-2.5 text-sm leading-relaxed text-primary-foreground">
         {m.text}
       </div>
       {m.attachments?.map((a) => (
@@ -334,15 +335,19 @@ function AssistantMessage({
         </div>
       )}
 
-      {/* 双向气泡时正文进气泡;否则限制行长到舒适阅读宽度,工具轨迹仍用全宽 */}
-      <Markdown
-        text={m.text}
-        className={cn(
-          message === "bubble-both"
-            ? "w-auto max-w-[92%] rounded-lg rounded-bl-sm border border-border bg-card px-3.5 py-2.5"
-            : "w-full max-w-[68ch]",
-        )}
-      />
+      {/* 双向气泡时正文进气泡;否则铺满内容轴——行长已经由 --app-content-max
+          管住,再套一层 68ch 就会出现正文比输入框窄一截的错位。
+          流式草稿正文为空时不渲染,否则气泡形态会先出现一枚空胶囊 */}
+      {m.text && (
+        <Markdown
+          text={m.text}
+          className={cn(
+            message === "bubble-both"
+              ? "w-auto max-w-[92%] rounded-lg border border-border bg-card px-3.5 py-2.5"
+              : "w-full",
+          )}
+        />
+      )}
     </div>
   )
 }

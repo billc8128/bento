@@ -136,7 +136,7 @@ export function ProviderWizard({
             <div className="border-b border-border px-5 py-3">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索供应商" className="pl-8" autoFocus />
+                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索供应商" className="pl-8 focus-visible:border-foreground/25 focus-visible:ring-1 focus-visible:ring-foreground/15" autoFocus />
               </div>
             </div>
             <ScrollArea className="min-h-0 flex-1">

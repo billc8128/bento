@@ -100,7 +100,8 @@ function NewProjectDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center rounded-xl border border-input px-3 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20">
+        {/* 自动聚焦的唯一输入位:轻提亮即可,品牌焦点环留给键盘导航 */}
+        <div className="flex items-center rounded-xl border border-input px-3 focus-within:border-foreground/25 focus-within:ring-1 focus-within:ring-foreground/15">
           <Folder className="size-4.5 shrink-0 text-muted-foreground" />
           <Input
             autoFocus
