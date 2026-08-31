@@ -59,6 +59,37 @@ describe("ProviderRoutingService OAuth", () => {
     routing.dispose()
   })
 
+  it("Pi 的 OpenAI OAuth 目录复用隔离 Codex model/list 探针并清理临时租约", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-openai-models-"))
+    dirs.push(dir)
+    const store = new CustomProviderStore(dir, memorySecrets())
+    store.writeOAuthTokens("openai", {
+      accessToken: "oauth-access",
+      refreshToken: "oauth-refresh",
+      expiresAt: Date.now() + 60 * 60 * 1000,
+      accountId: "account-1",
+    })
+    const discoverCodex = vi.fn(async (_cwd: string, env?: NodeJS.ProcessEnv) => {
+      expect(env?.CODEX_HOME).toContain("codex-home-discovery-")
+      return {
+        currentModelId: "gpt-5.6-sol",
+        models: [{ id: "gpt-5.6-sol", name: "GPT-5.6-Sol", reasoning: true }],
+      }
+    })
+    const routing = new ProviderRoutingService(dir, () => store, undefined, discoverCodex)
+
+    await expect(routing.discoverProviderModels("openai", "pi", dir)).resolves.toMatchObject({
+      currentModelId: "gpt-5.6-sol",
+      models: [{ id: "gpt-5.6-sol" }],
+    })
+    expect(discoverCodex).toHaveBeenCalledOnce()
+    expect(routing.sessionsUsing("openai")).toBe(0)
+    expect(fs.readdirSync(path.join(dir, "providers")).some(
+      (name) => name.startsWith("codex-home-discovery-"),
+    )).toBe(false)
+    routing.dispose()
+  })
+
   it("Pi 生成隔离 models.json，密钥只进进程环境", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-pi-"))
     dirs.push(dir)

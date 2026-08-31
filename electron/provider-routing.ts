@@ -40,6 +40,7 @@ export class ProviderRoutingService {
     private readonly userDataDir: string,
     private readonly providers: () => CustomProviderStore,
     private readonly refreshToken: typeof refreshOAuthToken = refreshOAuthToken,
+    private readonly discoverCodex: typeof discoverCodexModels = discoverCodexModels,
   ) {}
 
   private refreshOAuthInBackground(
@@ -441,12 +442,17 @@ export class ProviderRoutingService {
     harnessId: string,
     cwd: string,
   ): Promise<ProviderDiscoveryResult | null> {
-    if (harnessId !== "codex") return null
+    const config = this.providers().getProviderConfig(providerId)
+    if (providerId !== "openai" || !config?.runtimes[harnessId as keyof typeof config.runtimes]) {
+      return null
+    }
     const sessionKey = `discovery-${randomUUID()}`
-    const route = await this.issueRoute(sessionKey, providerId, harnessId)
+    // OpenAI OAuth 是账户级目录。Codex app-server 提供稳定 model/list 探针，
+    // 但探测结果由 Provider Registry 投影给所有共享 Responses runtime 的 Harness。
+    const route = await this.issueRoute(sessionKey, providerId, "codex")
     const proxyEnv = this.codexHomeEnv(sessionKey, route, providerId)
     try {
-      return await discoverCodexModels(cwd, proxyEnv.env)
+      return await this.discoverCodex(cwd, proxyEnv.env)
     } finally {
       this.revokeRoute(sessionKey)
       this.disposeCodexHome(sessionKey)

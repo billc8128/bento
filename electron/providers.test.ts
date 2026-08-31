@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { modelsForProvider, type ProviderView } from "../src/core/provider"
 import { ProviderDiscoveryService } from "./provider-discovery"
+import type { ProviderModelCache } from "./provider-model-cache"
 import { mergeDiscoveredModelsIntoConfigured, ProviderRegistry } from "./providers"
 
 describe("ProviderRegistry", () => {
@@ -78,6 +79,70 @@ describe("ProviderRegistry", () => {
         },
       })
     }
+  })
+
+  it("OpenAI OAuth 动态账户目录复用于全部 Responses Harness，并保持各自 wire id", async () => {
+    let calls = 0
+    const registry = new ProviderRegistry(
+      undefined,
+      (config) => config.id === "openai",
+      async () => {
+        calls += 1
+        return {
+          currentModelId: "gpt-5.6-sol",
+          models: [
+            { id: "gpt-5.6-sol", name: "GPT-5.6-Sol", reasoning: true },
+            { id: "gpt-5.6-terra", name: "GPT-5.6-Terra", reasoning: true },
+            { id: "gpt-5.6-luna", name: "GPT-5.6-Luna", reasoning: true },
+          ],
+        }
+      },
+    )
+
+    await registry.list({ harnessId: "codex", cwd: "/tmp", discover: true })
+    for (const harnessId of ["pi", "omp", "opencode", "kimi", "hermes"] as const) {
+      const providers = await registry.list({ harnessId, cwd: "/tmp", discover: true })
+      const openai = providers.find((provider) => provider.id === "openai")!
+      const prefix = ["pi", "omp", "opencode"].includes(harnessId) ? "bento/" : ""
+      expect(openai.models[harnessId]?.map((model) => model.id)).toEqual([
+        `${prefix}gpt-5.6-sol`,
+        `${prefix}gpt-5.6-terra`,
+        `${prefix}gpt-5.6-luna`,
+      ])
+      expect(openai.defaultModelIds?.[harnessId]).toBe(`${prefix}gpt-5.6-sol`)
+    }
+    await expect(registry.resolveSelection({
+      harnessId: "pi",
+      cwd: "/tmp",
+      providerId: "openai",
+      modelId: "bento/gpt-5.6-terra",
+    })).resolves.toEqual({ providerId: "openai", modelId: "bento/gpt-5.6-terra" })
+    expect(calls).toBe(1)
+  })
+
+  it("Pi 首次列表可复用旧版 Codex OAuth 磁盘缓存", async () => {
+    const discovery = {
+      currentModelId: "gpt-5.6-sol",
+      models: [{ id: "gpt-5.6-sol", name: "GPT-5.6-Sol", reasoning: true }],
+    }
+    const persistentCache = {
+      get: vi.fn((key: string) => key === "builtin\0openai\0codex\0/tmp" ? discovery : undefined),
+      set: vi.fn(),
+    } as unknown as ProviderModelCache
+    const registry = new ProviderRegistry(
+      undefined,
+      (config) => config.id === "openai",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      persistentCache,
+    )
+
+    const providers = await registry.list({ harnessId: "pi", cwd: "/tmp" })
+    expect(providers.find((provider) => provider.id === "openai")?.models.pi).toMatchObject([
+      { id: "bento/gpt-5.6-sol", name: "GPT-5.6-Sol" },
+    ])
   })
 
   it("同一已配置供应商合入本机发现模型，但保留 Bento Provider 身份", () => {

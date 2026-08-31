@@ -47,6 +47,22 @@ function discoveredModelKey(modelId: string): string {
   return separator >= 0 ? normalized.slice(separator + 1) : normalized
 }
 
+const BENTO_PREFIXED_MODEL_HARNESSES = new Set<HarnessId>(["pi", "opencode", "omp"])
+
+function discoveredForHarness(
+  discovery: ProviderDiscoveryResult,
+  harnessId: HarnessId,
+): ProviderDiscoveryResult {
+  const modelId = (id: string) => {
+    const key = discoveredModelKey(id)
+    return BENTO_PREFIXED_MODEL_HARNESSES.has(harnessId) ? `bento/${key}` : key
+  }
+  return {
+    models: discovery.models.map((model) => ({ ...model, id: modelId(model.id) })),
+    ...(discovery.currentModelId ? { currentModelId: modelId(discovery.currentModelId) } : {}),
+  }
+}
+
 /**
  * 同一 canonical Provider 的本机发现只补目录，不改变鉴权来源。
  * 结果仍挂在 builtin/user Provider 下，因此 Bento Adapter 可直接执行；
@@ -112,6 +128,7 @@ const NATIVE_PROVIDER_NAMES: Record<HarnessId, string> = {
 export class ProviderRegistry {
   private userProviders: CustomProviderConfig[] = []
   private readonly builtinCache = new Map<string, ProviderDiscoveryResult>()
+  private readonly builtinAccountCache = new Map<string, ProviderDiscoveryResult>()
   private readonly nativeCache = new Map<string, ProviderDiscoveryResult>()
 
   constructor(
@@ -203,16 +220,34 @@ export class ProviderRegistry {
       if (!view.connected) return view
       const key = `${provider.id}\0${options.harnessId}\0${cwd}`
       const persistentKey = `builtin\0${key}`
+      const accountKey = `${provider.id}\0${cwd}`
+      const accountPersistentKey = `builtin-account\0${accountKey}`
+      const accountCatalog = provider.id === "openai"
       let discovered = options.refresh
         ? undefined
-        : this.builtinCache.get(key) ?? this.persistentCache?.get<ProviderDiscoveryResult>(persistentKey)
+        : this.builtinCache.get(key) ??
+          (accountCatalog ? this.builtinAccountCache.get(accountKey) : undefined) ??
+          this.persistentCache?.get<ProviderDiscoveryResult>(persistentKey) ??
+          (accountCatalog
+            ? this.persistentCache?.get<ProviderDiscoveryResult>(accountPersistentKey) ??
+              this.persistentCache?.get<ProviderDiscoveryResult>(
+                `builtin\0${provider.id}\0codex\0${cwd}`,
+              )
+            : undefined)
       if (discovered && !this.builtinCache.has(key)) this.builtinCache.set(key, discovered)
+      if (discovered && accountCatalog && !this.builtinAccountCache.has(accountKey)) {
+        this.builtinAccountCache.set(accountKey, discovered)
+      }
       if (options.discover && !discovered) {
         try {
           discovered = await this.discoverBuiltin(provider.id, options.harnessId, cwd) ?? undefined
           if (discovered?.models.length) {
             this.builtinCache.set(key, discovered)
             this.persistentCache?.set(persistentKey, discovered)
+            if (accountCatalog) {
+              this.builtinAccountCache.set(accountKey, discovered)
+              this.persistentCache?.set(accountPersistentKey, discovered)
+            }
           }
         } catch (error) {
           return {
@@ -222,16 +257,17 @@ export class ProviderRegistry {
         }
       }
       if (!discovered?.models.length) return view
+      const published = discoveredForHarness(discovered, options.harnessId)
       return {
         ...view,
         models: {
-          [options.harnessId]: discovered.models.map((model) => ({
+          [options.harnessId]: published.models.map((model) => ({
             ...model,
             enabled: this.modelEnabled(provider.id, model.id),
           })),
         },
-        ...(discovered.currentModelId
-          ? { defaultModelIds: { [options.harnessId]: discovered.currentModelId } }
+        ...(published.currentModelId
+          ? { defaultModelIds: { [options.harnessId]: published.currentModelId } }
           : {}),
       }
     }))
@@ -372,18 +408,24 @@ export class ProviderRegistry {
           const cwd = options.cwd.trim() || os.homedir()
           const key = `${config.id}\0${options.harnessId}\0${cwd}`
           const discovered = this.builtinCache.get(key) ??
-            this.persistentCache?.get<ProviderDiscoveryResult>(`builtin\0${key}`)
+            this.builtinAccountCache.get(`${config.id}\0${cwd}`) ??
+            this.persistentCache?.get<ProviderDiscoveryResult>(`builtin\0${key}`) ??
+            this.persistentCache?.get<ProviderDiscoveryResult>(`builtin-account\0${config.id}\0${cwd}`) ??
+            (config.id === "openai"
+              ? this.persistentCache?.get<ProviderDiscoveryResult>(`builtin\0openai\0codex\0${cwd}`)
+              : undefined)
           if (discovered?.models.length) {
+            const published = discoveredForHarness(discovered, options.harnessId)
             provider = {
               ...provider,
               models: {
-                [options.harnessId]: discovered.models.map((model) => ({
+                [options.harnessId]: published.models.map((model) => ({
                   ...model,
                   enabled: this.modelEnabled(config.id, model.id),
                 })),
               },
-              ...(discovered.currentModelId
-                ? { defaultModelIds: { [options.harnessId]: discovered.currentModelId } }
+              ...(published.currentModelId
+                ? { defaultModelIds: { [options.harnessId]: published.currentModelId } }
                 : {}),
             }
           }
