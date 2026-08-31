@@ -83,7 +83,7 @@ export const claudeAgentSdkDriver: HarnessDriver = {
       tools: { type: "preset", preset: "claude_code" },
       ...(options.mcpServers?.length ? {
         mcpServers: Object.fromEntries(options.mcpServers.map((server) => [
-          "bento-browser",
+          "bento-apps",
           { type: "stdio" as const, command: server.command, args: server.args, env: server.env },
         ])),
       } : {}),

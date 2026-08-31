@@ -7,7 +7,7 @@ import type { LocalProviderCandidate, ProviderPresetView } from "@/core/provider
 import type { BinaryProgress } from "../../electron/binaries/progress"
 import type { Effort, SessionScope } from "@/core/types"
 import type { PromptInput } from "@/core/types"
-import type { BentoAppId, BentoAppView } from "@/core/apps"
+import type { BentoAppId, BentoAppView, UserAppInput } from "@/core/apps"
 import type {
   WorkspaceBounds,
   WorkspaceBrowserState,
@@ -124,6 +124,8 @@ declare global {
       providerSessionsUsing(providerId: string): Promise<number>
       listApps(): Promise<BentoAppView[]>
       setAppEnabled(id: BentoAppId, enabled: boolean): Promise<{ ok: true } | { error: string }>
+      upsertApp(input: UserAppInput): Promise<{ app: BentoAppView } | { error: string }>
+      removeApp(id: string): Promise<{ ok: true } | { error: string }>
       onAppsChanged(cb: () => void): () => void
       onProvidersChanged(cb: () => void): () => void
       chooseDirectory(): Promise<{ path?: string; error?: string }>
@@ -157,7 +159,7 @@ declare global {
           onChanged(cb: (change: WorkspaceFileChange) => void): () => void
         }
         browser: {
-          create(): Promise<
+          create(preferredId?: string): Promise<
             { state: WorkspaceBrowserState; error?: undefined } | { state?: undefined; error: string }
           >
           list(): Promise<WorkspaceBrowserState[]>
@@ -180,6 +182,7 @@ declare global {
           }
           destroy(id: string): Promise<{ ok: true } | { error: string }>
           onState(cb: (state: WorkspaceBrowserState) => void): () => void
+          onReveal(cb: (id: string) => void): () => void
         }
       }
       onSessionEvent(cb: (e: { key: string; record: LogRecord }) => void): () => void

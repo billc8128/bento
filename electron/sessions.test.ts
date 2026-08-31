@@ -16,6 +16,63 @@ afterEach(() => {
 })
 
 describe("SessionManager model selection", () => {
+  it("同一 App lease 按 Harness 边界附着：Pi extension，其余 stdio relay", async () => {
+    for (const harnessId of ["pi", "codex"] as const) {
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `bento-app-lease-${harnessId}-`))
+      let started: HarnessStartOptions | undefined
+      let disposed = 0
+      const driver: HarnessDriver = {
+        id: harnessId,
+        async start(options) {
+          started = options
+          return {
+            nativeSessionId: `${harnessId}-native`,
+            capabilities: { modelSwitch: "none", effortSwitch: "none" },
+            prompt: async () => ({ stopReason: "end_turn" }),
+            cancel: async () => {},
+            close: () => {},
+            onExit: () => () => {},
+          }
+        },
+      }
+      const manager = new SessionManager(
+        tempDir,
+        () => {},
+        () => driver,
+        null,
+        null,
+        null,
+        null,
+        async ({ sessionKey }) => ({
+          sessionKey,
+          endpoint: "http://127.0.0.1:3000/mcp/token",
+          token: "token",
+          stdioRelay: { name: "Bento Apps", command: "/bin/node", args: ["relay.mjs"], env: {} },
+          piExtensionPath: "/tmp/bento-pi-mcp.mjs",
+          dispose: async () => { disposed += 1 },
+        }),
+      )
+      const { key } = await manager.createSession({
+        harnessId,
+        cwd: tempDir,
+        providerId: `native-${harnessId}`,
+        modelId: "model",
+      })
+      if (harnessId === "pi") {
+        expect(started?.appArgs).toEqual(["--extension", "/tmp/bento-pi-mcp.mjs"])
+        expect(started?.appEnv).toMatchObject({ BENTO_MCP_TOKEN: "token" })
+        expect(started?.mcpServers).toBeUndefined()
+      } else {
+        expect(started?.mcpServers?.[0]).toMatchObject({ name: "Bento Apps", command: "/bin/node" })
+        expect(started?.appArgs).toBeUndefined()
+      }
+      await manager.closeSession(key)
+      expect(disposed).toBe(1)
+      fs.rmSync(tempDir, { recursive: true, force: true })
+      tempDir = ""
+    }
+  })
+
   it("附件经过 SessionManager 校验后送进 Driver，日志只保存脱敏元数据", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-session-attachment-"))
     const attachmentPath = path.join(tempDir, "report.csv")

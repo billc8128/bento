@@ -11,7 +11,7 @@ import { getDriver } from "./drivers/registry"
 import { SessionManager, type HarnessId } from "./sessions"
 import type { Effort, SessionScope } from "../src/core/types"
 import type { PromptInput } from "../src/core/types"
-import { BROWSER_APP_ID, type BentoAppId } from "../src/core/apps"
+import type { BentoAppId, UserAppInput } from "../src/core/apps"
 import { configureBinaryManager } from "./binaries/manager"
 import { createProject } from "./projects"
 import type { CustomProviderConfig } from "../src/core/provider"
@@ -43,7 +43,7 @@ import { WorkspaceBrowserManager } from "./workspace/browser-manager"
 import { WorkspaceFileWatchManager } from "./workspace/file-watch-manager"
 import type { WorkspaceBounds } from "../src/types/workspace"
 import { AppsStore } from "./apps"
-import { BrowserMcpBridge } from "./browser-mcp-bridge"
+import { AppRuntimeHost } from "./app-runtime-host"
 
 // GUI app 不继承 login shell 的 PATH,打包后 spawn kimi/opencode 会 ENOENT。
 // fix-path 用 login shell 修 PATH;常见 bin 目录再兜一层(存在才加)
@@ -67,12 +67,9 @@ let providers: ProviderRegistry
 let routing: ProviderRoutingService | null = null
 let terminals: TerminalManager
 let workspaceBrowsers: WorkspaceBrowserManager
-let browserMcp: BrowserMcpBridge
+let appRuntime: AppRuntimeHost
 const workspaceFiles = new WorkspaceFileService()
 let workspaceFileWatches: WorkspaceFileWatchManager
-const apps = new AppsStore(app.getPath("userData"), () => {
-  win?.webContents.send("apps:changed")
-})
 const safeSecrets: SecretStore = {
   get: (key) => {
     if (!safeStorage.isEncryptionAvailable()) return null
@@ -121,6 +118,9 @@ function configureSecretLocalStorage(userDataDir: string) {
 }
 
 const secretVault = configureSecretLocalStorage(app.getPath("userData"))
+const apps = new AppsStore(app.getPath("userData"), safeSecrets, () => {
+  win?.webContents.send("apps:changed")
+})
 const customProviders = new CustomProviderStore(
   app.getPath("userData"),
   safeSecrets,
@@ -253,11 +253,21 @@ app.whenReady().then(async () => {
   workspaceBrowsers = new WorkspaceBrowserManager((ownerId, state) => {
     sendWorkspaceEvent(ownerId, "workspace-browser:state", state)
   })
-  browserMcp = new BrowserMcpBridge(workspaceBrowsers, () => {
-    if (!win || win.isDestroyed()) return null
-    return { ownerId: win.webContents.id, window: win }
-  })
-  await browserMcp.start()
+  appRuntime = new AppRuntimeHost(
+    app.getPath("userData"),
+    apps,
+    workspaceBrowsers,
+    () => {
+      if (!win || win.isDestroyed()) return null
+      return { ownerId: win.webContents.id, window: win }
+    },
+    path.join(app.getAppPath(), "electron/mcp-http-relay.mjs"),
+    path.join(app.getAppPath(), "electron/pi-mcp-extension.mjs"),
+    (id) => {
+      if (win && !win.isDestroyed()) win.webContents.send("workspace-browser:reveal", id)
+    },
+  )
+  await appRuntime.start()
   workspaceFileWatches = new WorkspaceFileWatchManager(workspaceFiles, (ownerId, change) => {
     sendWorkspaceEvent(ownerId, "workspace-files:changed", change)
   })
@@ -357,10 +367,7 @@ app.whenReady().then(async () => {
     }),
     configAdapters,
     resolveProviderRuntimes,
-    (harnessId) => {
-      if (!apps.isEnabled(BROWSER_APP_ID) || harnessId === "pi") return []
-      return [browserMcp.mcpServer(path.join(app.getAppPath(), "electron/browser-mcp-server.mjs"))]
-    },
+    ({ sessionKey, cwd }) => appRuntime.prepare(sessionKey, cwd),
   )
 
   // IPC:renderer 经 preload 调这些;错误统一转成 { error } 而不是抛穿
@@ -392,9 +399,27 @@ app.whenReady().then(async () => {
   ipcMain.handle("session:cancel", (_e, key: string) => sessions.cancel(key))
   ipcMain.handle("apps:list", () => apps.list())
   ipcMain.handle("apps:set-enabled", (_event, id: BentoAppId, enabled: boolean) => {
-    if (id !== BROWSER_APP_ID) return { error: "未知 App" }
-    apps.setEnabled(id, enabled)
-    return { ok: true }
+    try {
+      apps.setEnabled(id, enabled)
+      return { ok: true }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.handle("apps:upsert", (_event, input: UserAppInput) => {
+    try {
+      return { app: apps.upsert(input) }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.handle("apps:remove", (_event, id: string) => {
+    try {
+      apps.remove(id)
+      return { ok: true }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
   })
   ipcMain.handle("session:set-model", async (
     _e,
@@ -710,11 +735,11 @@ app.whenReady().then(async () => {
     workspaceFileWatches.unwatch(event.sender.id, subscriptionId)
   })
 
-  ipcMain.handle("workspace-browser:create", (event) => {
+  ipcMain.handle("workspace-browser:create", (event, preferredId?: string) => {
     try {
       const owner = BrowserWindow.fromWebContents(event.sender)
       if (!owner) throw new Error("主窗口不可用")
-      return { state: workspaceBrowsers.create(event.sender.id, owner) }
+      return { state: workspaceBrowsers.create(event.sender.id, owner, preferredId) }
     } catch (err) {
       return { error: String(err instanceof Error ? err.message : err) }
     }
@@ -871,12 +896,12 @@ app.on("window-all-closed", () => {
   workspaceBrowsers?.disposeAll()
   workspaceFileWatches?.disposeAll()
   if (process.platform !== "darwin") {
-    browserMcp?.close()
+    void appRuntime?.close()
     app.quit()
   }
 })
 
-app.on("before-quit", () => browserMcp?.close())
+app.on("before-quit", () => void appRuntime?.close())
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()

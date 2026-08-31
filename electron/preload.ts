@@ -3,7 +3,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
 import type { HarnessId } from "../src/core/harness"
 import type { Effort, PromptInput, SessionScope } from "../src/core/types"
-import type { BentoAppId, BentoAppView } from "../src/core/apps"
+import type { BentoAppId, BentoAppView, UserAppInput } from "../src/core/apps"
 import type {
   WorkspaceBounds,
   WorkspaceBrowserSnapshot,
@@ -85,6 +85,8 @@ const api = {
   listApps: () => ipcRenderer.invoke("apps:list") as Promise<BentoAppView[]>,
   setAppEnabled: (id: BentoAppId, enabled: boolean) =>
     ipcRenderer.invoke("apps:set-enabled", id, enabled),
+  upsertApp: (input: UserAppInput) => ipcRenderer.invoke("apps:upsert", input),
+  removeApp: (id: string) => ipcRenderer.invoke("apps:remove", id),
   onAppsChanged: (cb: () => void) => {
     const handler = () => cb()
     ipcRenderer.on("apps:changed", handler)
@@ -132,7 +134,7 @@ const api = {
       },
     },
     browser: {
-      create: () => ipcRenderer.invoke("workspace-browser:create"),
+      create: (preferredId?: string) => ipcRenderer.invoke("workspace-browser:create", preferredId),
       list: () => ipcRenderer.invoke("workspace-browser:list") as Promise<WorkspaceBrowserState[]>,
       navigate: (id: string, url: string) => ipcRenderer.invoke("workspace-browser:navigate", id, url),
       setBounds: (id: string, bounds: WorkspaceBounds | null) =>
@@ -157,6 +159,11 @@ const api = {
         const handler = (_event: unknown, payload: WorkspaceBrowserState) => cb(payload)
         ipcRenderer.on("workspace-browser:state", handler)
         return () => ipcRenderer.removeListener("workspace-browser:state", handler)
+      },
+      onReveal: (cb: (id: string) => void) => {
+        const handler = (_event: unknown, id: string) => cb(id)
+        ipcRenderer.on("workspace-browser:reveal", handler)
+        return () => ipcRenderer.removeListener("workspace-browser:reveal", handler)
       },
     },
   },

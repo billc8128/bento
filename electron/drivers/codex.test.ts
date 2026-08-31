@@ -102,7 +102,7 @@ describe("codexDriver thread 参数", () => {
       ],
     })
     expect(requests.find((request) => request.method === "thread/start")?.params).toMatchObject({
-      config: { mcp_servers: { "bento-browser": { command: "/bin/node", args: ["browser.mjs"] } } },
+      config: { mcp_servers: { "bento-apps": { command: "/bin/node", args: ["browser.mjs"] } } },
     })
     expect(requests.find((request) => request.method === "turn/start")?.params?.input).toEqual([
       { type: "text", text: "查看附件" },

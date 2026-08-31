@@ -23,6 +23,7 @@ type BrowserRecord = {
   state: WorkspaceBrowserState
   automationNodes: Map<number, { role: string; disabled: boolean }>
   debuggerAttached: boolean
+  claimed: boolean
 }
 
 type BrowserSender = (ownerId: number, payload: WorkspaceBrowserState) => void
@@ -51,7 +52,27 @@ export class WorkspaceBrowserManager {
     browserSession.on("will-download", (event) => event.preventDefault())
   }
 
-  create(ownerId: number, window: BrowserWindow): WorkspaceBrowserState {
+  create(ownerId: number, window: BrowserWindow, preferredId?: string): WorkspaceBrowserState {
+    const preferred = preferredId ? this.browsers.get(preferredId) : undefined
+    if (preferred?.ownerId === ownerId) {
+      preferred.claimed = true
+      return preferred.state
+    }
+    const pending = [...this.browsers.values()].find(
+      (record) => record.ownerId === ownerId && !record.claimed,
+    )
+    if (pending) {
+      pending.claimed = true
+      return pending.state
+    }
+    return this.createRecord(ownerId, window, true)
+  }
+
+  ensure(ownerId: number, window: BrowserWindow): WorkspaceBrowserState {
+    return this.list(ownerId)[0] ?? this.createRecord(ownerId, window, false)
+  }
+
+  private createRecord(ownerId: number, window: BrowserWindow, claimed: boolean): WorkspaceBrowserState {
     const id = randomUUID()
     const view = new WebContentsView({
       webPreferences: {
@@ -77,9 +98,12 @@ export class WorkspaceBrowserManager {
       state,
       automationNodes: new Map(),
       debuggerAttached: false,
+      claimed,
     }
     this.browsers.set(id, record)
     window.contentView.addChildView(view)
+    // Agent 可以在 Renderer 接管前立即 snapshot/click；隐藏 View 也需要真实 viewport。
+    view.setBounds({ x: 0, y: 0, width: 1280, height: 800 })
     view.setVisible(false)
 
     const contents = view.webContents

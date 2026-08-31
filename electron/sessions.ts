@@ -13,6 +13,8 @@ import { isNativeProviderId, NATIVE_MODEL_ID } from "../src/core/provider"
 import type { Effort, PromptAttachment, PromptInput, SessionScope } from "../src/core/types"
 import { getDriver } from "./drivers/registry"
 import type { ProviderRoutingService } from "./provider-routing"
+import type { AppSessionLease } from "./app-runtime-host"
+import { appStartOptions } from "./app-harness-adapter"
 import type {
   BentoModelSelection,
   SessionConfigAdapter,
@@ -27,7 +29,6 @@ import type {
   HarnessConnection,
   HarnessDriver,
   HarnessId,
-  HarnessMcpServer,
 } from "./drivers/types"
 
 export type SessionRecord = {
@@ -50,6 +51,7 @@ type LiveSession = {
   connection: HarnessConnection
   /** SessionConfigAdapter 签发的配置租约;legacy 路径没有。 */
   configLease?: SessionConfigLease
+  appLease?: AppSessionLease
   seq: number
   logStream: fs.WriteStream
   hasUserMessage: boolean
@@ -72,7 +74,11 @@ export type SessionProviderRuntimeResolver = (request: {
   mode: "native" | "bento"
 }) => Promise<SessionConfigRequest["providers"]>
 
-type SessionMcpResolver = (harnessId: HarnessId) => HarnessMcpServer[]
+type SessionAppsResolver = (request: {
+  sessionKey: string
+  harnessId: HarnessId
+  cwd: string
+}) => Promise<AppSessionLease | null>
 
 function promptInput(value: string | PromptInput): PromptInput {
   const request = typeof value === "string" ? { text: value, attachments: [] } : value
@@ -111,7 +117,7 @@ export class SessionManager {
     /** session-config registry;缺省 legacy 路径(全部走旧 routing/env 组装)。 */
     private readonly configAdapters: SessionConfigRegistry | null = null,
     private readonly resolveProviderRuntimes: SessionProviderRuntimeResolver | null = null,
-    private readonly resolveMcpServers: SessionMcpResolver | null = null,
+    private readonly resolveApps: SessionAppsResolver | null = null,
   ) {
     this.dir = path.join(userDataDir, "sessions")
     this.chatRoot = path.join(userDataDir, "chat-workspaces")
@@ -266,6 +272,16 @@ export class SessionManager {
     const wireModelId = configLease
       ? configLease.selected.harnessModelId
       : record.modelId !== NATIVE_MODEL_ID ? record.modelId : undefined
+    let appLease: AppSessionLease | undefined
+    try {
+      appLease = await this.resolveApps?.({
+        sessionKey: record.key,
+        harnessId: record.harnessId as HarnessId,
+        cwd: record.cwd,
+      }) ?? undefined
+    } catch {
+      // Apps 是附加能力；单个用户 App 启动失败不能阻断核心 Harness 会话。
+    }
     let connection: HarnessConnection
     try {
       connection = await this.resolveDriver(record.harnessId).start(
@@ -276,9 +292,7 @@ export class SessionManager {
           ...(wireModelId ? { modelId: wireModelId } : {}),
           ...(record.effort ? { effort: record.effort } : {}),
           ...(proxyEnv ? { proxyEnv } : {}),
-          ...(this.resolveMcpServers ? {
-            mcpServers: this.resolveMcpServers(record.harnessId as HarnessId),
-          } : {}),
+          ...(appLease ? appStartOptions(record.harnessId as HarnessId, appLease) : {}),
         },
         emit,
       )
@@ -286,6 +300,7 @@ export class SessionManager {
       // start 失败:释放活跃资源并删除会话状态——没有进程就没有可恢复的
       // native session,隔离目录与 routes 一并回收,不泄漏。
       await configLease?.dispose()
+      await appLease?.dispose()
       await adapter?.removeSessionState?.(record.key)
       throw error
     }
@@ -298,6 +313,7 @@ export class SessionManager {
       connection,
       /** SessionConfigAdapter 签发的配置租约;legacy 路径没有。 */
       configLease,
+      appLease,
       seq: prior.at(-1)?.seq ?? 0,
       logStream: fs.createWriteStream(logPath, { fd: fs.openSync(logPath, "a") }),
       hasUserMessage: prior.some(
@@ -322,6 +338,7 @@ export class SessionManager {
       connected.logStream.end()
       // 进程异常退出同样走租约回收(stopLive 不会再见到它)
       void connected.configLease?.dispose()
+      void connected.appLease?.dispose()
     })
     return connected
   }
@@ -573,6 +590,7 @@ export class SessionManager {
       session.connection.close()
       session.logStream.end()
       await session.configLease.dispose()
+      await session.appLease?.dispose()
       return
     }
     this.routing?.revokeRoute(key)
@@ -581,6 +599,7 @@ export class SessionManager {
     session.disposeExit()
     session.connection.close()
     session.logStream.end()
+    await session.appLease?.dispose()
   }
 
   /** 彻底删除会话的 adapter 侧持久状态;按 index 记录定位 adapter(历史会话也适用)。 */

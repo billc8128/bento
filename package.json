@@ -86,7 +86,8 @@
     "files": [
       "dist/**",
       "dist-electron/**",
-      "electron/browser-mcp-server.mjs",
+      "electron/mcp-http-relay.mjs",
+      "electron/pi-mcp-extension.mjs",
       "package.json",
       "!node_modules/@earendil-works/pi-tui/native/win32/**",
       "!node_modules/@earendil-works/pi-tui/native/darwin/prebuilds/darwin-x64/**"

@@ -35,6 +35,8 @@ export type HarnessStartOptions = {
    */
   proxyEnv?: { env: Record<string, string>; strip?: string[] }
   mcpServers?: HarnessMcpServer[]
+  appArgs?: string[]
+  appEnv?: Record<string, string>
 }
 
 export type HarnessConnection = {

@@ -164,11 +164,13 @@ class PiRpcProcess {
     nativeSessionId: string | undefined,
     private readonly emit: (event: HarnessEvent) => void,
     proxyEnv?: { env: Record<string, string>; strip?: string[] },
+    app?: { args?: string[]; env?: Record<string, string> },
   ) {
     const local = localHarnessExecutable("pi")
     const args = local
       ? ["--mode", "rpc", "--approve"]
       : [resolvePiRpcEntry(), "--approve"]
+    args.push(...(app?.args ?? []))
     if (nativeSessionId) args.push("--session", nativeSessionId)
     const env = Object.fromEntries(
       Object.entries(process.env).filter(([key]) =>
@@ -177,7 +179,7 @@ class PiRpcProcess {
     this.child = spawn(local?.path ?? process.execPath, args, {
       cwd,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...env, ...proxyEnv?.env, ELECTRON_RUN_AS_NODE: "1" },
+      env: { ...env, ...proxyEnv?.env, ...app?.env, ELECTRON_RUN_AS_NODE: "1" },
     })
     this.child.stdout!.on("data", (chunk: Buffer) => this.read(chunk.toString()))
     this.child.stderr!.on("data", (chunk: Buffer) => {
@@ -306,7 +308,10 @@ export function piModelRef(value: string): { provider: string; modelId: string }
 export const piDriver: HarnessDriver = {
   id: "pi",
   async start(options, emit): Promise<HarnessConnection> {
-    const rpc = new PiRpcProcess(options.cwd, options.nativeSessionId, emit, options.proxyEnv)
+    const rpc = new PiRpcProcess(options.cwd, options.nativeSessionId, emit, options.proxyEnv, {
+      args: options.appArgs,
+      env: options.appEnv,
+    })
     const state = await rpc.request({ type: "get_state" })
     const data = state.data as { sessionFile?: string; sessionId: string }
     if (options.modelId) {

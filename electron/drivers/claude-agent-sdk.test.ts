@@ -100,7 +100,7 @@ describe("claudeAgentSdkDriver", () => {
       includePartialMessages: true,
       settingSources: ["project"],
       mcpServers: {
-        "bento-browser": { type: "stdio", command: "/bin/node", args: ["browser.mjs"] },
+        "bento-apps": { type: "stdio", command: "/bin/node", args: ["browser.mjs"] },
       },
     })
     expect(calls[1]?.options).toMatchObject({

@@ -173,7 +173,7 @@ export const codexDriver: HarnessDriver = {
       ...(options.mcpServers?.length ? {
         config: {
           mcp_servers: Object.fromEntries(options.mcpServers.map((server) => [
-            "bento-browser",
+            "bento-apps",
             { command: server.command, args: server.args, env: server.env },
           ])),
         },
