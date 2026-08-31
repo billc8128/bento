@@ -8,6 +8,7 @@ import {
   splitTokenPath,
   startLocalModelProxy,
   upstreamUrlOf,
+  normalizeOpenAiChatBody,
   type LocalModelProxy,
   type ProxyRoute,
 } from "./model-proxy"
@@ -54,6 +55,25 @@ describe("buildProxyHeaders", () => {
       "x-custom": "a, b",
       "x-api-key": "sk-user",
       "anthropic-beta": "OAuth-2025-04-20",
+    })
+  })
+})
+
+describe("normalizeOpenAiChatBody", () => {
+  it("兼容端点把 developer role 降级为 system，其余消息保持不变", () => {
+    const body = Buffer.from(JSON.stringify({
+      model: "k3",
+      messages: [
+        { role: "developer", content: "instructions" },
+        { role: "user", content: "hi" },
+      ],
+    }))
+    expect(JSON.parse(normalizeOpenAiChatBody(body).toString("utf8"))).toMatchObject({
+      model: "k3",
+      messages: [
+        { role: "system", content: "instructions" },
+        { role: "user", content: "hi" },
+      ],
     })
   })
 })
@@ -202,6 +222,13 @@ describe("openai-chat 桥全链路(fake openai 上游)", () => {
       wireProtocol: "openai-chat",
       apiKey: "sk-ds",
     })
+    routes.issue("tok-chat-direct", {
+      providerId: "user-kimi-code",
+      agent: "pi",
+      baseUrl: upstreamBase,
+      wireProtocol: "openai-chat",
+      apiKey: "sk-kimi",
+    })
   })
   afterAll(() => {
     proxy.close()
@@ -247,6 +274,29 @@ describe("openai-chat 桥全链路(fake openai 上游)", () => {
     const res = await fetch(`http://127.0.0.1:${proxy.port}/s/tok-chat/v1/models`)
     expect(res.status).toBe(200)
     expect(seenRequests[0]!.path).toBe("/v1/models")
+  })
+
+  it("Pi Chat Completions 直通时归一化 developer role", async () => {
+    seenRequests.length = 0
+    const res = await fetch(`http://127.0.0.1:${proxy.port}/s/tok-chat-direct/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "k3",
+        stream: true,
+        messages: [
+          { role: "developer", content: "instructions" },
+          { role: "user", content: "hi" },
+        ],
+      }),
+    })
+    expect(res.status).toBe(200)
+    expect(seenRequests[0]!.body).toMatchObject({
+      messages: [
+        { role: "system", content: "instructions" },
+        { role: "user", content: "hi" },
+      ],
+    })
   })
 })
 

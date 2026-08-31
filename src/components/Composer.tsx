@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils"
 import { useTraits } from "@/lib/style-context"
 import { getHarness, type HarnessId } from "@/core/harness"
 import { findProviderModel } from "@/core/provider"
+import { shouldSubmitComposerKey } from "@/core/composer-keyboard"
 import type { Effort, PromptAttachment, PromptInput, SessionScope } from "@/core/types"
 import { useProviderCatalog } from "@/lib/provider-store"
 import { COLUMN, type ComposerShape } from "@/data/styles"
@@ -74,6 +75,7 @@ export function Composer({
   const [dragging, setDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const imageRef = useRef<HTMLInputElement>(null)
+  const composingRef = useRef(false)
 
   const harness = getHarness(harnessId)
   const providerCatalog = useProviderCatalog(harnessId, cwd)
@@ -220,8 +222,14 @@ export function Composer({
           <Textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onCompositionStart={() => { composingRef.current = true }}
+            onCompositionEnd={() => { composingRef.current = false }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (shouldSubmitComposerKey({
+                key: e.key,
+                shiftKey: e.shiftKey,
+                isComposing: composingRef.current || e.nativeEvent.isComposing,
+              })) {
                 e.preventDefault()
                 send()
               }

@@ -147,6 +147,18 @@ export function upstreamUrlOf(route: ProxyRoute, suffix: string, search: string)
   return `${base}${path}${search}`
 }
 
+export function normalizeOpenAiChatBody(body: Buffer): Buffer {
+  const request = JSON.parse(body.toString("utf8")) as { messages?: Array<Record<string, unknown>> }
+  if (!Array.isArray(request.messages) || !request.messages.some((message) => message.role === "developer")) {
+    return body
+  }
+  return Buffer.from(JSON.stringify({
+    ...request,
+    messages: request.messages.map((message) =>
+      message.role === "developer" ? { ...message, role: "system" } : message),
+  }))
+}
+
 export type LocalModelProxy = {
   port: number
   routes: RouteRegistry
@@ -213,10 +225,22 @@ async function handleRequest(
     }
 
     const target = upstreamUrlOf(route, split.suffix, url.search)
-    const body = req.method === "GET" || req.method === "HEAD" ? undefined : await readBody(req)
+    let body = req.method === "GET" || req.method === "HEAD" ? undefined : await readBody(req)
+    const headers = buildProxyHeaders(req.headers, route.apiKey, route.headerOverrides, routeAuth(route))
+    if (
+      body &&
+      route.wireProtocol === "openai-chat" &&
+      /\/chat\/completions\/?$/.test(split.suffix)
+    ) {
+      const normalized = normalizeOpenAiChatBody(body)
+      if (normalized !== body) {
+        body = normalized
+        delete headers["content-length"]
+      }
+    }
     const upstreamRes = await fetch(target, {
       method: req.method,
-      headers: buildProxyHeaders(req.headers, route.apiKey, route.headerOverrides, routeAuth(route)),
+      headers,
       body,
     })
 

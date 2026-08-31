@@ -7,6 +7,7 @@ import { RuntimePicker } from "@/components/RuntimePicker"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { DEFAULT_HARNESS_ID, getHarness, type HarnessId } from "@/core/harness"
+import { shouldSubmitComposerKey } from "@/core/composer-keyboard"
 import {
   defaultModelSelection,
   findProviderModel,
@@ -35,6 +36,7 @@ export function NewSessionView({
 }) {
   const { sessions, binaryProgress } = useLive()
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const composingRef = useRef(false)
   const [cwd, setCwd] = useState(initialCwd)
   const [scope, setScope] = useState<SessionScope>(initialScope)
   const [harnessId, setHarnessId] = useState<HarnessId>(initialHarnessId)
@@ -213,8 +215,14 @@ export function NewSessionView({
               autoFocus
               value={task}
               onChange={(event) => setTask(event.target.value)}
+              onCompositionStart={() => { composingRef.current = true }}
+              onCompositionEnd={() => { composingRef.current = false }}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
+                if (shouldSubmitComposerKey({
+                  key: event.key,
+                  shiftKey: event.shiftKey,
+                  isComposing: composingRef.current || event.nativeEvent.isComposing,
+                })) {
                   event.preventDefault()
                   void start()
                 }
