@@ -1,5 +1,5 @@
 import type { HarnessUsage } from "../../src/core/events"
-import type { Effort } from "../../src/core/types"
+import type { Effort, PromptInput } from "../../src/core/types"
 
 export type HarnessId = "claude-code" | "kimi" | "codex" | "opencode" | "pi" | "omp" | "hermes"
 
@@ -9,6 +9,13 @@ export type DriverId = HarnessId | "glm"
 export type HarnessCapabilities = {
   modelSwitch: "none" | "new-session" | "live"
   effortSwitch: "none" | "new-session" | "live"
+}
+
+export type HarnessMcpServer = {
+  name: string
+  command: string
+  args: string[]
+  env: Record<string, string>
 }
 
 /** 上下文恢复能力由 driver 在 start() 内部消化(nativeSessionId 传入即尝试
@@ -27,12 +34,13 @@ export type HarnessStartOptions = {
    * spawn env,不做任何路由准备(红线:driver 不写文件、不碰路由服务)。
    */
   proxyEnv?: { env: Record<string, string>; strip?: string[] }
+  mcpServers?: HarnessMcpServer[]
 }
 
 export type HarnessConnection = {
   nativeSessionId: string
   capabilities: HarnessCapabilities
-  prompt(text: string): Promise<{ stopReason?: string; usage?: HarnessUsage }>
+  prompt(input: string | PromptInput): Promise<{ stopReason?: string; usage?: HarnessUsage }>
   cancel(): Promise<void>
   close(): void
   onExit(callback: (code: number | null) => void): () => void

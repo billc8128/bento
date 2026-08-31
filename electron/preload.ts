@@ -2,7 +2,8 @@
 
 import { contextBridge, ipcRenderer, webUtils } from "electron"
 import type { HarnessId } from "../src/core/harness"
-import type { Effort, SessionScope } from "../src/core/types"
+import type { Effort, PromptInput, SessionScope } from "../src/core/types"
+import type { BentoAppId, BentoAppView } from "../src/core/apps"
 import type {
   WorkspaceBounds,
   WorkspaceBrowserSnapshot,
@@ -25,7 +26,7 @@ const api = {
     effort?: Effort
   }) =>
     ipcRenderer.invoke("session:create", opts),
-  prompt: (key: string, text: string) => ipcRenderer.invoke("session:prompt", key, text),
+  prompt: (key: string, input: PromptInput) => ipcRenderer.invoke("session:prompt", key, input),
   cancel: (key: string) => ipcRenderer.invoke("session:cancel", key),
   setModel: (key: string, selection: { providerId: string; modelId: string }) =>
     ipcRenderer.invoke("session:set-model", key, selection),
@@ -81,6 +82,14 @@ const api = {
   }) => ipcRenderer.invoke("custom-provider:fetch-models", payload),
   providerSessionsUsing: (providerId: string) =>
     ipcRenderer.invoke("custom-provider:sessions-using", providerId),
+  listApps: () => ipcRenderer.invoke("apps:list") as Promise<BentoAppView[]>,
+  setAppEnabled: (id: BentoAppId, enabled: boolean) =>
+    ipcRenderer.invoke("apps:set-enabled", id, enabled),
+  onAppsChanged: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on("apps:changed", handler)
+    return () => ipcRenderer.removeListener("apps:changed", handler)
+  },
 
   chooseDirectory: () => ipcRenderer.invoke("project:choose-directory"),
   /** 拖进窗口的 File → 绝对路径(Electron 32+ File.path 已移除,必须走 webUtils) */

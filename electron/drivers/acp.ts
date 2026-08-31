@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process"
+import fs from "node:fs"
 import { Readable, Writable } from "node:stream"
+import { pathToFileURL } from "node:url"
 import * as acp from "@agentclientprotocol/sdk"
 
 import { managedBinary, managedUvxBinary } from "../binaries/manager"
@@ -7,12 +9,22 @@ import { localHarnessExecutable } from "../harness-runtime"
 import { harnessUsage } from "./usage"
 import { translateAcpUpdate } from "./acp-translator"
 import type { HarnessUsage } from "../../src/core/events"
+import { normalizePromptInput } from "../../src/core/types"
 import type {
   HarnessConnection,
   HarnessDriver,
   DriverId,
   HarnessStartOptions,
 } from "./types"
+
+export function acpMcpServers(servers: NonNullable<HarnessStartOptions["mcpServers"]>): acp.McpServer[] {
+  return servers.map((server) => ({
+    name: server.name,
+    command: server.command,
+    args: server.args,
+    env: Object.entries(server.env).map(([name, value]) => ({ name, value })),
+  }))
+}
 
 type SpawnSpec = {
   cmd: string
@@ -149,11 +161,12 @@ class AcpDriver implements HarnessDriver {
     emit: Parameters<HarnessDriver["start"]>[1],
   ): Promise<HarnessConnection> {
     let loading = false
+    const mcpServers = acpMcpServers(options.mcpServers ?? [])
     const usage: { current: HarnessUsage | undefined } = { current: undefined }
     const { child, conn, init } = await this.open(options.cwd, emit, () => loading, options.proxyEnv, usage)
     if (nativeSessionId && init.agentCapabilities?.sessionCapabilities?.resume) {
       try {
-        setup = await conn.resumeSession({ sessionId: nativeSessionId, cwd: options.cwd, mcpServers: [] })
+        setup = await conn.resumeSession({ sessionId: nativeSessionId, cwd: options.cwd, mcpServers })
       } catch {
         const restored = await this.loadOrCreate(
           conn, init, options, emit, child, nativeSessionId, (value) => { loading = value },
@@ -168,7 +181,7 @@ class AcpDriver implements HarnessDriver {
       nativeSessionId = restored.nativeSessionId
       setup = restored.setup
     } else {
-      const created = await conn.newSession({ cwd: options.cwd, mcpServers: [] })
+      const created = await conn.newSession({ cwd: options.cwd, mcpServers })
       nativeSessionId = created.sessionId
       setup = created
     }
@@ -181,6 +194,7 @@ class AcpDriver implements HarnessDriver {
       Boolean(init.agentCapabilities?.sessionCapabilities?.resume || init.agentCapabilities?.loadSession),
       selection,
       usage,
+      init.agentCapabilities?.promptCapabilities?.image === true,
     )
   }
 
@@ -199,7 +213,7 @@ class AcpDriver implements HarnessDriver {
         const loaded = await conn.loadSession({
           sessionId: nativeSessionId,
           cwd: options.cwd,
-          mcpServers: [],
+          mcpServers: acpMcpServers(options.mcpServers ?? []),
         })
         return { nativeSessionId, setup: loaded }
       } catch {
@@ -209,7 +223,10 @@ class AcpDriver implements HarnessDriver {
       }
     }
     try {
-      const created = await conn.newSession({ cwd: options.cwd, mcpServers: [] })
+      const created = await conn.newSession({
+        cwd: options.cwd,
+        mcpServers: acpMcpServers(options.mcpServers ?? []),
+      })
       emit({ type: "notice", text: "该 harness 无法恢复原上下文,已开新上下文续接" })
       return { nativeSessionId: created.sessionId, setup: created }
     } catch (error) {
@@ -265,6 +282,7 @@ class AcpDriver implements HarnessDriver {
       setEffort?: (effort: NonNullable<HarnessStartOptions["effort"]>) => Promise<unknown>
     },
     usage?: { current: HarnessUsage | undefined },
+    supportsImages = false,
   ): HarnessConnection {
     const exitListeners = new Set<(code: number | null) => void>()
     let exitCode: number | null | undefined
@@ -278,10 +296,30 @@ class AcpDriver implements HarnessDriver {
         modelSwitch: selection.setModel ? "live" : "none",
         effortSwitch: selection.setEffort ? "live" : "none",
       },
-      prompt: async (text) => {
+      prompt: async (input) => {
+        const request = normalizePromptInput(input)
+        const prompt: acp.ContentBlock[] = [{ type: "text", text: request.text }]
+        for (const attachment of request.attachments) {
+          if (attachment.kind === "image" && supportsImages) {
+            prompt.push({
+              type: "image",
+              data: fs.readFileSync(attachment.path).toString("base64"),
+              mimeType: attachment.mimeType,
+              uri: pathToFileURL(attachment.path).href,
+            })
+          } else {
+            prompt.push({
+              type: "resource_link",
+              uri: pathToFileURL(attachment.path).href,
+              name: attachment.name,
+              mimeType: attachment.mimeType,
+              size: attachment.size,
+            })
+          }
+        }
         const result = (await conn.prompt({
           sessionId: nativeSessionId,
-          prompt: [{ type: "text", text }],
+          prompt,
         })) as { stopReason?: string }
         return { stopReason: result?.stopReason, ...(usage?.current ? { usage: usage.current } : {}) }
       },

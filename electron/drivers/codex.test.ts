@@ -65,6 +65,52 @@ rl.on("line", (line) => {
 /** thread/start 与 thread/resume 的参数契约:枚举值错一个字符服务端就拒收
  *  (P0 复发防护:workspaceWrite → workspace-write 那次就是静默回归) */
 describe("codexDriver thread 参数", () => {
+  it("thread 注入 Browser MCP，turn 发送图片与文件引用", async () => {
+    const requests: Array<{ method: string; params?: Record<string, unknown> }> = []
+    let notify: ((method: string, params: Record<string, unknown>) => void) | undefined
+    const createRpc: RpcFactory = async (_cwd, handlers) => {
+      notify = handlers.onNotification
+      return {
+        request: async (method: string, params?: Record<string, unknown>) => {
+          requests.push({ method, params })
+          if (method === "thread/start") return { thread: { id: "thr-mcp" } }
+          if (method === "turn/start") {
+            queueMicrotask(() => notify?.("turn/completed", { turn: { id: "turn-mcp", status: "completed" } }))
+            return { turn: { id: "turn-mcp" } }
+          }
+          return {}
+        },
+        notify: () => {},
+        onExit: () => () => {},
+        close: () => {},
+      } as unknown as CodexRpc
+    }
+    const connection = await codexDriver.start({
+      cwd: "/tmp",
+      mcpServers: [{
+        name: "Bento Browser",
+        command: "/bin/node",
+        args: ["browser.mjs"],
+        env: { TOKEN: "secret" },
+      }],
+    }, () => {}, { createRpc })
+    await connection.prompt({
+      text: "查看附件",
+      attachments: [
+        { name: "shot.png", path: "/tmp/shot.png", mimeType: "image/png", size: 1, kind: "image" },
+        { name: "report.csv", path: "/tmp/report.csv", mimeType: "text/csv", size: 1, kind: "file" },
+      ],
+    })
+    expect(requests.find((request) => request.method === "thread/start")?.params).toMatchObject({
+      config: { mcp_servers: { "bento-browser": { command: "/bin/node", args: ["browser.mjs"] } } },
+    })
+    expect(requests.find((request) => request.method === "turn/start")?.params?.input).toEqual([
+      { type: "text", text: "查看附件" },
+      { type: "localImage", path: "/tmp/shot.png" },
+      { type: "mention", name: "report.csv", path: "/tmp/report.csv" },
+    ])
+  })
+
   it("sandbox/approvalPolicy 使用服务端枚举 kebab-case", { timeout: 30_000 }, async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-codex-params-"))
     // 沙箱枚举校验放在 fake 脚本里:收到非法值直接报错,契约破坏即测试红

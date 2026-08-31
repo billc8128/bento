@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
 import {
+  Blocks,
   ChevronDown,
   ChevronUp,
   ChevronsUpDown,
@@ -533,7 +534,18 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-        <SidebarFooter className="px-2 pb-3">
+        <SidebarFooter className="gap-1 px-2 pb-3">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                className="h-8 gap-2.5 px-2 text-sm text-muted-foreground hover:text-sidebar-foreground"
+                onClick={() => openSettings("apps")}
+              >
+                <Blocks className="size-4" />
+                <span>Apps</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton className="h-auto gap-2.5 px-2 py-1.5">

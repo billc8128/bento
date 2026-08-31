@@ -6,6 +6,8 @@ import type { CustomModelConfig, CustomProviderConfig, ProviderView } from "@/co
 import type { LocalProviderCandidate, ProviderPresetView } from "@/core/provider-preset"
 import type { BinaryProgress } from "../../electron/binaries/progress"
 import type { Effort, SessionScope } from "@/core/types"
+import type { PromptInput } from "@/core/types"
+import type { BentoAppId, BentoAppView } from "@/core/apps"
 import type {
   WorkspaceBounds,
   WorkspaceBrowserState,
@@ -54,7 +56,7 @@ declare global {
       }): Promise<
         { key: string; record: LiveSessionRecord; error?: undefined } | { error: string }
       >
-      prompt(key: string, text: string): Promise<{ stopReason: string } | { error: string }>
+      prompt(key: string, input: PromptInput): Promise<{ stopReason: string } | { error: string }>
       cancel(key: string): Promise<void>
       setModel(key: string, selection: { providerId: string; modelId: string }): Promise<
         { record: LiveSessionRecord; error?: undefined } | { error: string }
@@ -120,6 +122,9 @@ declare global {
         parser?: "openai-list" | "anthropic-list" | "fireworks-list" | "ollama-tags"
       }): Promise<{ ok: true; models: CustomModelConfig[] } | { ok: false; error: { kind: string; message: string } } | { error: string; message: string }>
       providerSessionsUsing(providerId: string): Promise<number>
+      listApps(): Promise<BentoAppView[]>
+      setAppEnabled(id: BentoAppId, enabled: boolean): Promise<{ ok: true } | { error: string }>
+      onAppsChanged(cb: () => void): () => void
       onProvidersChanged(cb: () => void): () => void
       chooseDirectory(): Promise<{ path?: string; error?: string }>
       /** 拖入的 File → 绝对路径(拖拽建项目用) */

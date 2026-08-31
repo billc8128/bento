@@ -4,6 +4,21 @@ import type { CustomProviderConfig } from "../src/core/provider"
 
 const REASONING_EFFORTS = ["low", "medium", "high"] as const
 
+const OPENAI_OAUTH_RUNTIME = {
+  baseUrl: "https://chatgpt.com/backend-api/codex",
+  requestPath: "/responses",
+  wireProtocol: "openai-responses" as const,
+  models: [
+    {
+      id: "gpt-5.4",
+      name: "GPT-5.4",
+      reasoning: true,
+      reasoningEfforts: [...REASONING_EFFORTS],
+      defaultEffort: "medium" as const,
+    },
+  ],
+}
+
 export const BUILTIN_PROVIDER_IDS = ["anthropic", "openai"] as const
 export type BuiltinProviderId = (typeof BUILTIN_PROVIDER_IDS)[number]
 
@@ -68,20 +83,12 @@ export const BUILTIN_PROVIDERS: Record<BuiltinProviderId, CustomProviderConfig> 
       },
     },
     runtimes: {
-      codex: {
-        baseUrl: "https://chatgpt.com/backend-api/codex",
-        requestPath: "/responses",
-        wireProtocol: "openai-responses",
-        models: [
-          {
-            id: "gpt-5.4",
-            name: "GPT-5.4",
-            reasoning: true,
-            reasoningEfforts: [...REASONING_EFFORTS],
-            defaultEffort: "medium",
-          },
-        ],
-      },
+      codex: OPENAI_OAUTH_RUNTIME,
+      kimi: OPENAI_OAUTH_RUNTIME,
+      opencode: OPENAI_OAUTH_RUNTIME,
+      omp: OPENAI_OAUTH_RUNTIME,
+      pi: OPENAI_OAUTH_RUNTIME,
+      hermes: OPENAI_OAUTH_RUNTIME,
     },
   },
 }

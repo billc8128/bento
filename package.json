@@ -30,6 +30,7 @@
     "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@lobehub/icons-static-svg": "^1.94.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@tabler/icons-react": "^3.46.0",
     "@tailwindcss/vite": "^4.3.3",
     "@xterm/addon-fit": "^0.11.0",
@@ -85,6 +86,7 @@
     "files": [
       "dist/**",
       "dist-electron/**",
+      "electron/browser-mcp-server.mjs",
       "package.json",
       "!node_modules/@earendil-works/pi-tui/native/win32/**",
       "!node_modules/@earendil-works/pi-tui/native/darwin/prebuilds/darwin-x64/**"

@@ -139,3 +139,17 @@ export const PROVIDER_SOURCE_COUNT = PROVIDER_SOURCES.length
 export function canonicalProviderId(sourceId: string): string | undefined {
   return PROVIDER_SOURCES.find((entry) => entry.sourceId === sourceId)?.canonicalId
 }
+
+const OAUTH_SOURCE_OVERRIDES: Record<string, { canonicalId: string; name: string }> = {
+  anthropic: { canonicalId: "anthropic-api", name: "Claude Pro/Max" },
+  xai: { canonicalId: "xai-oauth", name: "xAI SuperGrok" },
+  zai: { canonicalId: "zai-coding-plan-global", name: "Z.ai GLM Coding Plan" },
+}
+
+export function canonicalProviderIdForAuth(sourceId: string, oauth: boolean): string | undefined {
+  return oauth ? OAUTH_SOURCE_OVERRIDES[sourceId]?.canonicalId ?? canonicalProviderId(sourceId) : canonicalProviderId(sourceId)
+}
+
+export function providerNameForAuth(sourceId: string, oauth: boolean): string | undefined {
+  return oauth ? OAUTH_SOURCE_OVERRIDES[sourceId]?.name : undefined
+}

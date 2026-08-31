@@ -177,7 +177,7 @@ export class ProviderRegistry {
     const cwd = options.cwd?.trim() || os.homedir()
     const runtime = await this.runtimeStatus(options.harnessId)
     const builtinConfigs = builtinProvidersForHarness(options.harnessId)
-    const runtimeProviderViews = builtinConfigs.length > 0
+    const runtimeProviderViews = options.harnessId === "codex" || options.harnessId === "claude-code"
       ? []
       : await this.discovery.list({
           harnessId: options.harnessId,
@@ -241,7 +241,9 @@ export class ProviderRegistry {
       [...native, ...runtimeProviders],
       options.harnessId,
     )
-    if (builtins.length > 0) return [...native, ...configured]
+    if (options.harnessId === "codex" || options.harnessId === "claude-code") {
+      return [...native, ...configured]
+    }
 
     return [
       ...native,
@@ -256,7 +258,12 @@ export class ProviderRegistry {
     runtime: HarnessRuntimeStatus,
     runtimeProviders: ProviderView[],
   ): Promise<ProviderView[]> {
-    if (runtime.source !== "local" && runtime.source !== "override") return []
+    const nativeConfigRuntime =
+      runtime.source === "local" ||
+      runtime.source === "override" ||
+      (options.harnessId === "pi" && runtime.source === "bundled") ||
+      (["omp", "hermes"].includes(options.harnessId) && runtime.source === "managed")
+    if (!nativeConfigRuntime) return []
 
     // Claude Code / Codex 的本机 CLI 只有一家供应商,直接发现模型清单。
     if (options.harnessId === "codex" || options.harnessId === "claude-code") {

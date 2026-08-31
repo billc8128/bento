@@ -16,7 +16,7 @@ import {
 } from "@/core/replay"
 import type { BinaryProgress, LiveSessionRecord } from "@/types/bento"
 import type { HarnessEvent } from "@/core/events"
-import type { Effort, Message, SessionScope } from "@/core/types"
+import { normalizePromptInput, type Effort, type Message, type PromptInput, type SessionScope } from "@/core/types"
 
 type LiveSnapshot = {
   version: number
@@ -52,12 +52,17 @@ async function init() {
       // 不再走 applyRecord——revive 前 main 会先补一堆启动事件,seq 对不上,
       // 靠 seq 去重会重影
       if (record.kind === "event" && (record.payload as HarnessEvent).type === "user_message") {
-        const text = (record.payload as HarnessEvent & { type: "user_message" }).text
+        const event = record.payload as HarnessEvent & { type: "user_message" }
+        const text = event.text
         const i = acc.messages.findIndex(
           (m) => m.id.startsWith("opt-") && m.role === "user" && m.text === text,
         )
         if (i >= 0) {
-          acc.messages[i] = { ...acc.messages[i], id: `u${record.seq}` }
+          acc.messages[i] = {
+            ...acc.messages[i],
+            id: `u${record.seq}`,
+            ...(event.attachments?.length ? { attachments: event.attachments } : {}),
+          }
           if (record.seq > acc.lastSeq) acc.lastSeq = record.seq
           bump()
           return
@@ -168,9 +173,10 @@ export async function setLiveEffort(sessionId: string, effort: Effort) {
   })
 }
 
-export async function sendPrompt(sessionId: string, text: string) {
+export async function sendPrompt(sessionId: string, value: string | PromptInput) {
   const bento = window.bento
   if (!bento) return
+  const input = normalizePromptInput(value)
   // 乐观上屏:用户消息立即入流。main 的 append 广播回来同 seq 的真实记录,
   // 被 applyRecord 的 seq 去重挡掉;若 main 卡住(revive 挂起等),用户至少
   // 能看到自己发出去的内容,而不是只有一条干等的「正在生成」。
@@ -180,16 +186,22 @@ export async function sendPrompt(sessionId: string, text: string) {
       seq: acc.lastSeq + 1,
       at: new Date().toISOString(),
       kind: "event",
-      payload: { type: "user_message", text },
+      payload: {
+        type: "user_message",
+        text: input.text,
+        ...(input.attachments.length ? {
+          attachments: input.attachments.map(({ name, kind }) => ({ name, kind })),
+        } : {}),
+      },
     })
     // 打上乐观标记,真实记录广播回来时原地转正(见 onSessionEvent)
     const last = acc.messages[acc.messages.length - 1]
-    if (last?.role === "user" && last.text === text) last.id = `opt-${last.id}`
+    if (last?.role === "user" && last.text === input.text) last.id = `opt-${last.id}`
   }
   running.add(sessionId)
   bump()
   try {
-    const res = await bento.prompt(sessionId, text)
+    const res = await bento.prompt(sessionId, input)
     if ("error" in res && res.error) {
       // 错误直接进消息流,别静默
       const acc = accs.get(sessionId)

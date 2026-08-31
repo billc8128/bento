@@ -10,6 +10,8 @@ import { fileURLToPath } from "node:url"
 import { getDriver } from "./drivers/registry"
 import { SessionManager, type HarnessId } from "./sessions"
 import type { Effort, SessionScope } from "../src/core/types"
+import type { PromptInput } from "../src/core/types"
+import { BROWSER_APP_ID, type BentoAppId } from "../src/core/apps"
 import { configureBinaryManager } from "./binaries/manager"
 import { createProject } from "./projects"
 import type { CustomProviderConfig } from "../src/core/provider"
@@ -40,6 +42,8 @@ import { WorkspaceFileService } from "./workspace/file-service"
 import { WorkspaceBrowserManager } from "./workspace/browser-manager"
 import { WorkspaceFileWatchManager } from "./workspace/file-watch-manager"
 import type { WorkspaceBounds } from "../src/types/workspace"
+import { AppsStore } from "./apps"
+import { BrowserMcpBridge } from "./browser-mcp-bridge"
 
 // GUI app 不继承 login shell 的 PATH,打包后 spawn kimi/opencode 会 ENOENT。
 // fix-path 用 login shell 修 PATH;常见 bin 目录再兜一层(存在才加)
@@ -63,8 +67,12 @@ let providers: ProviderRegistry
 let routing: ProviderRoutingService | null = null
 let terminals: TerminalManager
 let workspaceBrowsers: WorkspaceBrowserManager
+let browserMcp: BrowserMcpBridge
 const workspaceFiles = new WorkspaceFileService()
 let workspaceFileWatches: WorkspaceFileWatchManager
+const apps = new AppsStore(app.getPath("userData"), () => {
+  win?.webContents.send("apps:changed")
+})
 const safeSecrets: SecretStore = {
   get: (key) => {
     if (!safeStorage.isEncryptionAvailable()) return null
@@ -134,6 +142,9 @@ const HARNESS_SCANNER_SOURCE = {
 const providerDiscovery = new ProviderDiscoveryService(undefined, providerModelCache, (harnessId) => {
   const source = HARNESS_SCANNER_SOURCE[harnessId]
   return source ? localProviderScanner.configuredKeys(source) : []
+}, (harnessId, providerId) => {
+  const source = HARNESS_SCANNER_SOURCE[harnessId]
+  return source ? localProviderScanner.isOAuthConfigured(source, providerId) : false
 })
 const modelVisibility = new ModelVisibilityStore(app.getPath("userData"))
 providers = new ProviderRegistry(
@@ -242,6 +253,11 @@ app.whenReady().then(async () => {
   workspaceBrowsers = new WorkspaceBrowserManager((ownerId, state) => {
     sendWorkspaceEvent(ownerId, "workspace-browser:state", state)
   })
+  browserMcp = new BrowserMcpBridge(workspaceBrowsers, () => {
+    if (!win || win.isDestroyed()) return null
+    return { ownerId: win.webContents.id, window: win }
+  })
+  await browserMcp.start()
   workspaceFileWatches = new WorkspaceFileWatchManager(workspaceFiles, (ownerId, change) => {
     sendWorkspaceEvent(ownerId, "workspace-files:changed", change)
   })
@@ -282,15 +298,13 @@ app.whenReady().then(async () => {
         }))
     }
     // Bento 完整注册表：所有含目标 runtime、凭证可用、enabled 模型非空的配置。
-    // Claude Code/Codex 额外纳入 builtin OAuth provider。
+    // 内置 OAuth Provider 与 user Provider 一起进入目标 Harness 的完整注册表。
     // credential handle 闭包只在 main 解析 safeStorage,绝不回 renderer。
     const BENTO_FULL_REGISTRY_HARNESSES = [
       "claude-code", "codex", "kimi", "opencode", "omp", "pi", "hermes",
     ] as const
     if (!BENTO_FULL_REGISTRY_HARNESSES.includes(harnessId as typeof BENTO_FULL_REGISTRY_HARNESSES[number])) return []
-    const configs = harnessId === "claude-code" || harnessId === "codex"
-      ? [...builtinProvidersForHarness(harnessId), ...customProviders.list()]
-      : customProviders.list()
+    const configs = [...builtinProvidersForHarness(harnessId), ...customProviders.list()]
     const catalog = await providers.list({ harnessId, cwd: request.cwd, discover: true })
     const configuredViews = new Map(
       catalog
@@ -343,6 +357,10 @@ app.whenReady().then(async () => {
     }),
     configAdapters,
     resolveProviderRuntimes,
+    (harnessId) => {
+      if (!apps.isEnabled(BROWSER_APP_ID) || harnessId === "pi") return []
+      return [browserMcp.mcpServer(path.join(app.getAppPath(), "electron/browser-mcp-server.mjs"))]
+    },
   )
 
   // IPC:renderer 经 preload 调这些;错误统一转成 { error } 而不是抛穿
@@ -363,15 +381,21 @@ app.whenReady().then(async () => {
     }
   })
   ipcMain.handle("harness-runtime:list", () => listHarnessRuntimeStatuses())
-  ipcMain.handle("session:prompt", async (_e, key: string, text: string) => {
+  ipcMain.handle("session:prompt", async (_e, key: string, input: PromptInput) => {
     try {
-      const res = await sessions.prompt(key, text)
+      const res = await sessions.prompt(key, input)
       return { stopReason: res.stopReason }
     } catch (err) {
       return { error: String(err instanceof Error ? err.message : err) }
     }
   })
   ipcMain.handle("session:cancel", (_e, key: string) => sessions.cancel(key))
+  ipcMain.handle("apps:list", () => apps.list())
+  ipcMain.handle("apps:set-enabled", (_event, id: BentoAppId, enabled: boolean) => {
+    if (id !== BROWSER_APP_ID) return { error: "未知 App" }
+    apps.setEnabled(id, enabled)
+    return { ok: true }
+  })
   ipcMain.handle("session:set-model", async (
     _e,
     key: string,
@@ -846,8 +870,13 @@ app.on("window-all-closed", () => {
   terminals?.disposeAll()
   workspaceBrowsers?.disposeAll()
   workspaceFileWatches?.disposeAll()
-  if (process.platform !== "darwin") app.quit()
+  if (process.platform !== "darwin") {
+    browserMcp?.close()
+    app.quit()
+  }
 })
+
+app.on("before-quit", () => browserMcp?.close())
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()

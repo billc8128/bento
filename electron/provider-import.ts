@@ -1,8 +1,12 @@
 import fs from "node:fs"
 import path from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { parse as parseToml } from "smol-toml"
 
-import { canonicalProviderId } from "../src/data/provider-sources"
+import {
+  canonicalProviderIdForAuth,
+  providerNameForAuth,
+} from "../src/data/provider-sources"
 import { getProviderPreset, PROVIDER_PRESETS } from "../src/data/provider-presets"
 import type { CustomModelConfig } from "../src/core/provider"
 import type { LocalProviderCandidate } from "../src/core/provider-preset"
@@ -67,6 +71,54 @@ function credentialOf(value: unknown): { kind: "apiKey" | "oauth"; value?: strin
   return null
 }
 
+function ompOAuthProviders(file: string): string[] {
+  let database: DatabaseSync | undefined
+  try {
+    database = new DatabaseSync(file, { readOnly: true })
+    return database.prepare(
+      "SELECT DISTINCT provider FROM auth_credentials WHERE credential_type = 'oauth' AND disabled_cause IS NULL",
+    ).all().flatMap((row) => {
+      const provider = (row as { provider?: unknown }).provider
+      return typeof provider === "string" && provider ? [provider] : []
+    })
+  } catch {
+    return []
+  } finally {
+    database?.close()
+  }
+}
+
+function hermesOAuthProviders(homeDir: string, hermesDir: string): string[] {
+  const ids = new Set<string>()
+  const auth = readJson(path.join(hermesDir, "auth.json"))
+  const pool = auth.credential_pool
+  if (pool && typeof pool === "object" && !Array.isArray(pool)) {
+    for (const [providerId, entries] of Object.entries(pool as Record<string, unknown>)) {
+      if (Array.isArray(entries) && entries.length > 0) ids.add(providerId)
+    }
+  }
+  const providers = auth.providers
+  if (providers && typeof providers === "object" && !Array.isArray(providers)) {
+    for (const [providerId, state] of Object.entries(providers as Record<string, unknown>)) {
+      if (!state || typeof state !== "object" || Array.isArray(state)) continue
+      const tokens = (state as Record<string, unknown>).tokens
+      if (tokens && typeof tokens === "object" && !Array.isArray(tokens)) {
+        const values = Object.values(tokens as Record<string, unknown>)
+        if (values.some((value) => typeof value === "string" && value.length > 0)) ids.add(providerId)
+      }
+    }
+  }
+  const codexTokens = readJson(path.join(homeDir, ".codex", "auth.json")).tokens
+  if (codexTokens && typeof codexTokens === "object" && !Array.isArray(codexTokens)) {
+    const access = (codexTokens as Record<string, unknown>).access_token
+    const refresh = (codexTokens as Record<string, unknown>).refresh_token
+    if ((typeof access === "string" && access) || (typeof refresh === "string" && refresh)) {
+      ids.add("openai-codex")
+    }
+  }
+  return [...ids]
+}
+
 function parseEnv(file: string): Record<string, string> {
   try {
     return Object.fromEntries(fs.readFileSync(file, "utf8").split(/\r?\n/).flatMap((line) => {
@@ -121,10 +173,13 @@ export class LocalProviderScanner {
     const dataDir = this.env.XDG_DATA_HOME || path.join(this.homeDir, ".local", "share")
     const hermesDir = this.env.HERMES_HOME || path.join(this.homeDir, ".hermes")
     const ompDir = this.env.OMP_HOME || path.join(this.homeDir, ".omp")
+    const ompAgentDir = this.env.PI_CODING_AGENT_DIR || path.join(ompDir, "agent")
     this.scanAuthFile("Pi", path.join(piDir, "auth.json"))
     this.scanAuthFile("OpenCode", path.join(dataDir, "opencode", "auth.json"))
     this.scanHermesValues({ ...this.env, ...parseEnv(path.join(hermesDir, ".env")) })
-    this.scanOmpModels(path.join(ompDir, "agent", "models.json"))
+    this.scanHermesOAuth(hermesDir)
+    this.scanOmpModels(path.join(ompAgentDir, "models.json"))
+    this.scanOmpOAuth(path.join(ompAgentDir, "agent.db"))
     this.scanKimiCode()
     return [...this.candidates.values()].map(({ credential: _credential, models: _models, ...candidate }) => candidate)
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -161,7 +216,8 @@ export class LocalProviderScanner {
       }
     } else if (source === "OMP") {
       const ompDir = this.env.OMP_HOME || path.join(this.homeDir, ".omp")
-      const providers = readJson(path.join(ompDir, "agent", "models.json")).providers
+      const ompAgentDir = this.env.PI_CODING_AGENT_DIR || path.join(ompDir, "agent")
+      const providers = readJson(path.join(ompAgentDir, "models.json")).providers
       if (providers && typeof providers === "object" && !Array.isArray(providers)) {
         for (const [id, value] of Object.entries(providers as Record<string, unknown>)) {
           const apiKey = value && typeof value === "object"
@@ -170,6 +226,7 @@ export class LocalProviderScanner {
           if (typeof apiKey === "string" && apiKey.trim()) keys.add(id)
         }
       }
+      for (const id of ompOAuthProviders(path.join(ompAgentDir, "agent.db"))) keys.add(id)
     } else if (source === "Kimi Code") {
       // [models."alias"] 的 alias 前缀 = ACP 模型 id 的 `前缀/`,即真实配置的
       // provider 来源(如 kimi-code、agent-plan);OAuth 登录基线仍并入,覆盖
@@ -182,8 +239,30 @@ export class LocalProviderScanner {
       for (const [envName, providerId] of Object.entries(HERMES_ENV_PROVIDERS)) {
         if (values[envName]) keys.add(providerId)
       }
+      for (const id of hermesOAuthProviders(this.homeDir, hermesDir)) keys.add(id)
     }
     return [...keys]
+  }
+
+  isOAuthConfigured(source: LocalProviderCandidate["source"], providerId: string): boolean {
+    if (source === "Pi") {
+      const dir = this.env.PI_CODING_AGENT_DIR || path.join(this.homeDir, ".pi", "agent")
+      return credentialOf(readJson(path.join(dir, "auth.json"))[providerId])?.kind === "oauth"
+    }
+    if (source === "OpenCode") {
+      const dataDir = this.env.XDG_DATA_HOME || path.join(this.homeDir, ".local", "share")
+      return credentialOf(readJson(path.join(dataDir, "opencode", "auth.json"))[providerId])?.kind === "oauth"
+    }
+    if (source === "OMP") {
+      const ompDir = this.env.OMP_HOME || path.join(this.homeDir, ".omp")
+      const agentDir = this.env.PI_CODING_AGENT_DIR || path.join(ompDir, "agent")
+      return ompOAuthProviders(path.join(agentDir, "agent.db")).includes(providerId)
+    }
+    if (source === "Hermes") {
+      const hermesDir = this.env.HERMES_HOME || path.join(this.homeDir, ".hermes")
+      return hermesOAuthProviders(this.homeDir, hermesDir).includes(providerId)
+    }
+    return source === "Kimi Code" && providerId === "kimi-code" && this.hasKimiLogin()
   }
 
    credential(candidateId: string): string | null {
@@ -209,13 +288,13 @@ export class LocalProviderScanner {
     fallbackPresetId?: string,
     models?: CustomModelConfig[],
   ) {
-    const presetId = canonicalProviderId(sourceProviderId) ?? fallbackPresetId
+    const presetId = canonicalProviderIdForAuth(sourceProviderId, auth.kind === "oauth") ?? fallbackPresetId
     const preset = presetId ? getProviderPreset(presetId) : undefined
     if (!preset) return
     const id = `${source.toLowerCase().replace(/\s+/g, "")}-${sourceProviderId}`
     this.candidates.set(id, {
       id,
-      name: preset.name,
+      name: providerNameForAuth(sourceProviderId, auth.kind === "oauth") ?? preset.name,
       source,
       sourceProviderId,
       presetId: preset.id,
@@ -237,6 +316,18 @@ export class LocalProviderScanner {
     for (const [envName, value] of Object.entries(values)) {
       const providerId = HERMES_ENV_PROVIDERS[envName]
       if (providerId && value) this.add("Hermes", providerId, { kind: "apiKey", value })
+    }
+  }
+
+  private scanHermesOAuth(hermesDir: string) {
+    for (const providerId of hermesOAuthProviders(this.homeDir, hermesDir)) {
+      this.add("Hermes", providerId, { kind: "oauth" })
+    }
+  }
+
+  private scanOmpOAuth(file: string) {
+    for (const providerId of ompOAuthProviders(file)) {
+      this.add("OMP", providerId, { kind: "oauth" })
     }
   }
 

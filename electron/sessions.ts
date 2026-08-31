@@ -10,7 +10,7 @@ import path from "node:path"
 
 import type { HarnessEvent, LogRecord } from "../src/core/events"
 import { isNativeProviderId, NATIVE_MODEL_ID } from "../src/core/provider"
-import type { Effort, SessionScope } from "../src/core/types"
+import type { Effort, PromptAttachment, PromptInput, SessionScope } from "../src/core/types"
 import { getDriver } from "./drivers/registry"
 import type { ProviderRoutingService } from "./provider-routing"
 import type {
@@ -27,6 +27,7 @@ import type {
   HarnessConnection,
   HarnessDriver,
   HarnessId,
+  HarnessMcpServer,
 } from "./drivers/types"
 
 export type SessionRecord = {
@@ -71,6 +72,28 @@ export type SessionProviderRuntimeResolver = (request: {
   mode: "native" | "bento"
 }) => Promise<SessionConfigRequest["providers"]>
 
+type SessionMcpResolver = (harnessId: HarnessId) => HarnessMcpServer[]
+
+function promptInput(value: string | PromptInput): PromptInput {
+  const request = typeof value === "string" ? { text: value, attachments: [] } : value
+  const text = request.text.trim()
+  if (!text && request.attachments.length === 0) throw new Error("消息不能为空")
+  const attachments = request.attachments.map((attachment): PromptAttachment => {
+    const filePath = path.resolve(attachment.path)
+    const stat = fs.statSync(filePath)
+    if (!stat.isFile()) throw new Error(`附件不是文件：${attachment.name}`)
+    if (stat.size > 50 * 1024 * 1024) throw new Error(`附件超过 50 MB：${attachment.name}`)
+    return {
+      name: attachment.name || path.basename(filePath),
+      path: filePath,
+      mimeType: attachment.mimeType || "application/octet-stream",
+      size: stat.size,
+      kind: attachment.kind,
+    }
+  })
+  return { text, attachments }
+}
+
 export class SessionManager {
   private live = new Map<string, LiveSession>()
   private reviving = new Map<string, Promise<LiveSession>>()
@@ -88,6 +111,7 @@ export class SessionManager {
     /** session-config registry;缺省 legacy 路径(全部走旧 routing/env 组装)。 */
     private readonly configAdapters: SessionConfigRegistry | null = null,
     private readonly resolveProviderRuntimes: SessionProviderRuntimeResolver | null = null,
+    private readonly resolveMcpServers: SessionMcpResolver | null = null,
   ) {
     this.dir = path.join(userDataDir, "sessions")
     this.chatRoot = path.join(userDataDir, "chat-workspaces")
@@ -252,6 +276,9 @@ export class SessionManager {
           ...(wireModelId ? { modelId: wireModelId } : {}),
           ...(record.effort ? { effort: record.effort } : {}),
           ...(proxyEnv ? { proxyEnv } : {}),
+          ...(this.resolveMcpServers ? {
+            mcpServers: this.resolveMcpServers(record.harnessId as HarnessId),
+          } : {}),
         },
         emit,
       )
@@ -404,14 +431,21 @@ export class SessionManager {
     return pending
   }
 
-  async prompt(key: string, text: string) {
+  async prompt(key: string, value: string | PromptInput) {
     const session = await this.ensureLive(key)
+    const input = promptInput(value)
     // 入口清零:上一次 cancel 若走 happy path(ACP/Codex 的 prompt 正常
     // resolve)标记会残留,不清零会让同会话下一次真实 error 被误标 cancelled。
     session.cancelRequested = false
-    this.append(session, { type: "user_message", text })
+    this.append(session, {
+      type: "user_message",
+      text: input.text,
+      ...(input.attachments.length ? {
+        attachments: input.attachments.map(({ name, kind }) => ({ name, kind })),
+      } : {}),
+    })
     try {
-      const result = await session.connection.prompt(text)
+      const result = await session.connection.prompt(input)
       this.append(session, { type: "turn_finished", reason: result.stopReason, ...(result.usage ? { usage: result.usage } : {}) })
       this.upsertRecord(session.record)
       return result

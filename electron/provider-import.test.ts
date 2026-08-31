@@ -1,6 +1,7 @@
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { LocalProviderScanner } from "./provider-import"
@@ -39,11 +40,61 @@ describe("LocalProviderScanner", () => {
     expect(scanner.credential("pi-deepseek")).toBe("sk-pi")
   })
 
+  it("Pi 共用 provider id 时按 credential type 区分 Claude/Grok 订阅与 API", () => {
+    const home = tempHome()
+    write(path.join(home, ".pi/agent/auth.json"), JSON.stringify({
+      anthropic: { type: "oauth", access: "claude-secret" },
+      xai: { type: "oauth", access: "grok-secret" },
+      openai: { type: "api_key", key: "openai-key" },
+    }))
+    const scanner = new LocalProviderScanner(home, {})
+    const result = scanner.scan()
+    expect(result.map((item) => [item.name, item.presetId, item.authKind])).toEqual([
+      ["Claude Pro/Max", "anthropic-api", "oauth"],
+      ["OpenAI API", "openai-api", "apiKey"],
+      ["xAI SuperGrok", "xai-oauth", "oauth"],
+    ])
+    expect(scanner.isOAuthConfigured("Pi", "anthropic")).toBe(true)
+    expect(scanner.isOAuthConfigured("Pi", "xai")).toBe(true)
+    expect(scanner.isOAuthConfigured("Pi", "openai")).toBe(false)
+    expect(JSON.stringify(result)).not.toContain("secret")
+  })
+
   it("识别 Hermes .env 的已知 provider 变量", () => {
     const home = tempHome()
     write(path.join(home, ".hermes/.env"), "DEEPSEEK_API_KEY='sk-ds'\nOPENROUTER_API_KEY=sk-or\nUNKNOWN=x\n")
     const scanner = new LocalProviderScanner(home, {})
     expect(scanner.scan().map((item) => item.presetId)).toEqual(["deepseek", "openrouter"])
+  })
+
+  it("识别 Hermes auth.json credential pool 与 Codex CLI OAuth，不返回 token", () => {
+    const home = tempHome()
+    write(path.join(home, ".hermes/auth.json"), JSON.stringify({
+      version: 1,
+      credential_pool: {
+        "openai-codex": [{ id: "codex-1", access_token: "hermes-secret" }],
+        anthropic: [{ id: "claude-1", access_token: "claude-secret" }],
+        "xai-oauth": [{ id: "grok-1", access_token: "grok-secret" }],
+      },
+    }))
+    const scanner = new LocalProviderScanner(home, {})
+    expect(scanner.scan().map((item) => [item.name, item.presetId, item.authKind])).toEqual([
+      ["Claude Pro/Max", "anthropic-api", "oauth"],
+      ["OpenAI Codex 订阅", "openai-codex", "oauth"],
+      ["xAI SuperGrok", "xai-oauth", "oauth"],
+    ])
+    expect(scanner.configuredKeys("Hermes").sort()).toEqual(["anthropic", "openai-codex", "xai-oauth"])
+    expect(scanner.isOAuthConfigured("Hermes", "anthropic")).toBe(true)
+    expect(scanner.isOAuthConfigured("Hermes", "xai-oauth")).toBe(true)
+    expect(JSON.stringify(scanner.scan())).not.toContain("hermes-secret")
+
+    const codexHome = tempHome()
+    write(path.join(codexHome, ".codex/auth.json"), JSON.stringify({
+      tokens: { access_token: "codex-secret", refresh_token: "refresh-secret" },
+    }))
+    const borrowed = new LocalProviderScanner(codexHome, {})
+    expect(borrowed.configuredKeys("Hermes")).toEqual(["openai-codex"])
+    expect(JSON.stringify(borrowed.scan())).not.toContain("codex-secret")
   })
 
   it("识别 omp models.json,UUID provider 按 baseUrl 反查预设", () => {
@@ -73,6 +124,40 @@ describe("LocalProviderScanner", () => {
       { id: "glm-5-turbo", name: "glm-5-turbo" },
     ])
     expect(scanner.localModels("omp-c767a447-7cf3-4d4f-b996-51ca391ab93d")).toBeNull()
+  })
+
+  it("识别 OMP agent.db 中仍启用的 OAuth Provider", () => {
+    const home = tempHome()
+    const databasePath = path.join(home, ".omp/agent/agent.db")
+    fs.mkdirSync(path.dirname(databasePath), { recursive: true })
+    const database = new DatabaseSync(databasePath)
+    database.exec(`
+      CREATE TABLE auth_credentials (
+        id INTEGER PRIMARY KEY,
+        provider TEXT NOT NULL,
+        credential_type TEXT NOT NULL,
+        data TEXT NOT NULL,
+        disabled_cause TEXT
+      );
+      INSERT INTO auth_credentials(provider, credential_type, data, disabled_cause)
+      VALUES
+        ('openai-codex', 'oauth', '{"access":"omp-secret"}', NULL),
+        ('anthropic', 'oauth', '{"access":"claude-secret"}', NULL),
+        ('xai-oauth', 'oauth', '{"access":"grok-secret"}', NULL),
+        ('anthropic', 'oauth', '{"access":"disabled"}', 'logged_out'),
+        ('openai', 'api_key', '{"key":"sk"}', NULL);
+    `)
+    database.close()
+    const scanner = new LocalProviderScanner(home, {})
+    expect(scanner.scan().map((item) => [item.name, item.presetId, item.authKind])).toEqual([
+      ["Claude Pro/Max", "anthropic-api", "oauth"],
+      ["OpenAI Codex 订阅", "openai-codex", "oauth"],
+      ["xAI SuperGrok", "xai-oauth", "oauth"],
+    ])
+    expect(scanner.configuredKeys("OMP").sort()).toEqual(["anthropic", "openai-codex", "xai-oauth"])
+    expect(scanner.isOAuthConfigured("OMP", "anthropic")).toBe(true)
+    expect(scanner.isOAuthConfigured("OMP", "xai-oauth")).toBe(true)
+    expect(JSON.stringify(scanner.scan())).not.toContain("omp-secret")
   })
 
   it("发现 Kimi Code CLI 登录态但标记为需要重新鉴权", async () => {

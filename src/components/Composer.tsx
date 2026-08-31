@@ -10,11 +10,11 @@ import { cn } from "@/lib/utils"
 import { useTraits } from "@/lib/style-context"
 import { getHarness, type HarnessId } from "@/core/harness"
 import { findProviderModel } from "@/core/provider"
-import type { Effort, SessionScope } from "@/core/types"
+import type { Effort, PromptAttachment, PromptInput, SessionScope } from "@/core/types"
 import { useProviderCatalog } from "@/lib/provider-store"
 import { COLUMN, type ComposerShape } from "@/data/styles"
 
-type Attachment = { id: string; name: string; kind: "image" | "file"; url?: string }
+type Attachment = PromptAttachment & { id: string; url?: string }
 
 /** 外层:决定输入区在窗口里占多大地盘、离底边多远 */
 const OUTER: Record<ComposerShape, string> = {
@@ -48,7 +48,7 @@ type ComposerProps = {
   modelId?: string
   effort?: Effort
   onToggleRun: () => void
-  onSend?: (text: string) => void
+  onSend?: (input: PromptInput) => void
   onModelChange?: (providerId: string, modelId: string) => void
   onEffortChange?: (effort: Effort) => void
   onHarnessChange?: (harnessId: HarnessId) => void
@@ -90,19 +90,21 @@ export function Composer({
 
   function addFiles(files: FileList | null, kind: Attachment["kind"]) {
     if (!files?.length) return
-    setAttachments((prev) => [
-      ...prev,
-      ...Array.from(files).map((f, i) => {
+    const next = Array.from(files).flatMap((f, i) => {
+        const path = window.bento?.pathForFile(f) ?? ""
+        if (!path) return []
         const isImage = f.type.startsWith("image/")
         return {
           id: `${Date.now()}-${i}`,
           name: f.name,
+          path,
+          mimeType: f.type || "application/octet-stream",
+          size: f.size,
           kind: isImage ? ("image" as const) : kind,
-          // 图像附件用 objectURL 出真缩略图;发送/移除时 revoke
           ...(isImage ? { url: URL.createObjectURL(f) } : {}),
         }
-      }),
-    ])
+      })
+    setAttachments((prev) => [...prev, ...next])
   }
 
   function removeAttachment(id: string) {
@@ -119,14 +121,18 @@ export function Composer({
     addFiles(e.dataTransfer.files, "file")
   }
 
-  // 附件真上传是 v0.4 待办;现在发送只带文本,canSend 不看附件,避免死按钮
-  const canSend = text.trim().length > 0 && Boolean(providerId && model && providerConnected)
+  const canSend = (text.trim().length > 0 || attachments.length > 0) && Boolean(providerId && model && providerConnected)
 
   function send() {
     const t = text.trim()
-    if (!t || running) return
+    if ((!t && attachments.length === 0) || running) return
+    const sentAttachments = attachments.map(({ name, path, mimeType, size, kind }) => ({
+      name, path, mimeType, size, kind,
+    }))
+    for (const attachment of attachments) if (attachment.url) URL.revokeObjectURL(attachment.url)
     setText("")
-    onSend?.(t)
+    setAttachments([])
+    onSend?.({ text: t, attachments: sentAttachments })
   }
 
   return (

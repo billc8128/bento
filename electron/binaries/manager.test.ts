@@ -25,6 +25,7 @@ describe("BinaryManager", () => {
     process.env.BENTO_CODEX_PATH = binary
 
     await expect(new BinaryManager(tempDir).ensure("codex")).resolves.toBe(binary)
+    await expect(new BinaryManager(tempDir).installed("codex")).resolves.toBe(binary)
   })
 
   it("计算文件 SHA-256", async () => {

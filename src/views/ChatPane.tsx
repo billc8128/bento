@@ -171,7 +171,7 @@ export function ChatPane() {
         modelId={live.modelId}
         effort={live.effort}
         onToggleRun={() => void cancelPrompt(sessionId)}
-        onSend={(text) => void sendPrompt(sessionId, text)}
+        onSend={(input) => void sendPrompt(sessionId, input)}
         onHarnessChange={setNextHarnessId}
         onModelChange={
           !running && live.capabilities?.modelSwitch === "live"

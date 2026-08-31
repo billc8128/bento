@@ -7,9 +7,12 @@ import * as acp from "@agentclientprotocol/sdk"
 
 import type { HarnessId } from "../src/core/harness"
 import { providerFamilyId, type ProviderModel, type ProviderView } from "../src/core/provider"
-import { canonicalProviderId } from "../src/data/provider-sources"
+import {
+  canonicalProviderIdForAuth,
+  providerNameForAuth,
+} from "../src/data/provider-sources"
 import { getProviderPreset } from "../src/data/provider-presets"
-import { managedBinary } from "./binaries/manager"
+import { managedBinary, managedBinaryIfInstalled } from "./binaries/manager"
 import { localHarnessExecutable } from "./harness-runtime"
 import { resolvePiRpcEntry } from "./pi-rpc-entry"
 import {
@@ -77,7 +80,12 @@ async function acpCommand(harnessId: Extract<HarnessId, "kimi" | "opencode" | "o
     return { cmd: local.path, args: ["acp"] }
   }
   if (harnessId === "hermes") {
-    throw new Error("Hermes 本机 CLI 未安装")
+    const uvx = await managedBinaryIfInstalled("uvx")
+    if (!uvx) throw new Error("Hermes 本机或已安装的 managed runtime 不可用")
+    return {
+      cmd: uvx,
+      args: ["--offline", "--python", "3.12", "--from", "hermes-agent[acp]==0.19.0", "hermes-acp"],
+    }
   }
   return {
     cmd: await managedBinary(harnessId),
@@ -201,6 +209,7 @@ export class ProviderDiscoveryService {
     private readonly persistentCache?: ProviderModelCache,
     /** 各 CLI 已配置 provider 键;未接线不过滤,接线后滤掉目录噪声。 */
     private readonly configuredKeys?: (harnessId: HarnessId) => string[],
+    private readonly isOAuthConfigured?: (harnessId: HarnessId, providerId: string) => boolean,
   ) {}
 
   discoverHttpModels(options: FetchProviderModelsOptions) {
@@ -241,17 +250,20 @@ export class ProviderDiscoveryService {
         const separator = model.id.indexOf("/")
         if (filterCatalog && separator > 0 && !allowed.has(model.id.slice(0, separator))) continue
         const sourceId = separator > 0 ? model.id.slice(0, separator) : ""
-        const canonicalId = sourceId ? canonicalProviderId(sourceId) : undefined
+        const oauth = sourceId ? this.isOAuthConfigured?.(definition.harnessId, sourceId) === true : false
+        const canonicalId = sourceId ? canonicalProviderIdForAuth(sourceId, oauth) : undefined
         const groupId = canonicalId ?? definition.id
         groups.set(groupId, [...(groups.get(groupId) ?? []), model])
       }
       const discovered = [...groups.entries()].map(([groupId, models]): ProviderView => {
+        const sourceId = models[0]?.id.split("/", 1)[0] ?? ""
+        const oauth = sourceId ? this.isOAuthConfigured?.(definition.harnessId, sourceId) === true : false
         const preset = getProviderPreset(groupId)
         return {
           ...base,
           id: groupId === definition.id ? definition.id : `runtime-${definition.harnessId}-${groupId}`,
           canonicalId: providerFamilyId(groupId),
-          name: preset?.name ?? definition.name,
+          name: providerNameForAuth(sourceId, oauth) ?? preset?.name ?? definition.name,
           connected: models.length > 0,
           modelDiscovery: "ready",
           models: { [definition.harnessId]: models },

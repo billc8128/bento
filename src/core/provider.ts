@@ -48,6 +48,7 @@ export function isNativeProviderId(providerId: string | undefined): boolean {
 export function providerFamilyId(canonicalId: string): string {
   if (canonicalId === "openai-api" || canonicalId === "openai-codex") return "openai"
   if (canonicalId === "anthropic-api") return "anthropic"
+  if (canonicalId === "xai-api" || canonicalId === "xai-oauth") return "xai"
   return canonicalId
 }
 

@@ -26,6 +26,39 @@ afterEach(() => {
 })
 
 describe("ProviderRoutingService OAuth", () => {
+  it("OpenAI OAuth 可经 Pi runtime 的 Responses 路由命中订阅后端", async () => {
+    let seenPath = ""
+    let seenAuthorization = ""
+    let seenAccount = ""
+    const upstream = http.createServer((request, response) => {
+      seenPath = request.url ?? ""
+      seenAuthorization = request.headers.authorization ?? ""
+      seenAccount = String(request.headers["chatgpt-account-id"] ?? "")
+      response.writeHead(200, { "content-type": "application/json" }).end("{}")
+    })
+    servers.push(upstream)
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
+    const oauthProxyUrl = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-openai-pi-"))
+    dirs.push(dir)
+    const store = new CustomProviderStore(dir, memorySecrets())
+    store.writeOAuthTokens("openai", {
+      accessToken: "oauth-access",
+      refreshToken: "oauth-refresh",
+      expiresAt: Date.now() + 60 * 60 * 1000,
+      accountId: "account-1",
+      oauthProxyUrl,
+    })
+    const routing = new ProviderRoutingService(dir, () => store)
+    const route = await routing.issueRoute("session", "openai", "pi")
+    const response = await fetch(`${route.baseUrl}/responses`, { method: "POST", body: "{}" })
+    expect(response.status).toBe(200)
+    expect(seenPath).toBe("/responses")
+    expect(seenAuthorization).toBe("Bearer oauth-access")
+    expect(seenAccount).toBe("account-1")
+    routing.dispose()
+  })
+
   it("Pi 生成隔离 models.json，密钥只进进程环境", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-pi-"))
     dirs.push(dir)

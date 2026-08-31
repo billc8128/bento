@@ -4,6 +4,7 @@ import path from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { LogRecord } from "../src/core/events"
+import type { PromptInput } from "../src/core/types"
 import type { HarnessDriver, HarnessStartOptions } from "./drivers/types"
 import { SessionManager } from "./sessions"
 
@@ -15,6 +16,59 @@ afterEach(() => {
 })
 
 describe("SessionManager model selection", () => {
+  it("附件经过 SessionManager 校验后送进 Driver，日志只保存脱敏元数据", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-session-attachment-"))
+    const attachmentPath = path.join(tempDir, "report.csv")
+    fs.writeFileSync(attachmentPath, "name,value\na,1\n")
+    let received: string | PromptInput | undefined
+    const emitted: LogRecord[] = []
+    const driver: HarnessDriver = {
+      id: "kimi",
+      async start() {
+        return {
+          nativeSessionId: "attachment-native",
+          capabilities: { modelSwitch: "none", effortSwitch: "none" },
+          prompt: async (input) => {
+            received = input
+            return { stopReason: "end_turn" }
+          },
+          cancel: async () => {},
+          close: () => {},
+          onExit: () => () => {},
+        }
+      },
+    }
+    const manager = new SessionManager(tempDir, (_key, record) => emitted.push(record), () => driver)
+    const { key } = await manager.createSession({
+      harnessId: "kimi",
+      cwd: tempDir,
+      providerId: "native-kimi",
+      modelId: "model",
+    })
+    await manager.prompt(key, {
+      text: "分析附件",
+      attachments: [{
+        name: "report.csv",
+        path: attachmentPath,
+        mimeType: "text/csv",
+        size: 1,
+        kind: "file",
+      }],
+    })
+    expect(received).toMatchObject({
+      text: "分析附件",
+      attachments: [{ path: attachmentPath, size: fs.statSync(attachmentPath).size }],
+    })
+    const userEvent = emitted.find(
+      (record) => record.kind === "event" && record.payload.type === "user_message",
+    )
+    expect(userEvent).toMatchObject({
+      payload: { attachments: [{ name: "report.csv", kind: "file" }] },
+    })
+    expect(JSON.stringify(userEvent)).not.toContain(attachmentPath)
+    await manager.disposeAll()
+  })
+
   it("旧会话缺少 scope 时迁移为 project", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-session-scope-migrate-"))
     const sessionsDir = path.join(tempDir, "sessions")

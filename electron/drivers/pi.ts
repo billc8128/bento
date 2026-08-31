@@ -1,9 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process"
+import fs from "node:fs"
 
 import { countContentLines, diffStatFromOldNew } from "../../src/core/diffstat"
 import { harnessUsage } from "./usage"
 import type { HarnessEvent, HarnessToolDiff, HarnessToolKind, HarnessUsage } from "../../src/core/events"
-import type { Effort } from "../../src/core/types"
+import { normalizePromptInput, type Effort, type PromptInput } from "../../src/core/types"
 import { localHarnessExecutable } from "../harness-runtime"
 import { resolvePiRpcEntry } from "../pi-rpc-entry"
 import type { HarnessCapabilities, HarnessConnection, HarnessDriver } from "./types"
@@ -252,14 +253,26 @@ class PiRpcProcess {
     })
   }
 
-  async prompt(text: string) {
+  async prompt(value: string | PromptInput) {
+    const input = normalizePromptInput(value)
     if (this.turn) throw new Error("Pi 正在处理上一轮请求")
     this.usage = undefined
     const completed = new Promise<void>((resolve, reject) => {
       this.turn = { resolve, reject }
     })
     try {
-      await this.request({ type: "prompt", message: text })
+      const files = input.attachments.filter((attachment) => attachment.kind === "file")
+      const message = files.length === 0
+        ? input.text
+        : `${input.text}\n\n附件文件：\n${files.map((file) => `- ${file.path}`).join("\n")}`
+      const images = input.attachments
+        .filter((attachment) => attachment.kind === "image")
+        .map((attachment) => ({
+          type: "image",
+          data: fs.readFileSync(attachment.path).toString("base64"),
+          mimeType: attachment.mimeType,
+        }))
+      await this.request({ type: "prompt", message, ...(images.length ? { images } : {}) })
       await completed
     } catch (error) {
       this.turn = undefined
@@ -306,8 +319,8 @@ export const piDriver: HarnessDriver = {
     return {
       nativeSessionId: data.sessionFile ?? data.sessionId,
       capabilities: PI_CAPABILITIES,
-      async prompt(text) {
-        await rpc.prompt(text)
+      async prompt(input) {
+        await rpc.prompt(input)
         return { stopReason: "end_turn", ...(rpc.usage ? { usage: rpc.usage } : {}) }
       },
       async cancel() {

@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState } from "react"
-import { ChevronLeft, Cpu, Keyboard, Palette, Plug, SquareSplitHorizontal } from "lucide-react"
+import { Blocks, ChevronLeft, Cpu, Keyboard, Palette, Plug, SquareSplitHorizontal } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -17,8 +17,10 @@ import { LayoutSection } from "./LayoutSection"
 import { HarnessesSection } from "./HarnessesSection"
 import { ProvidersSection } from "./ProvidersSection"
 import { ShortcutsSection } from "./ShortcutsSection"
+import { AppsSection } from "./AppsSection"
 
 const SECTIONS: { id: SettingsSection; label: string; icon: typeof Plug }[] = [
+  { id: "apps", label: "Apps", icon: Blocks },
   { id: "providers", label: "供应商", icon: Plug },
   { id: "harnesses", label: "运行环境", icon: Cpu },
   { id: "appearance", label: "主题", icon: Palette },
@@ -108,6 +110,7 @@ export function SettingsPage() {
           <div className="mx-auto max-w-2xl px-8 pb-16 pt-10">
             <h1 className="text-lg font-semibold">{active.label}</h1>
             <div className="mt-6">
+              {section === "apps" && <AppsSection />}
               {section === "providers" && (
                 <ProvidersSection addProviderIntent={settings.addProvider} />
               )}

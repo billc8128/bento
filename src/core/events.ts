@@ -22,7 +22,11 @@ export type HarnessUsage = {
 }
 
 export type HarnessEvent =
-  | { type: "user_message"; text: string }
+  | {
+      type: "user_message"
+      text: string
+      attachments?: Array<{ name: string; kind: "image" | "file" }>
+    }
   | { type: "agent_message_chunk"; text: string }
   | { type: "agent_thought_chunk"; text: string }
   | {

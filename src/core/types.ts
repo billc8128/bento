@@ -7,6 +7,23 @@ import type { HarnessToolDiff, HarnessUsage } from "./events"
 export type Effort = "off" | "auto" | "low" | "medium" | "high" | "max"
 export type SessionScope = "chat" | "project"
 
+export type PromptAttachment = {
+  name: string
+  path: string
+  mimeType: string
+  size: number
+  kind: "image" | "file"
+}
+
+export type PromptInput = {
+  text: string
+  attachments: PromptAttachment[]
+}
+
+export function normalizePromptInput(input: string | PromptInput): PromptInput {
+  return typeof input === "string" ? { text: input, attachments: [] } : input
+}
+
 export const EFFORTS: { id: Effort; label: string; hint: string }[] = [
   { id: "off", label: "不推理", hint: "直接回答，不进行额外思考" },
   { id: "auto", label: "自动", hint: "由 Harness 按任务判断" },

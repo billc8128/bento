@@ -159,7 +159,10 @@ export class ProviderRoutingService {
       baseUrl = tokens.oauthProxyUrl ?? runtime.baseUrl
       if (runtime.wireProtocol === "anthropic-messages") {
         headerOverrides = { "anthropic-beta": "OAuth-2025-04-20" }
-      } else if (tokens.accountId && baseUrl.includes("chatgpt.com/backend-api/codex")) {
+      } else if (
+        tokens.accountId &&
+        (config.id === "openai" || baseUrl.includes("chatgpt.com/backend-api/codex"))
+      ) {
         headerOverrides = {
           "chatgpt-account-id": tokens.accountId,
           originator: "codex_cli_rs",
@@ -222,7 +225,7 @@ export class ProviderRoutingService {
   }
 
   /**
-   * claude-code 隔离 spawn env:整目录隔离(HANDOFF §3 坑 1)+ 代理注入
+   * claude-code 隔离 spawn env:整目录隔离 + 代理注入
    * + strip ANTHROPIC_(坑 2:宿主环境同名变量会覆盖端点)。
    */
   claudeCodeEnv(sessionRoute: SessionRoute): { env: Record<string, string>; strip: string[] } {

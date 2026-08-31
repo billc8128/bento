@@ -6,6 +6,26 @@ const at = "2026-08-24T00:00:00.000Z"
 const T = Date.parse(at)
 
 describe("replay", () => {
+  it("用户附件元数据进入消息流但不包含本地路径", () => {
+    const acc = createAccumulator()
+    applyRecord(acc, {
+      seq: 1,
+      at,
+      kind: "event",
+      payload: {
+        type: "user_message",
+        text: "看一下",
+        attachments: [{ name: "report.pdf", kind: "file" }],
+      },
+    })
+    expect(messagesOf(acc)).toEqual([{
+      id: "u1",
+      role: "user",
+      text: "看一下",
+      attachments: [{ name: "report.pdf", kind: "file" }],
+    }])
+  })
+
   it("把统一事件流投影成消息并更新工具状态", () => {
     const acc = createAccumulator()
     const records = [

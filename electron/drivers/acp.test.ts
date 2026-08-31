@@ -1,6 +1,22 @@
 import { describe, expect, it, vi } from "vitest"
 
-import { sendLegacySessionModel } from "./acp"
+import { acpMcpServers, sendLegacySessionModel } from "./acp"
+
+describe("ACP MCP", () => {
+  it("把 Bento stdio server 转成 ACP session/new 契约", () => {
+    expect(acpMcpServers([{
+      name: "Bento Browser",
+      command: "/Applications/Bento.app/Contents/MacOS/Bento",
+      args: ["browser-mcp-server.mjs"],
+      env: { TOKEN: "secret" },
+    }])).toEqual([{
+      name: "Bento Browser",
+      command: "/Applications/Bento.app/Contents/MacOS/Bento",
+      args: ["browser-mcp-server.mjs"],
+      env: [{ name: "TOKEN", value: "secret" }],
+    }])
+  })
+})
 
 describe("Hermes ACP model switch", () => {
   it("透传 session/set_model 到 SDK 底层连接", async () => {

@@ -5,6 +5,81 @@ import { ProviderDiscoveryService } from "./provider-discovery"
 import { mergeDiscoveredModelsIntoConfigured, ProviderRegistry } from "./providers"
 
 describe("ProviderRegistry", () => {
+  it("native OAuth 目录按凭证类型显示 Claude Pro/Max 与 xAI SuperGrok", async () => {
+    const discovery = new ProviderDiscoveryService([{
+      id: "pi-runtime",
+      name: "Pi config",
+      harnessId: "pi",
+      discover: async () => ({
+        models: [
+          { id: "anthropic/claude-opus-4-8", name: "Claude Opus 4.8", reasoning: true },
+          { id: "xai/grok-code-fast-1", name: "Grok Code Fast", reasoning: true },
+        ],
+      }),
+    }], undefined, () => ["anthropic", "xai"], (_harnessId, providerId) =>
+      providerId === "anthropic" || providerId === "xai")
+    const registry = new ProviderRegistry(
+      discovery,
+      () => false,
+      undefined,
+      async () => ({ harnessId: "pi", source: "bundled", usable: true, fallbackAvailable: true }),
+    )
+    const providers = await registry.list({ harnessId: "pi", cwd: "/tmp", discover: true })
+    expect(providers.filter((provider) => provider.source === "native").map((provider) => [
+      provider.name,
+      provider.canonicalId,
+    ])).toEqual([
+      ["Claude Pro/Max", "anthropic"],
+      ["xAI SuperGrok", "xai"],
+    ])
+  })
+
+  it("bundled Pi 与 managed OMP/Hermes 可发布各自的 native OAuth Provider", async () => {
+    for (const [harnessId, source] of [
+      ["pi", "bundled"],
+      ["omp", "managed"],
+      ["hermes", "managed"],
+    ] as const) {
+      const discovery = new ProviderDiscoveryService([{
+        id: `${harnessId}-runtime`,
+        name: `${harnessId} config`,
+        harnessId,
+        discover: async () => ({
+          currentModelId: "openai-codex/gpt-5.4",
+          models: [{ id: "openai-codex/gpt-5.4", name: "GPT-5.4", reasoning: true }],
+        }),
+      }], undefined, () => ["openai-codex"])
+      const registry = new ProviderRegistry(
+        discovery,
+        () => false,
+        undefined,
+        async () => ({ harnessId, source, usable: true, fallbackAvailable: true }),
+      )
+      const providers = await registry.list({ harnessId, cwd: "/tmp", discover: true })
+      expect(providers.find((provider) => provider.source === "native")).toMatchObject({
+        canonicalId: "openai",
+        connected: true,
+        models: { [harnessId]: [{ id: "openai-codex/gpt-5.4", name: "GPT-5.4" }] },
+      })
+    }
+  })
+
+  it("OpenAI OAuth 模型对 Responses-compatible 三方 Harness 可见", async () => {
+    const registry = new ProviderRegistry(undefined, (config) => config.id === "openai")
+    for (const harnessId of ["pi", "omp", "hermes", "kimi", "opencode"] as const) {
+      const providers = await registry.list({ harnessId, cwd: "/tmp" })
+      expect(providers.find((provider) => provider.id === "openai")).toMatchObject({
+        connected: true,
+        models: {
+          [harnessId]: [{
+            id: ["pi", "omp", "opencode"].includes(harnessId) ? "bento/gpt-5.4" : "gpt-5.4",
+            name: "GPT-5.4",
+          }],
+        },
+      })
+    }
+  })
+
   it("同一已配置供应商合入本机发现模型，但保留 Bento Provider 身份", () => {
     const configured: ProviderView = {
       id: "user-zhipu-coding-plan-cn",

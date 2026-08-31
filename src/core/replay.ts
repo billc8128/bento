@@ -124,7 +124,12 @@ function applyEvent(acc: Accumulator, event: HarnessEvent, seq: number, atMs: nu
   switch (event.type) {
     case "user_message":
       finalizeDraft(acc, atMs)
-      acc.messages.push({ id: `u${seq}`, role: "user", text: event.text })
+      acc.messages.push({
+        id: `u${seq}`,
+        role: "user",
+        text: event.text,
+        ...(event.attachments?.length ? { attachments: event.attachments } : {}),
+      })
       return
     case "turn_finished":
       finalizeDraft(acc, atMs, event.usage)

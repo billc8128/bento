@@ -41,6 +41,27 @@ export class BinaryManager {
     return install
   }
 
+  async installed(name: ManagedBinaryName): Promise<string | null> {
+    const manifest = BINARY_MANIFEST[name]
+    const override = process.env[manifest.overrideEnv]
+    if (override) {
+      try {
+        await fs.promises.access(override, fs.constants.X_OK)
+        return override
+      } catch {
+        return null
+      }
+    }
+    const artifact = manifest.platforms[this.platformKey]
+    if (!artifact) return null
+    const installDir = path.join(this.rootDir, name, manifest.version, this.platformKey)
+    const executable = path.join(installDir, artifact.executable)
+    const marker = path.join(installDir, "install.json")
+    return await this.isInstalled(executable, marker, manifest.version, artifact.sha256)
+      ? executable
+      : null
+  }
+
   private async resolveOrInstall(name: ManagedBinaryName) {
     const manifest = BINARY_MANIFEST[name]
     const override = process.env[manifest.overrideEnv]
@@ -193,6 +214,11 @@ export function configureBinaryManager(
 export function managedBinary(name: ManagedBinaryName) {
   if (!manager) throw new Error("BinaryManager 尚未初始化")
   return manager.ensure(name)
+}
+
+export function managedBinaryIfInstalled(name: ManagedBinaryName) {
+  if (!manager) throw new Error("BinaryManager 尚未初始化")
+  return manager.installed(name)
 }
 
 export async function placeCodexCodeModeHost(codex: string, host: string): Promise<string> {

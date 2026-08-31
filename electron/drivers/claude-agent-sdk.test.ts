@@ -76,6 +76,12 @@ describe("claudeAgentSdkDriver", () => {
         },
         strip: ["ANTHROPIC_"],
       },
+      mcpServers: [{
+        name: "Bento Browser",
+        command: "/bin/node",
+        args: ["browser.mjs"],
+        env: { TOKEN: "secret" },
+      }],
     }, (event) => events.push(event), { query })
 
     // §7 P4:result 的 usage/total_cost_usd 透出到 prompt() 返回
@@ -93,6 +99,9 @@ describe("claudeAgentSdkDriver", () => {
       model: "claude-sonnet-4-6",
       includePartialMessages: true,
       settingSources: ["project"],
+      mcpServers: {
+        "bento-browser": { type: "stdio", command: "/bin/node", args: ["browser.mjs"] },
+      },
     })
     expect(calls[1]?.options).toMatchObject({
       resume: connection.nativeSessionId,

@@ -1,16 +1,19 @@
 import { randomUUID } from "node:crypto"
+import fs from "node:fs"
 import {
   query as createSdkQuery,
   type Options,
   type Query,
   type SDKMessage,
   type SDKResultMessage,
+  type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk"
 
 import { ClaudeAgentTranslator } from "./claude-agent-translator"
 import { harnessUsage } from "./usage"
 import { localHarnessExecutable } from "../harness-runtime"
 import { isNativeProviderId } from "../../src/core/provider"
+import { normalizePromptInput } from "../../src/core/types"
 import type { HarnessConnection, HarnessDriver, HarnessStartOptions } from "./types"
 
 export type ClaudeQueryFactory = (params: Parameters<typeof createSdkQuery>[0]) => Query
@@ -78,16 +81,46 @@ export const claudeAgentSdkDriver: HarnessDriver = {
       settingSources: ["project"],
       systemPrompt: { type: "preset", preset: "claude_code" },
       tools: { type: "preset", preset: "claude_code" },
+      ...(options.mcpServers?.length ? {
+        mcpServers: Object.fromEntries(options.mcpServers.map((server) => [
+          "bento-browser",
+          { type: "stdio" as const, command: server.command, args: server.args, env: server.env },
+        ])),
+      } : {}),
       stderr: (data) => console.error("[claude-code]", data.trimEnd()),
     })
 
     const connection: HarnessConnection = {
       nativeSessionId,
       capabilities: { modelSwitch: "live", effortSwitch: "none" },
-      async prompt(text) {
+      async prompt(input) {
         if (closed) throw new Error("Claude Agent SDK 会话已关闭")
         const abortController = new AbortController()
-        const sdk = queryFactory({ prompt: text, options: sdkOptions(abortController) })
+        const request = normalizePromptInput(input)
+        const files = request.attachments.filter((attachment) => attachment.kind === "file")
+        const text = files.length === 0
+          ? request.text
+          : `${request.text}\n\n附件文件：\n${files.map((file) => `- ${file.path}`).join("\n")}`
+        const content: Array<Record<string, unknown>> = [{ type: "text", text }]
+        for (const attachment of request.attachments) {
+          if (attachment.kind !== "image") continue
+          content.push({
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: attachment.mimeType,
+              data: fs.readFileSync(attachment.path).toString("base64"),
+            },
+          })
+        }
+        async function* prompt(): AsyncGenerator<SDKUserMessage> {
+          yield {
+            type: "user",
+            message: { role: "user", content } as SDKUserMessage["message"],
+            parent_tool_use_id: null,
+          }
+        }
+        const sdk = queryFactory({ prompt: prompt(), options: sdkOptions(abortController) })
         currentAbort = abortController
         currentQuery = sdk
         const translator = new ClaudeAgentTranslator()

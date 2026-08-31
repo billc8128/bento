@@ -6,6 +6,7 @@ import { localHarnessExecutable } from "../harness-runtime"
 import { CodexRpc } from "./codex-rpc"
 import { translateCodexNotification } from "./codex-translator"
 import { harnessUsage } from "./usage"
+import { normalizePromptInput } from "../../src/core/types"
 import type { ProviderDiscoveryResult } from "../provider-discovery"
 import type { HarnessConnection, HarnessDriver } from "./types"
 
@@ -169,6 +170,14 @@ export const codexDriver: HarnessDriver = {
       ...(modelId ? { model: modelId } : {}),
       approvalPolicy: "never",
       sandbox: "workspace-write",
+      ...(options.mcpServers?.length ? {
+        config: {
+          mcp_servers: Object.fromEntries(options.mcpServers.map((server) => [
+            "bento-browser",
+            { command: server.command, args: server.args, env: server.env },
+          ])),
+        },
+      } : {}),
     }
     let thread: JsonObject
     if (options.nativeSessionId) {
@@ -192,10 +201,17 @@ export const codexDriver: HarnessDriver = {
     return {
       nativeSessionId: threadId,
       capabilities: { modelSwitch: "live", effortSwitch: "live" },
-      async prompt(text) {
+      async prompt(input) {
+        const request = normalizePromptInput(input)
+        const userInput: JsonObject[] = [{ type: "text", text: request.text }]
+        for (const attachment of request.attachments) {
+          userInput.push(attachment.kind === "image"
+            ? { type: "localImage", path: attachment.path }
+            : { type: "mention", name: attachment.name, path: attachment.path })
+        }
         const response = await rpc.request("turn/start", {
           threadId,
-          input: [{ type: "text", text }],
+          input: userInput,
           ...(modelId ? { model: modelId } : {}),
           effort: wireEffort(effort),
         })
