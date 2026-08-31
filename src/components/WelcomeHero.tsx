@@ -1,6 +1,6 @@
 /**
  * 新会话欢迎语(方案 J,原型见 prototypes/welcome-hero-demo):
- * 便当三格拼装入场 → Plus Jakarta Sans 逐字弹簧 → 琥珀色接力波周期扫过。
+ * 便当三格拼装入场 → Plus Jakarta Sans 逐字弹簧 → 入场时琥珀色接力波扫过一次。
  * logo 几何按 public/bento-logo.png 实测校准(左竖条 + 右琥珀/深色块,右端半圆)。
  */
 const WELCOME_TITLE = "Have fun with Bento"

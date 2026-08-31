@@ -300,7 +300,7 @@
   opacity: 0;
   animation:
     welcome-char-in 600ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards,
-    welcome-wave 3.5s ease-in-out infinite;
+    welcome-wave 1.4s ease-in-out; /* 琥珀波仅入场时扫一次 */
 }
 
 .welcome-word .welcome-char:nth-child(odd) { transform: translateY(-0.45em) rotate(-6deg); }
