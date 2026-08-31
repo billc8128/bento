@@ -30,6 +30,7 @@ build/*
 # 设计评审快照(impeccable skill 产物)
 .impeccable/
 
-# 本地过程产物:原型 demo 与 QA 截图,不进开源仓库
+# 本地过程产物:原型 demo、QA 截图与设计预览,不进开源仓库
 prototypes/
 artifacts/
+.visualizations/

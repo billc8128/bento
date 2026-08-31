@@ -14,8 +14,8 @@
     "preview": "vite preview",
     "dev:web": "BENTO_WEB=1 vite",
     "smoke:acp": "node scripts/acp-smoke.mjs",
-    "dist": "pnpm build && electron-builder --mac",
-    "dist:dir": "pnpm build && electron-builder --mac dir"
+    "dist": "pnpm build && electron-builder --mac && touch release/.metadata_never_index",
+    "dist:dir": "pnpm build && electron-builder --mac dir && touch release/.metadata_never_index"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.4.0",
