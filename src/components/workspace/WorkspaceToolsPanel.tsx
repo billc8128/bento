@@ -16,7 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { PanelStateIcon } from "@/components/WindowPanelToggle"
+import { PanelStateIcon, WindowPanelToggle } from "@/components/WindowPanelToggle"
 import {
   consumeWorkspaceBrowserReveal,
   useWorkspaceBrowserReveal,
@@ -185,7 +185,11 @@ function WorkspaceTabBar({
           <DropdownMenuTrigger asChild><button ref={addButtonRef} type="button" aria-label="新建工作区标签" title="新建工作区标签" className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"><Plus className="size-4" /></button></DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">{TAB_KINDS.map((kind) => { const Icon = kind.icon; return <DropdownMenuItem key={kind.id} onSelect={() => onAddTab(kind.id)} className="py-1.5"><Icon className="size-4 text-muted-foreground" /><span>{kind.label}</span></DropdownMenuItem> })}</DropdownMenuContent>
         </DropdownMenu>
-        <button type="button" aria-label="关闭工具面板" title="关闭工具面板" onClick={onClosePanel} className="window-panel-toggle grid size-8 place-items-center rounded-md text-muted-foreground transition-[color,background-color,transform] duration-100 ease-out hover:bg-muted hover:text-foreground active:scale-[0.94] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:active:scale-100 motion-reduce:transition-none"><PanelStateIcon side="right" expanded /></button>
+        {onClosePanel && (
+          <WindowPanelToggle label="关闭工具面板" onClick={onClosePanel}>
+            <PanelStateIcon side="right" expanded />
+          </WindowPanelToggle>
+        )}
       </div>
     </header>
   )

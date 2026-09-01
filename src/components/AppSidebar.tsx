@@ -30,7 +30,6 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { BentoLogo } from "@/components/BentoLogo"
-import { PanelStateIcon, WindowPanelToggle } from "@/components/WindowPanelToggle"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -85,7 +84,6 @@ import {
 } from "@/lib/folder-preferences"
 import { hasUnreadSessionMessage, isRunning, liveMeta, removeLive, renameLive, useLive } from "@/lib/live-store"
 import { togglePin, usePinnedSessions } from "@/lib/pinned-sessions"
-import { toggleSidebarPanel } from "@/lib/sidebar-toggle"
 import { openSettings } from "@/lib/settings-store"
 import { SESSION_MIME } from "@/views/DockWorkspace"
 import { STYLES, type SidebarShape, type StyleId } from "@/data/styles"
@@ -321,18 +319,6 @@ export function AppSidebar() {
   return (
     <div className={cn("w-full", FRAME[shape])}>
       <Sidebar collapsible="none" className={cn("h-full w-full overflow-hidden", PANEL[shape])}>
-      {/* 桌面模式:给 macOS 红绿灯让位,整条兼作窗口拖拽区;左侧放 Codex 式收折钮。
-          h-9:实测红绿灯中线约在内容顶 18px,h-7 时图标偏高 4px */}
-      {window.bento && (
-        <div className="app-window-drag flex h-9 shrink-0 items-center pl-[76px] [-webkit-app-region:drag]">
-          <WindowPanelToggle
-            onClick={toggleSidebarPanel}
-            label="收起侧边栏 (⌘B)"
-          >
-            <PanelStateIcon side="left" expanded />
-          </WindowPanelToggle>
-        </div>
-      )}
       {/* px-3 与下方列表同一条内缩线:头、列表、底栏共用一个左对齐轴 */}
       <SidebarHeader className="gap-2 px-3 pb-3 pt-1.5">
         <div className="app-window-drag flex items-center justify-between pl-1 [-webkit-app-region:drag]">

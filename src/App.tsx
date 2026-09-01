@@ -38,7 +38,7 @@ import { useWorkspaceBrowserReveal } from "@/lib/workspace-browser-reveal"
 import "@/views/builtin"
 import { DEFAULT_STYLE, STYLES, getStyle, type StyleId } from "@/data/styles"
 import { cn } from "@/lib/utils"
-import { browserRevealPanelWidth } from "@/core/workspace-layout"
+import { browserRevealPanelWidth, sidePanelsFit } from "@/core/workspace-layout"
 
 /* 主题偏好持久化。localStorage 可能被禁用,全部 try/catch 静默降级 */
 function loadStyle(): StyleId {
@@ -131,8 +131,7 @@ export default function App() {
   // ⌘B 与标题栏按钮共用同一个收折开关(收折是运行时状态,不持久化)。
   // 动画靠给面板元素临时挂 flex-grow transition:collapse/expand 改的是
   // 内联 flexGrow,浏览器自动补间;只在程序触发时挂,拖拽 resize 不受影响。
-  // 展开条在收起的同一拍就出现:否则主区内容会先滑到红绿灯底下,
-  // 动画结束时再被展开条猛地顶下去(肉眼可见的卡顿+重影)。
+  // 全局标题栏不参与面板宽度动画，因此左右栏开关在开合前后保持同一坐标。
   useEffect(() => {
     const toggle = () => {
       const panel = sidebarPanelRef.current
@@ -147,8 +146,26 @@ export default function App() {
         }, 240)
       }
       if (panel.isCollapsed()) {
-        setSidebarCollapsed(false) // 撤展开条,给回来的侧栏让位
-        panel.expand()
+        const targetSidebarWidth = Math.max(sidebarLayout.min, sidebarLayout.default)
+        const mainMinWidth = compact ? 320 : 420
+        const workspaceWidth = Math.max(
+          320,
+          workspacePanelElRef.current?.getBoundingClientRect().width ?? 0,
+        )
+        const workspaceMustYield = workspaceToolsOpen && !sidePanelsFit(
+          window.innerWidth,
+          targetSidebarWidth,
+          mainMinWidth,
+          workspaceWidth,
+        )
+        setSidebarCollapsed(false)
+        if (workspaceMustYield) {
+          setWorkspaceToolsOpen(false)
+          workspacePanelRef.current?.collapse()
+          window.requestAnimationFrame(() => panel.expand())
+        } else {
+          panel.expand()
+        }
       } else {
         setSidebarCollapsed(true)
         panel.collapse()
@@ -165,7 +182,7 @@ export default function App() {
       unregister()
       window.removeEventListener("keydown", onKeyDown)
     }
-  }, [])
+  }, [compact, sidebarLayout.default, sidebarLayout.min, workspaceToolsOpen])
 
   // ⌘N 新对话:与侧栏「新对话」行同一入口
   useEffect(() => {
@@ -195,7 +212,7 @@ export default function App() {
       if (
         sidebarPanel &&
         !sidebarPanel.isCollapsed() &&
-        availableWidth < sidebarWidth + mainMinWidth + 320
+        !sidePanelsFit(availableWidth, sidebarWidth, mainMinWidth, 320)
       ) {
         setSidebarCollapsed(true)
         sidebarPanel.collapse()
@@ -228,11 +245,28 @@ export default function App() {
     <TooltipProvider delayDuration={200}>
       <ThemeProvider value={theme}>
         <TraitsProvider value={traits}>
-            <SidebarProvider className="h-screen min-h-0">
+            <SidebarProvider className="h-screen min-h-0 flex-col">
+              {window.bento && (
+                <div className="app-window-drag flex h-9 shrink-0 items-center border-b border-border/60 bg-background pl-[76px] pr-3 [-webkit-app-region:drag]">
+                  <WindowPanelToggle
+                    onClick={toggleSidebarPanel}
+                    label={`${sidebarCollapsed ? "展开" : "收起"}侧边栏 (⌘B)`}
+                  >
+                    <PanelStateIcon side="left" expanded={!sidebarCollapsed} />
+                  </WindowPanelToggle>
+                  <span className="flex-1" />
+                  <WindowPanelToggle
+                    onClick={toggleWorkspaceTools}
+                    label={`${workspaceToolsOpen ? "关闭" : "打开"}工具面板 (⌘J)`}
+                  >
+                    <PanelStateIcon side="right" expanded={workspaceToolsOpen} />
+                  </WindowPanelToggle>
+                </div>
+              )}
               <ResizablePanelGroup
                 key={style}
                 orientation="horizontal"
-                className="min-h-0 bg-background text-foreground"
+                className="min-h-0 flex-1 bg-background text-foreground"
               >
                 <ResizablePanel
                   panelRef={sidebarPanelRef}
@@ -255,19 +289,7 @@ export default function App() {
                 <ResizableHandle className="-ml-1 w-1 bg-transparent transition-colors data-[separator=hover]:bg-primary/12 data-[separator=active]:bg-primary/25" />
 
                 <ResizablePanel minSize={compact ? 320 : 420}>
-                  {/* 收起态:标题条占文档流(内容下移不重叠),兼作窗口拖拽区;
-                      h-9 让按钮中线对齐 macOS 红绿灯(实测灯心约在内容顶 18px) */}
                   <div className="flex h-full flex-col">
-                    {window.bento && sidebarCollapsed && (
-                      <div className="app-window-drag flex h-9 shrink-0 items-center border-b border-border/60 bg-background pl-[76px] [-webkit-app-region:drag]">
-                        <WindowPanelToggle
-                          onClick={toggleSidebarPanel}
-                          label="展开侧边栏 (⌘B)"
-                        >
-                          <PanelStateIcon side="left" expanded={false} />
-                        </WindowPanelToggle>
-                      </div>
-                    )}
                     {/* 主区交给 dockview(受管模式);聊天面板经 view 注册表多实例渲染 */}
                     <div className="min-h-0 flex-1">
                       <DockWorkspace />
@@ -308,7 +330,6 @@ export default function App() {
                         key={workspaceRoot || "chat"}
                         workspaceRoot={workspaceRoot}
                         suspended={settings.open || !workspaceToolsOpen}
-                        onClose={() => setWorkspaceToolsOpen(false)}
                       />
                     </div>
                   )}
