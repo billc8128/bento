@@ -104,7 +104,10 @@ export async function discoverAcpProvider(
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
   })
   child.stderr?.resume()
-  const stream = acp.ndJsonStream(Writable.toWeb(child.stdin!), Readable.toWeb(child.stdout!))
+  const stream = acp.ndJsonStream(
+    Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>,
+    Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>,
+  )
   const connection = new acp.ClientSideConnection(
     () => ({
       requestPermission: async () => ({ outcome: { outcome: "cancelled" as const } }),

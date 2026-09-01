@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.electron.tsbuildinfo",
+    "target": "es2024",
+    "lib": ["ES2024", "DOM"],
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["electron/drivers/**/*.ts"],
+  "exclude": ["electron/**/*.test.ts"]
+}

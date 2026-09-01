@@ -1,4 +1,4 @@
-import type { HarnessUsage } from "../../src/core/events"
+import type { HarnessEvent, HarnessUsage } from "../../src/core/events"
 import type { Effort, PromptInput } from "../../src/core/types"
 
 export type HarnessId = "claude-code" | "kimi" | "codex" | "opencode" | "pi" | "omp" | "hermes"

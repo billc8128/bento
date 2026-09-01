@@ -18,6 +18,13 @@ import type { HarnessConnection, HarnessDriver, HarnessStartOptions } from "./ty
 
 export type ClaudeQueryFactory = (params: Parameters<typeof createSdkQuery>[0]) => Query
 
+const CLAUDE_IMAGE_MEDIA_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const
+type ClaudeImageMediaType = (typeof CLAUDE_IMAGE_MEDIA_TYPES)[number]
+
+function isClaudeImageMediaType(value: string): value is ClaudeImageMediaType {
+  return CLAUDE_IMAGE_MEDIA_TYPES.some((mediaType) => mediaType === value)
+}
+
 export function claudeSdkEnv(proxyEnv?: HarnessStartOptions["proxyEnv"]): NodeJS.ProcessEnv {
   if (!proxyEnv) {
     return {
@@ -101,9 +108,12 @@ export const claudeAgentSdkDriver: HarnessDriver = {
         const text = files.length === 0
           ? request.text
           : `${request.text}\n\n附件文件：\n${files.map((file) => `- ${file.path}`).join("\n")}`
-        const content: Array<Record<string, unknown>> = [{ type: "text", text }]
+        const content: Exclude<SDKUserMessage["message"]["content"], string> = [{ type: "text", text }]
         for (const attachment of request.attachments) {
           if (attachment.kind !== "image") continue
+          if (!isClaudeImageMediaType(attachment.mimeType)) {
+            throw new Error(`Claude Code 不支持图片格式：${attachment.mimeType}`)
+          }
           content.push({
             type: "image",
             source: {
@@ -116,7 +126,7 @@ export const claudeAgentSdkDriver: HarnessDriver = {
         async function* prompt(): AsyncGenerator<SDKUserMessage> {
           yield {
             type: "user",
-            message: { role: "user", content } as SDKUserMessage["message"],
+            message: { role: "user", content },
             parent_tool_use_id: null,
           }
         }

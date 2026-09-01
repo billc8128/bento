@@ -51,6 +51,20 @@ export async function sendLegacySessionModel(
 
 type AcpDriverId = Extract<DriverId, "kimi" | "opencode" | "omp" | "hermes">
 
+type AcpOpenResult = {
+  child: ChildProcess
+  conn: acp.ClientSideConnection
+  init: acp.InitializeResponse
+}
+
+type AcpOpen = (
+  cwd: string,
+  emit: Parameters<HarnessDriver["start"]>[1],
+  isLoading: () => boolean,
+  proxyEnv?: HarnessStartOptions["proxyEnv"],
+  usage?: { current: HarnessUsage | undefined },
+) => Promise<AcpOpenResult>
+
 async function harnessCommand(id: AcpDriverId): Promise<SpawnSpec> {
   const local = localHarnessExecutable(id)
   if (local) {
@@ -159,11 +173,21 @@ class AcpDriver implements HarnessDriver {
   async start(
     options: HarnessStartOptions,
     emit: Parameters<HarnessDriver["start"]>[1],
+    deps?: Record<string, unknown>,
   ): Promise<HarnessConnection> {
     let loading = false
+    let nativeSessionId = options.nativeSessionId
+    let setup: unknown
     const mcpServers = acpMcpServers(options.mcpServers ?? [])
     const usage: { current: HarnessUsage | undefined } = { current: undefined }
-    const { child, conn, init } = await this.open(options.cwd, emit, () => loading, options.proxyEnv, usage)
+    const injectedOpen = deps?.open as AcpOpen | undefined
+    const { child, conn, init } = await (injectedOpen ?? this.open.bind(this))(
+      options.cwd,
+      emit,
+      () => loading,
+      options.proxyEnv,
+      usage,
+    )
     if (nativeSessionId && init.agentCapabilities?.sessionCapabilities?.resume) {
       try {
         setup = await conn.resumeSession({ sessionId: nativeSessionId, cwd: options.cwd, mcpServers })
@@ -191,7 +215,6 @@ class AcpDriver implements HarnessDriver {
       child,
       conn,
       nativeSessionId,
-      Boolean(init.agentCapabilities?.sessionCapabilities?.resume || init.agentCapabilities?.loadSession),
       selection,
       usage,
       init.agentCapabilities?.promptCapabilities?.image === true,
@@ -276,7 +299,6 @@ class AcpDriver implements HarnessDriver {
     child: ChildProcess,
     conn: acp.ClientSideConnection,
     nativeSessionId: string,
-    contextRestore: boolean,
     selection: {
       setModel?: (modelId: string) => Promise<unknown>
       setEffort?: (effort: NonNullable<HarnessStartOptions["effort"]>) => Promise<unknown>
