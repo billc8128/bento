@@ -11,7 +11,7 @@ import { hardBreaks } from "@/lib/markdown-breaks"
  */
 export function Markdown({ text, className }: { text: string; className?: string }) {
   return (
-    <div className={cn("text-sm leading-relaxed", className)}>
+    <div className={cn("min-w-0 wrap-anywhere text-sm leading-relaxed", className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

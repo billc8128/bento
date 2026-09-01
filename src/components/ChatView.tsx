@@ -304,7 +304,7 @@ function UserMessage({ m, shape }: { m: UserMsg; shape: MessageShape }) {
           {fromSession ? `来自 ${fromSession}` : "你"}
         </span>
         <div className={cn(
-          "border-l-2 pl-3 text-sm leading-relaxed",
+          "min-w-0 max-w-full wrap-anywhere border-l-2 pl-3 text-sm leading-relaxed",
           fromSession
             ? "rounded-r-lg border-secondary-foreground/25 bg-secondary px-3 py-2 text-secondary-foreground"
             : "border-primary/40",
@@ -324,7 +324,7 @@ function UserMessage({ m, shape }: { m: UserMsg; shape: MessageShape }) {
     >
       {/* 气泡保持胶囊感:3xl(20px)接近旧 --radius 1rem 时代的 2xl 观感 */}
       <div className={cn(
-        "max-w-[75%] rounded-3xl rounded-br-lg px-4 py-2.5 text-sm leading-relaxed",
+        "min-w-0 max-w-[75%] wrap-anywhere rounded-3xl rounded-br-lg px-4 py-2.5 text-sm leading-relaxed",
         fromSession
           ? "bg-secondary text-secondary-foreground"
           : "bg-primary text-primary-foreground",
