@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 import type { CollaborationSession, MessageOrigin, SessionMessage } from "../src/core/collaboration"
 import { CollaborationError, buildEnvelope } from "../src/core/collaboration"
 import type { UiShowOptions } from "../src/core/collaboration"
-import type { SessionBackend } from "./collaboration-service"
+import type { CollaborationCatalog, SessionBackend } from "./collaboration-service"
 import { CollaborationService } from "./collaboration-service"
 
 function session(overrides: Partial<CollaborationSession> = {}): CollaborationSession {
@@ -87,6 +87,40 @@ function backend(sessions: CollaborationSession[]): SessionBackend & {
 
 const caller = session()
 
+function catalog(
+  resolveSelection: CollaborationCatalog["resolveSelection"] = async () => ({
+    providerId: "omp-default-provider",
+    modelId: "omp-default-model",
+    defaultEffort: "auto",
+  }),
+): CollaborationCatalog {
+  return {
+    listHarnesses: async () => [{
+      id: "omp",
+      name: "OMP",
+      usable: true,
+      source: "managed",
+      effortSelection: true,
+      efforts: ["off", "auto"],
+      defaultEffort: "auto",
+    }],
+    listModels: async ({ harnessId }) => [{
+      harnessId,
+      providerId: "omp-default-provider",
+      providerName: "OMP Provider",
+      providerSource: "user",
+      modelId: "omp-default-model",
+      modelName: "OMP Model",
+      reasoning: true,
+      efforts: ["auto"],
+      defaultEffort: "auto",
+      providerDefault: true,
+      default: true,
+    }],
+    resolveSelection,
+  }
+}
+
 describe("CollaborationService", () => {
   it("绑定调用者:caller 不存在返回 caller_not_found", async () => {
     const service = new CollaborationService(backend([caller]))
@@ -139,6 +173,82 @@ describe("CollaborationService", () => {
       modelId: "m-1",
       effort: "medium",
     })
+  })
+
+  it("create 跨 Harness 不继承 caller 模型，自动使用目标 Harness 默认选择与 effort", async () => {
+    const impl = backend([caller])
+    const resolveSelection = vi.fn(async () => ({
+      providerId: "omp-provider",
+      modelId: "omp-model",
+      defaultEffort: "auto" as const,
+    }))
+    const service = new CollaborationService(impl, { catalog: catalog(resolveSelection) })
+    await service.create("s-caller", { harnessId: "omp", title: "reviewer" })
+    expect(resolveSelection).toHaveBeenCalledWith({
+      callerSessionId: "s-caller",
+      harnessId: "omp",
+      cwd: "/proj/a",
+    })
+    expect(impl.createSpecs[0]).toMatchObject({
+      harnessId: "omp",
+      providerId: "omp-provider",
+      modelId: "omp-model",
+      effort: "auto",
+    })
+  })
+
+  it("create 跨 Harness 优先复用同 Workspace 最近选择；失效时回落当前默认", async () => {
+    const previous = session({
+      id: "omp-old",
+      harnessId: "omp",
+      providerId: "old-provider",
+      modelId: "old-model",
+      effort: "off",
+      updatedAt: "2024-03-01T00:00:00Z",
+    })
+    const resolveSelection = vi.fn(async (input) => input.providerId
+      ? null
+      : { providerId: "new-provider", modelId: "new-model", defaultEffort: "auto" as const })
+    const impl = backend([caller, previous])
+    const service = new CollaborationService(impl, { catalog: catalog(resolveSelection) })
+    await service.create("s-caller", { harnessId: "omp" })
+    expect(resolveSelection).toHaveBeenNthCalledWith(1, {
+      callerSessionId: "s-caller",
+      harnessId: "omp",
+      cwd: "/proj/a",
+      providerId: "old-provider",
+      modelId: "old-model",
+    })
+    expect(resolveSelection).toHaveBeenNthCalledWith(2, {
+      callerSessionId: "s-caller",
+      harnessId: "omp",
+      cwd: "/proj/a",
+    })
+    expect(impl.createSpecs[0]).toMatchObject({ providerId: "new-provider", modelId: "new-model" })
+  })
+
+  it("create 显式跨 Harness 选择失效时不回落默认", async () => {
+    const resolveSelection = vi.fn(async () => null)
+    const service = new CollaborationService(backend([caller]), { catalog: catalog(resolveSelection) })
+    await expect(service.create("s-caller", {
+      harnessId: "omp",
+      providerId: "bad-provider",
+      modelId: "bad-model",
+    })).rejects.toMatchObject({ code: "selection_unavailable" })
+    expect(resolveSelection).toHaveBeenCalledTimes(1)
+  })
+
+  it("harnessList/modelList 返回只读目录，并限制 cwd 为已有 Workspace", async () => {
+    const service = new CollaborationService(backend([caller]), { catalog: catalog() })
+    await expect(service.harnessList("s-caller")).resolves.toMatchObject({
+      harnesses: [{ id: "omp", usable: true }],
+    })
+    await expect(service.modelList("s-caller", { harnessId: "omp" })).resolves.toMatchObject({
+      harnessId: "omp",
+      models: [{ providerId: "omp-default-provider", modelId: "omp-default-model" }],
+    })
+    await expect(service.modelList("s-caller", { harnessId: "omp", cwd: "/unknown" }))
+      .rejects.toMatchObject({ code: "workspace_not_found" })
   })
 
   it("create 引用未知 project cwd 返回 workspace_not_found", async () => {

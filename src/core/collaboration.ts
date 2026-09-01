@@ -7,7 +7,7 @@
  */
 
 import type { Effort, SessionScope } from "./types"
-import type { HarnessId } from "./harness"
+import type { HarnessId, HarnessRuntimeStatus } from "./harness"
 
 export type WorkspaceRef =
   | { scope: "chat" }
@@ -169,6 +169,53 @@ export type SessionListInput = {
 export type SessionListResult = {
   selfSessionId: string
   sessions: CollaborationSession[]
+}
+
+export type CollaborationHarnessOption = {
+  id: HarnessId
+  name: string
+  usable: boolean
+  source: HarnessRuntimeStatus["source"]
+  version?: string
+  effortSelection: boolean
+  efforts: Effort[]
+  defaultEffort: Effort
+}
+
+export type HarnessListResult = {
+  harnesses: CollaborationHarnessOption[]
+}
+
+export type ModelListInput = {
+  harnessId: HarnessId
+  /** 只能引用 Bento 已存在的 project Workspace；缺省使用 caller 的 cwd。 */
+  cwd?: string
+}
+
+export type CollaborationModelOption = {
+  harnessId: HarnessId
+  providerId: string
+  providerName: string
+  providerSource: "builtin" | "user" | "native"
+  modelId: string
+  modelName: string
+  reasoning: boolean
+  contextWindow?: number
+  efforts: Effort[]
+  defaultEffort: Effort
+  providerDefault: boolean
+  default: boolean
+}
+
+export type ModelListResult = {
+  harnessId: HarnessId
+  models: CollaborationModelOption[]
+}
+
+export type CollaborationSelection = {
+  providerId: string
+  modelId: string
+  defaultEffort: Effort
 }
 
 export function filterSessions(

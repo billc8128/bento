@@ -374,8 +374,8 @@ describe("AppRuntimeHost Collaboration tools", () => {
     const lease = (await host.prepare("session-1", dir))!
     expect(lease).not.toBeNull()
 
-    const names = (await listToolNames(lease)).filter((name) => name.startsWith("session_") || name.startsWith("runtime") || name.startsWith("workspace") || name.startsWith("ui_"))
-    for (const tool of ["runtime_snapshot", "workspace_list", "session_list", "session_create", "session_send", "session_read", "session_wait", "ui_state", "ui_neighbor", "ui_show_session", "ui_hide_session", "ui_focus_session"]) {
+    const names = (await listToolNames(lease)).filter((name) => name.startsWith("session_") || name.startsWith("runtime") || name.startsWith("workspace") || name.startsWith("harness_") || name.startsWith("model_") || name.startsWith("ui_"))
+    for (const tool of ["runtime_snapshot", "workspace_list", "session_list", "harness_list", "model_list", "session_create", "session_send", "session_read", "session_wait", "ui_state", "ui_neighbor", "ui_show_session", "ui_hide_session", "ui_focus_session"]) {
       expect(names).toContain(tool)
     }
 
@@ -483,7 +483,38 @@ describe("AppRuntimeHost Collaboration 错误语义与 wait", () => {
             { sessionId: "other", neighbors: { left: "session-1" } },
           ],
         })
-        return new CollaborationService(backend, { ui })
+        return new CollaborationService(backend, {
+          ui,
+          catalog: {
+            listHarnesses: async () => [{
+              id: "omp",
+              name: "OMP",
+              usable: true,
+              source: "managed",
+              effortSelection: true,
+              efforts: ["off", "auto"],
+              defaultEffort: "auto",
+            }],
+            listModels: async ({ harnessId }) => [{
+              harnessId,
+              providerId: "omp-provider",
+              providerName: "OMP Provider",
+              providerSource: "user",
+              modelId: "omp-model",
+              modelName: "OMP Model",
+              reasoning: true,
+              efforts: ["auto"],
+              defaultEffort: "auto",
+              providerDefault: true,
+              default: true,
+            }],
+            resolveSelection: async () => ({
+              providerId: "omp-provider",
+              modelId: "omp-model",
+              defaultEffort: "auto",
+            }),
+          },
+        })
       },
     )
     hosts.push(host)
@@ -507,6 +538,25 @@ describe("AppRuntimeHost Collaboration 错误语义与 wait", () => {
       session: { id: string; title: string } | null
     }
     expect(neighbor.session).toMatchObject({ id: "other", title: "self" })
+
+    const harnesses = await callTool(lease, "harness_list") as { harnesses: Array<{ id: string }> }
+    expect(harnesses.harnesses).toContainEqual(expect.objectContaining({ id: "omp" }))
+    const models = await callTool(lease, "model_list", { harnessId: "omp" }) as {
+      models: Array<{ providerId: string; modelId: string }>
+    }
+    expect(models.models).toContainEqual({
+      harnessId: "omp",
+      providerId: "omp-provider",
+      providerName: "OMP Provider",
+      providerSource: "user",
+      modelId: "omp-model",
+      modelName: "OMP Model",
+      reasoning: true,
+      efforts: ["auto"],
+      defaultEffort: "auto",
+      providerDefault: true,
+      default: true,
+    })
 
     // session_create 返回 ui 字段
     const created = await callTool(lease, "session_create", { title: "r" }) as { ui: string }

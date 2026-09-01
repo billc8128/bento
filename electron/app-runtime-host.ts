@@ -335,14 +335,29 @@ export class AppRuntimeHost {
       return requireService().list(caller, input)
     }))
 
+    server.registerTool("harness_list", {
+      description: "列出 Bento 当前支持的 Harness、运行时可用性与推理强度；创建不同 Harness Session 前先调用。",
+    }, wrap(async () => requireService().harnessList(caller)))
+
+    server.registerTool("model_list", {
+      description: "列出目标 Harness 在当前或指定已有 Workspace 中可执行的 Provider/Model；仅返回已连接且启用的选项。",
+      inputSchema: {
+        harnessId: z.enum(["claude-code", "codex", "kimi", "opencode", "pi", "omp", "hermes"]),
+        cwd: z.string().optional(),
+      },
+    }, wrap(async (args) => requireService().modelList(caller, {
+      harnessId: args.harnessId as "claude-code" | "codex" | "kimi" | "opencode" | "pi" | "omp" | "hermes",
+      ...(typeof args.cwd === "string" ? { cwd: args.cwd } : {}),
+    })))
+
     server.registerTool("session_create", {
-      description: "创建新的协作者 Session;默认继承调用者的 harness/provider/model/effort/cwd。",
+      description: "创建协作者 Session；同 Harness 继承调用者配置，跨 Harness 自动使用该 Harness 最近或默认的可执行模型。",
       inputSchema: {
         title: z.string().optional(),
         prompt: z.string().optional(),
         scope: z.enum(["chat", "project"]).optional(),
         cwd: z.string().optional(),
-        harnessId: z.string().optional(),
+        harnessId: z.enum(["claude-code", "codex", "kimi", "opencode", "pi", "omp", "hermes"]).optional(),
         providerId: z.string().optional(),
         modelId: z.string().optional(),
         effort: z.enum(["off", "auto", "low", "medium", "high", "max"]).optional(),

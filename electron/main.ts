@@ -47,6 +47,7 @@ import { AppRuntimeHost } from "./app-runtime-host"
 import { CollaborationService } from "./collaboration-service"
 import { UiCommandBridge } from "./ui-command-bridge"
 import { SessionCollaborationBackend } from "./collaboration-session-backend"
+import { AgentSelectionCatalog } from "./collaboration-catalog"
 
 // GUI app 不继承 login shell 的 PATH,打包后 spawn kimi/opencode 会 ENOENT。
 // fix-path 用 login shell 修 PATH;常见 bin 目录再兜一层(存在才加)
@@ -401,9 +402,15 @@ app.whenReady().then(async () => {
       resolved!.providerId === request.providerId &&
       resolved!.modelId === request.modelId
   })
+  const collaborationCatalog = new AgentSelectionCatalog(
+    providers,
+    listHarnessRuntimeStatuses,
+    (sessionId) => sessions.listSessions().find((record) => record.key === sessionId)?.cwd ?? null,
+  )
   collaborationService = new CollaborationService(collaborationBackend, {
     ui: uiBridge!,
     uiAvailable: () => Boolean(win && !win.isDestroyed()),
+    catalog: collaborationCatalog,
   })
 
   // IPC:renderer 经 preload 调这些;错误统一转成 { error } 而不是抛穿

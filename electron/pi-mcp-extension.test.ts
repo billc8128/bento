@@ -33,6 +33,18 @@ describe("Pi MCP extension", () => {
                   name: "session_list",
                   description: "list sessions",
                   inputSchema: { type: "object", properties: {} },
+                }, {
+                  name: "harness_list",
+                  description: "list harnesses",
+                  inputSchema: { type: "object", properties: {} },
+                }, {
+                  name: "model_list",
+                  description: "list models",
+                  inputSchema: {
+                    type: "object",
+                    properties: { harnessId: { type: "string" } },
+                    required: ["harnessId"],
+                  },
                 }],
               }
             : { content: [{ type: "text", text: "ok" }] }
@@ -64,12 +76,14 @@ describe("Pi MCP extension", () => {
     const extension = (await import(url)).default as (api: typeof pi) => Promise<void>
     await extension(pi)
 
-    expect([...registered.keys()]).toEqual(["session_list"])
+    expect([...registered.keys()]).toEqual(["session_list", "harness_list", "model_list"])
     expect(active).toEqual(["read"])
     onSessionStart?.()
-    expect(active).toEqual(["read", "session_list"])
+    expect(active).toEqual(["read", "session_list", "harness_list", "model_list"])
     await expect(registered.get("session_list")!.execute("id", {})).resolves.toMatchObject({
       content: [{ type: "text", text: "ok" }],
     })
+    await expect(registered.get("model_list")!.execute("id", { harnessId: "omp" }))
+      .resolves.toMatchObject({ content: [{ type: "text", text: "ok" }] })
   })
 })
