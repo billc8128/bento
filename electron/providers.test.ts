@@ -84,7 +84,7 @@ describe("ProviderRegistry", () => {
   it("OpenAI OAuth 动态账户目录复用于全部 Responses Harness，并保持各自 wire id", async () => {
     let calls = 0
     const registry = new ProviderRegistry(
-      undefined,
+      new ProviderDiscoveryService([]),
       (config) => config.id === "openai",
       async () => {
         calls += 1
