@@ -89,7 +89,14 @@ function ensureDraft(acc: Accumulator, atMs: number): Draft {
   return acc.draft
 }
 
-function finalizeDraft(acc: Accumulator, atMs: number, usage?: HarnessUsage) {
+type FinalizeOptions = {
+  usage?: HarnessUsage
+  outcome?: Extract<Message, { role: "assistant" }>["outcome"]
+  /** 只有正常 turn_finished 才能把最后一段过程提升为 final。 */
+  promoteProgress?: boolean
+}
+
+function finalizeDraft(acc: Accumulator, atMs: number, options: FinalizeOptions = {}) {
   const d = acc.draft
   if (!d) return
   acc.draft = null
@@ -98,18 +105,51 @@ function finalizeDraft(acc: Accumulator, atMs: number, usage?: HarnessUsage) {
   for (const tool of d.tools) {
     if (tool.status === "running") tool.status = "failed"
   }
-  if (!d.text && !d.thinking && d.tools.length === 0) return
+  // final = 最后一次工具活动之后的连续公开文本;工具前/工具间的文本已按
+  // 工具边界切成 progress 留在 timeline。若回合没有独立 final(最后一段
+  // 文本后面又开了新工具),把最后一段 progress 回退为 final,回答不能消失。
+  let text = d.text
+  let activity = d.activity
+  if (options.outcome && text.trim()) {
+    activity = [
+      ...activity,
+      { id: `progress-end-${acc.lastSeq}`, kind: "progress", text },
+    ]
+    text = ""
+  } else if (options.promoteProgress !== false && !text.trim()) {
+    for (let i = activity.length - 1; i >= 0; i--) {
+      const item = activity[i]
+      if (item.kind === "progress") {
+        text = item.text
+        activity = activity.slice(0, i).concat(activity.slice(i + 1))
+        break
+      }
+    }
+  }
+  if (!text && !d.thinking && d.tools.length === 0 && activity.length === 0 && !d.plan?.length) return
   acc.messages.push({
     id: `a${acc.messages.length}`,
     role: "assistant",
-    text: d.text,
+    text,
     ...(d.thinking ? { thinking: d.thinking } : {}),
     ...(d.tools.length ? { tools: d.tools } : {}),
-    ...(d.activity.length ? { activity: d.activity } : {}),
+    ...(activity.length ? { activity } : {}),
+    ...(options.outcome ? { outcome: options.outcome } : {}),
     durationMs: atMs - d.startedAtMs,
     ...(d.plan?.length ? { plan: d.plan } : {}),
-    ...(usage ? { usage } : {}),
+    ...(options.usage ? { usage: options.usage } : {}),
   })
+}
+
+/** 工具边界:把当前累积的公开文本切成一段过程文字留在 timeline 里,
+ * 让 final message 只装最后一次工具活动之后的文本。纯空白段丢弃。 */
+function flushProgress(d: Draft, id: string) {
+  if (!d.text.trim()) {
+    d.text = ""
+    return
+  }
+  d.activity.push({ id, kind: "progress", text: d.text })
+  d.text = ""
 }
 
 const SUCCESSFUL_RESUME_NOTICES = new Set([
@@ -125,7 +165,7 @@ function isSuccessfulResumeNotice(text: string | undefined): boolean {
 function applyEvent(acc: Accumulator, event: HarnessEvent, seq: number, atMs: number) {
   switch (event.type) {
     case "user_message":
-      finalizeDraft(acc, atMs)
+      finalizeDraft(acc, atMs, { outcome: "interrupted", promoteProgress: false })
       acc.messages.push({
         id: `u${seq}`,
         role: "user",
@@ -136,14 +176,22 @@ function applyEvent(acc: Accumulator, event: HarnessEvent, seq: number, atMs: nu
       })
       return
     case "turn_finished":
-      finalizeDraft(acc, atMs, event.usage)
+      finalizeDraft(acc, atMs, {
+        ...(event.usage ? { usage: event.usage } : {}),
+        ...(event.reason === "cancelled" || event.reason === "error"
+          ? { outcome: event.reason }
+          : {}),
+        promoteProgress: event.reason !== "cancelled" && event.reason !== "error",
+      })
       return
     case "notice":
       if (isSuccessfulResumeNotice(event.text)) return
-      finalizeDraft(acc, atMs)
+      finalizeDraft(acc, atMs, { outcome: "error", promoteProgress: false })
       acc.messages.push({ id: `n${seq}`, role: "assistant", text: `⚠️ ${event.text}` })
       return
     case "agent_message_chunk":
+      // 公开文本:留在 draft.text 作为 final 候选;遇到下一个工具边界时
+      // 由 flushProgress 切成 progress 留在 timeline,不混入 final message
       ensureDraft(acc, atMs).text += event.text
       return
     case "agent_thought_chunk": {
@@ -163,6 +211,7 @@ function applyEvent(acc: Accumulator, event: HarnessEvent, seq: number, atMs: nu
       return
     case "tool_started": {
       const draft = ensureDraft(acc, atMs)
+      flushProgress(draft, `progress-${seq}`)
       draft.toolIndex.set(event.id, draft.tools.length)
       const tool: ToolCall = {
         kind: event.kind,
@@ -232,7 +281,7 @@ export function applyRecord(acc: Accumulator, r: LogRecord) {
 
   switch (r.kind) {
     case "user_message":
-      finalizeDraft(acc, atMs)
+      finalizeDraft(acc, atMs, { outcome: "interrupted", promoteProgress: false })
       acc.messages.push({ id: `u${r.seq}`, role: "user", text: p.text ?? "" })
       return
     case "turn_end":
@@ -267,6 +316,7 @@ export function applyRecord(acc: Accumulator, r: LogRecord) {
     case "tool_call": {
       const d = ensureDraft(acc, atMs)
       const toolCallId = u.toolCallId ?? "unknown"
+      flushProgress(d, `progress-${r.seq}`)
       d.toolIndex.set(toolCallId, d.tools.length)
       const tool: ToolCall = {
         kind: toolKind(u.kind),
@@ -321,5 +371,7 @@ export function messagesOf(acc: Accumulator): Message[] {
  * 且 main 侧非 live 双条件。`at` 为收尾时刻,M1 起用于回合 durationMs。
  */
 export function finalizeTrailing(acc: Accumulator, at: string) {
-  if (acc.draft) finalizeDraft(acc, Date.parse(at))
+  if (acc.draft) {
+    finalizeDraft(acc, Date.parse(at), { outcome: "interrupted", promoteProgress: false })
+  }
 }

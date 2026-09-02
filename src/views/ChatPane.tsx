@@ -36,26 +36,11 @@ import {
   useLive,
 } from "@/lib/live-store"
 import { getHarness, type HarnessId } from "@/core/harness"
+import { liveTurnState } from "@/core/activity"
 import type { SessionScope } from "@/core/types"
-import type { Message } from "@/core/types"
 import { CHAT_CONTENT_GUTTER, type ComposerShape } from "@/data/styles"
 
 type HeaderInfo = { title: string; path: string; branch?: string }
-
-function currentLiveActivity(messages: Message[], pending: boolean) {
-  if (!pending) return undefined
-  const draft = messages.findLast((message) => message.role === "assistant" && message.id === "draft")
-  if (!draft || draft.role !== "assistant") return { label: "正在思考" }
-  const last = draft.activity?.at(-1)
-  if (last?.kind === "tool") {
-    return {
-      label: last.tool.status === "running" ? "正在使用工具" : "工具已完成",
-      detail: last.tool.target,
-    }
-  }
-  if (last?.kind === "steer") return { label: "已收到你的补充" }
-  return { label: draft.tools?.some((tool) => tool.status === "running") ? "正在工作" : "正在思考" }
-}
 
 function PaneHeader({
   info,
@@ -153,7 +138,9 @@ export function ChatPane() {
   const harness = getHarness(live.harnessId as HarnessId)
   const messages = liveMessages(sessionId)
   const queued = queuedPrompt(sessionId)
-  const liveActivity = currentLiveActivity(messages, running)
+  // 运行态唯一状态标题的数据源；在消息流末端展开，落定后同一批
+  // activity 由对应 assistant message 的折叠 trace 承接。
+  const turn = liveTurnState(messages, running)
   return (
     <main className="relative flex h-full min-h-0 min-w-0 flex-col">
       <PaneHeader
@@ -172,7 +159,7 @@ export function ChatPane() {
       <ChatView
         messages={messages}
         pending={running}
-        pendingLabel="正在生成…"
+        turn={turn}
         queued={queued ? {
           text: queued.input.text,
           steerAvailable: queued.steerAvailable,
@@ -193,7 +180,6 @@ export function ChatPane() {
         onSend={(input) => void (running
           ? queueLivePrompt(sessionId, input)
           : sendPrompt(sessionId, input))}
-        liveActivity={liveActivity}
         queueFull={Boolean(queued)}
         onHarnessChange={setNextHarnessId}
         onModelChange={

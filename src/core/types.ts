@@ -59,6 +59,9 @@ export type ToolCall = {
 
 export type ActivityItem =
   | { id: string; kind: "thinking"; text: string }
+  /** 助手公开过程文字(工具调用前/工具之间),按工具边界切分;最后一次
+   * 工具活动后的连续文本才是 final,过程段留在 timeline 里可折叠查看 */
+  | { id: string; kind: "progress"; text: string }
   | { id: string; kind: "tool"; tool: ToolCall }
   | { id: string; kind: "steer"; text: string }
 
@@ -72,6 +75,8 @@ export type Message =
       thinking?: string
       /** thinking/tool/steer 按真实事件顺序排列；旧历史缺失时 UI 回退旧字段。 */
       activity?: ActivityItem[]
+      /** 非正常终结原因；缺省表示收到正常 turn_finished。 */
+      outcome?: "cancelled" | "error" | "interrupted"
       /** 回合耗时 ms:本回合首个事件到最后一个事件(turn_finished / 下一个 user_message) */
       durationMs?: number
       /** 回合计划清单(来自 metadata 的 plan 事件,存在才渲染) */

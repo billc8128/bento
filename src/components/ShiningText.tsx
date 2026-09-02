@@ -1,9 +1,14 @@
-import { motion } from "motion/react"
+import { motion, useReducedMotion } from "motion/react"
 
 import { cn } from "@/lib/utils"
 
-/** running 态流光文字:一道高光匀速扫过,循环往复 */
+/** running 态流光文字:一道高光匀速扫过,循环往复;
+ * prefers-reduced-motion 时退化为静态弱化文字,状态仍可读 */
 export function ShiningText({ text, className }: { text: React.ReactNode; className?: string }) {
+  const reduceMotion = useReducedMotion()
+  if (reduceMotion) {
+    return <span className={cn("text-muted-foreground", className)}>{text}</span>
+  }
   return (
     <motion.span
       className={cn(
