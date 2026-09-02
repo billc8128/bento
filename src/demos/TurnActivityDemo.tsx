@@ -31,7 +31,7 @@ const s1Activity: ActivityItem[] = [
   { id: "th1", kind: "thinking", text: "用户想知道连通性,最快的方式是 curl 打一个请求看状态码…", durationMs: 2100 },
   { id: "p1", kind: "progress", text: "我先测一下 genlab 的连通性。" },
   { id: "t1", kind: "tool", tool: curl },
-  { id: "th2", kind: "thinking", text: "返回 200,延迟 38ms,连通性正常。接下来看一下配置文件里 LLM 层是怎么写的…" },
+  { id: "th2", kind: "thinking", text: "返回 200,延迟 38ms,连通性正常。接下来看一下配置文件里 LLM 层是怎么写的…", startedAtMs: 1 },
 ]
 
 /** S2:思考 → 说话 → 7 个工具落定,第 8 步在跑 */
@@ -68,6 +68,26 @@ export function TurnActivityDemo() {
         <h2 className="mb-3 type-micro text-muted-foreground">S2 · live:多步骤进行中(第 8 步在跑)</h2>
         <div className="rounded-xl border border-border bg-background p-4">
           <TurnActivity turn={{ activity: s2Activity, tools: tools8 }} live shape="flat" />
+        </div>
+      </section>
+      <section>
+        <h2 className="mb-3 type-micro text-muted-foreground">S4 · live:思考已被说话闭合,正文流式中(回归:不再把「正在思考…」钉在流式正文上面)</h2>
+        <div className="rounded-xl border border-border bg-background p-4">
+          <TurnActivity
+            turn={{
+              activity: [
+                { id: "t1", kind: "tool", tool: curl },
+                { id: "th1", kind: "thinking", text: "用户想知道连通性,最快的方式是 curl 打一个请求看状态码…", startedAtMs: 1, durationMs: 2100 },
+              ],
+              tools: [curl],
+            }}
+            live
+            shape="flat"
+          />
+          <p className="mt-1 text-sm">返回 200,延迟 38ms,连通性正常。接下来看一下配置文件里 LLM 层是怎么写的,然后重写 LLM 层…</p>
+          <div className="mt-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            Composer 占位
+          </div>
         </div>
       </section>
       <section>

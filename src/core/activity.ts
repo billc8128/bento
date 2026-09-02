@@ -16,9 +16,10 @@ type AssistantMsg = Extract<Message, { role: "assistant" }>
 
 /** 阶段栈行(渲染的最小单元):连续 thinking 并成一段、连续 tool 并成一组;
  * progress/steer 是公开文字,独立成行、不参与折叠分组。thinking 段聚合整段耗时(合并的子段求和;
- * 都没有计时数据时为 undefined,标题回退到无时长文案)。 */
+ * 都没有计时数据时为 undefined,标题回退到无时长文案)。streaming = 合并的最后一个子段还没闭合
+ * (durationMs 未写死),即思考还在流式——合并后 durationMs 可能已有部分和,不能拿它判 live。 */
 export type PhaseRow =
-  | { id: string; kind: "thinking"; text: string; durationMs?: number }
+  | { id: string; kind: "thinking"; text: string; durationMs?: number; streaming?: boolean }
   | { id: string; kind: "tools"; tools: ToolCall[] }
   | { id: string; kind: "progress" | "steer"; text: string }
 
@@ -52,15 +53,19 @@ export function buildPhases(items: ActivityItem[]): PhaseRow[] {
   for (const item of items) {
     const last = rows[rows.length - 1]
     if (item.kind === "thinking") {
+      // streaming = 有计时起点但还没闭合(live reducer 恒写 startedAtMs;旧数据两个字段都缺,不算流式)
+      const streaming = item.startedAtMs !== undefined && item.durationMs === undefined
       if (last?.kind === "thinking") {
         last.text += item.text
         last.durationMs = mergeDurationMs(last.durationMs, item.durationMs)
+        last.streaming = streaming ? true : undefined
       } else {
         rows.push({
           id: item.id,
           kind: "thinking",
           text: item.text,
-          ...(item.durationMs !== undefined ? { durationMs: item.durationMs } : {}),
+          durationMs: item.durationMs,
+          streaming: streaming ? true : undefined,
         })
       }
       continue
@@ -88,15 +93,16 @@ export function phaseLabel(row: Extract<PhaseRow, { kind: "thinking" | "tools" }
 }
 
 /** 阶段栈中正在进行的那一行:末段是 tools 且有工具在跑 → 工具阶段;
- * 末段是 thinking → 思考还在流式(思考刚结束、下一事件未到的间隙也算,
- * 与占位「正在思考」口径一致)。其他情况(末行是 progress/steer,或空栈)
- * 没有活跃工作段,调用方回退到 liveStatus 的兜底状态行。 */
+ * 末段是未闭合的 thinking → 思考还在流式(或刚结束、下一事件未到的间隙)。
+ * 末段 thinking 已闭合(streaming 为空,被说话闭合)说明 agent 正在输出正文——思考行落定成
+ * 「已思考 Xs」,状态交给 liveStatus 的兜底行,不再把「正在思考…」钉在流式正文上面。
+ * 其他情况(末行是 progress/steer,或空栈)没有活跃工作段,调用方回退到 liveStatus。 */
 export function livePhaseId(rows: PhaseRow[]): string | undefined {
   const last = rows.at(-1)
   if (last?.kind === "tools") {
     return last.tools.some((tool) => tool.status === "running") ? last.id : undefined
   }
-  if (last?.kind === "thinking") return last.id
+  if (last?.kind === "thinking") return last.streaming ? last.id : undefined
   return undefined
 }
 
@@ -124,7 +130,9 @@ export function liveTurnState(messages: Message[], running: boolean): LiveTurn |
 }
 
 /** 兜底状态标题:阶段栈没有活跃工作段时(空栈、说话中、收到补充)的状态文案。
- * 有活跃工作段时状态由该阶段行自己承担(livePhaseId),不走这里。 */
+ * 有活跃工作段时状态由该阶段行自己承担(livePhaseId),不走这里。
+ * 末段思考已被说话闭合(durationMs 写死)= agent 正在输出正文,正文在下方流式,
+ * 状态行如实说「正在回复」,不再假装还在思考。 */
 export function liveStatus(turn: LiveTurn): { label: string } {
   const activityTools = turn.activity.flatMap((item) => item.kind === "tool" ? [item.tool] : [])
   if ([...turn.tools, ...activityTools].some((tool) => tool.status === "running")) {
@@ -132,6 +140,7 @@ export function liveStatus(turn: LiveTurn): { label: string } {
   }
   const last = turn.activity.at(-1)
   if (last?.kind === "steer") return { label: "已收到你的补充" }
+  if (last?.kind === "thinking" && last.durationMs !== undefined) return { label: "正在回复" }
   if (turn.activity.some((item) => item.kind === "tool" || item.kind === "progress")) {
     return { label: "正在工作" }
   }

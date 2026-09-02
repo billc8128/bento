@@ -94,8 +94,13 @@ describe("livePhaseId 活跃阶段判定", () => {
     expect(livePhaseId(buildPhases([toolItem("t1")]))).toBeUndefined()
   })
 
-  it("末段是 thinking → 思考阶段(流式或间隙都算);末段 progress/steer 或空栈 → 无 live 阶段", () => {
-    expect(livePhaseId(buildPhases([thinking("th1", "在想")]))).toBe("th1")
+  it("末段是 thinking:有起点未闭合(流式/间隙)→ live;已闭合(被说话接管)→ 无 live 阶段", () => {
+    const streaming: ActivityItem = { id: "th1", kind: "thinking", text: "在想", startedAtMs: 100 }
+    const closed: ActivityItem = { id: "th2", kind: "thinking", text: "想完", startedAtMs: 100, durationMs: 400 }
+    expect(livePhaseId(buildPhases([streaming]))).toBe("th1")
+    expect(livePhaseId(buildPhases([closed]))).toBeUndefined()
+    // 闭合段 + 新流式段合并后,尾项未闭合 → 整段仍是 live(时长是部分和,不提前露出)
+    expect(livePhaseId(buildPhases([closed, streaming]))).toBe("th2")
     expect(livePhaseId(buildPhases([progress("p1", "说话")]))).toBeUndefined()
     expect(livePhaseId(buildPhases([{ id: "s1", kind: "steer", text: "补充" }]))).toBeUndefined()
     expect(livePhaseId([])).toBeUndefined()
@@ -242,6 +247,17 @@ describe("liveStatus 兜底状态文案(无活跃工作段时)", () => {
       label: "正在使用工具",
     })
     expect(liveStatus({ activity: [p], tools: [] })).toEqual({ label: "正在工作" })
+  })
+
+  it("末段思考已被说话闭合(正在输出正文):显示正在回复,不假装还在思考", () => {
+    const closedThinking: ActivityItem = { id: "th1", kind: "thinking", text: "想完", startedAtMs: 100, durationMs: 400 }
+    expect(liveStatus({ activity: [toolItem("t1"), closedThinking], tools: [] })).toEqual({
+      label: "正在回复",
+    })
+    // 有 running 工具时仍优先工具状态
+    expect(
+      liveStatus({ activity: [closedThinking], tools: [tool({ status: "running" })] }),
+    ).toEqual({ label: "正在使用工具" })
   })
 })
 
