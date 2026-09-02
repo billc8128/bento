@@ -17,7 +17,7 @@ describe("TurnActivity 延迟挂载静态检查", () => {
 
   it("setContentMounted(true) 只出现在事件回调上下文中", () => {
     const occurrences = [...source.matchAll(/setContentMounted\s*\(\s*true\s*\)/g)]
-    expect(occurrences.length).toBe(3) // ToolRow / WorkGroup / TurnActivity 各一处
+    expect(occurrences.length).toBe(3) // ToolRow / TraceCollapsible / TurnActivity 各一处
     for (const match of occurrences) {
       const context = source.slice(Math.max(0, match.index - 200), match.index)
       expect(context).toMatch(/applyOpen|onOpenChange/)

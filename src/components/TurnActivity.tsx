@@ -1,14 +1,17 @@
 /**
- * TurnActivity:一个回合的活动(思考 / 过程文字 / 工具 / 引导)只有一种渲染。
+ * TurnActivity:一个回合的活动按「阶段摘要栈」渲染——连续 thinking 并成一段、
+ * 连续 tool 并成一组,progress/steer 独立成行;每个阶段一行,默认折叠、点击向下
+ * 展开;进行中的阶段(正在思考/正在使用工具)永远在栈末一行,带流光文案。
  *
- * - live:回合运行中,位于消息流末端、紧邻 Composer 上方,全窗口唯一的状态标题
- *   (星标 + 流光文案 + chevron),默认折叠,用户展开后按事件顺序回放 timeline;
- * - settled:回合落定后折叠到 final 正文上方,默认收成一行摘要。
+ * - live:回合运行中,位于消息流末端、紧邻 Composer 上方;没有活跃工作段时
+ *   (说话中/空栈)由末尾的兜底状态行承接,全窗口唯一的状态标题;
+ * - settled:回合落定后折叠到 final 正文上方,一行总折叠「已工作 Xm XXs」,
+ *   展开后回看完整阶段栈。
  *
- * 分组、状态文案、占位规则都在 src/core/activity.ts(纯函数,可直接测)。
+ * 分组、阶段判定、摘要文案都在 src/core/activity.ts(纯函数,可直接测)。
  */
 
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import {
   Check,
   ChevronDown,
@@ -28,12 +31,15 @@ import {
 import { ShiningText } from "@/components/ShiningText"
 import { cn } from "@/lib/utils"
 import {
-  groupActivity,
+  buildPhases,
+  cleanToolTarget,
+  livePhaseId,
   liveStatus,
-  settledSummary,
+  phaseLabel,
+  settledMasterLabel,
   toolGroupStatus,
-  type ActivityBlock,
   type LiveTurn,
+  type PhaseRow,
 } from "@/core/activity"
 import { formatDuration, formatUsage } from "@/core/formatDuration"
 import type { HarnessUsage } from "@/core/events"
@@ -103,13 +109,17 @@ function ToolRow({ tool }: { tool: ToolCall }) {
   )
 }
 
-/** 行内主体:图标/标签/目标/统计/耗时/状态,展开行多一枚旋转指示的 chevron */
+/** 行内主体:图标/标签/目标/统计/耗时/状态,展开行多一枚旋转指示的 chevron。
+ * 在跑的行动词用现在时(正在执行),目标先过 cleanToolTarget 剥掉 harness
+ * 前缀(如 kimi 的 "Running: "),避免「执行 Running: curl」。 */
 function ToolRowMain({ tool, open }: { tool: ToolCall; open?: boolean }) {
   const Icon = TOOL_ICON[tool.kind]
+  const label = tool.status === "running" ? `正在${TOOL_LABEL[tool.kind]}` : TOOL_LABEL[tool.kind]
+  const target = cleanToolTarget(tool.target)
   return (
     <>
       <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="shrink-0 text-muted-foreground">{TOOL_LABEL[tool.kind]}</span>
+      <span className="shrink-0 text-muted-foreground">{label}</span>
       {tool.url ? (
         <a
           href={tool.url}
@@ -118,10 +128,10 @@ function ToolRowMain({ tool, open }: { tool: ToolCall; open?: boolean }) {
           onClick={(e) => e.stopPropagation()}
           className="min-w-0 truncate font-mono text-foreground/85 underline decoration-border underline-offset-2 hover:decoration-foreground"
         >
-          {tool.target}
+          {target}
         </a>
       ) : (
-        <code className="min-w-0 truncate font-mono text-foreground/85">{tool.target}</code>
+        <code className="min-w-0 truncate font-mono text-foreground/85">{target}</code>
       )}
       <span className="flex-1" />
       {/* 收缩优先级:target/detail 可截断,diff/duration/图标不收缩 */}
@@ -136,7 +146,7 @@ function ToolRowMain({ tool, open }: { tool: ToolCall; open?: boolean }) {
           {tool.detail}
         </span>
       )}
-      {/* running 中不存在 durationMs；运行态动效只留给顶部状态文案。 */}
+      {/* running 中不存在 durationMs；运行态动效只留给阶段行的状态文案。 */}
       {tool.durationMs !== undefined && (
         <span className="shrink-0 type-micro tabular-nums text-muted-foreground/75">
           {formatDuration(tool.durationMs)}
@@ -144,7 +154,7 @@ function ToolRowMain({ tool, open }: { tool: ToolCall; open?: boolean }) {
       )}
       {tool.status === "done" && <Check className="size-3.5 shrink-0 text-ok" />}
       {tool.status === "running" && (
-        <span className="size-2 shrink-0 rounded-full bg-brand" />
+        <span className="size-2 shrink-0 animate-pulse rounded-full bg-brand motion-reduce:animate-none" />
       )}
       {tool.status === "failed" && <TriangleAlert className="size-3.5 shrink-0 text-err" />}
       {tool.output && (
@@ -159,69 +169,7 @@ function ToolRowMain({ tool, open }: { tool: ToolCall; open?: boolean }) {
   )
 }
 
-/** 一段 agentic work:thinking 与其间多个工具统一折成一行，展开后仍按
- * 原始事件顺序展示。公开 progress 会在 core/activity 中切断工作段。 */
-function WorkGroup({ items }: { items: Extract<ActivityBlock, { kind: "work" }>["items"] }) {
-  const [open, setOpen] = useState(false)
-  // P2 延迟挂载:折叠的工作组不构造 thinking/工具行元素(流式热路径默认全折叠);
-  // 展开后 sticky 保持构造,关闭动画不受影响
-  const [contentMounted, setContentMounted] = useState(false)
-  if (items.length === 1 && items[0].kind === "tool") return <ToolRow tool={items[0].tool} />
-
-  const tools = items.flatMap((item) => item.kind === "tool" ? [item.tool] : [])
-  const status = toolGroupStatus(tools)
-  const failed = tools.filter((tool) => tool.status === "failed").length
-  const label = tools.length > 0
-    ? `${status === "running" ? "正在使用" : "使用了"} ${tools.length} 个工具`
-    : "思考"
-
-  return (
-    <Collapsible
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next)
-        if (next) setContentMounted(true)
-      }}
-      className="min-w-0"
-    >
-      <CollapsibleTrigger className="trace-row group flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-xs transition-colors duration-150 hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none">
-        {tools.length > 0
-          ? <Terminal className="size-3.5 shrink-0 text-muted-foreground" />
-          : <TraceStar working={false} />}
-        <span className="min-w-0 truncate text-muted-foreground">{label}</span>
-        <span className="flex-1" />
-        {tools.length > 0 && status === "done" && <Check className="size-3.5 shrink-0 text-ok" />}
-        {tools.length > 0 && status === "running" && (
-          <span className="size-2 shrink-0 rounded-full bg-brand" />
-        )}
-        {tools.length > 0 && status === "failed" && (
-          <span className="flex shrink-0 items-center gap-1 text-err">
-            <TriangleAlert className="size-3.5" />
-            <span className="type-micro tabular-nums">{failed}</span>
-          </span>
-        )}
-        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-300 group-data-[state=open]:rotate-180 motion-reduce:transition-none" />
-      </CollapsibleTrigger>
-      <CollapsibleContent className="collapsible-section">
-        {contentMounted && (
-          <div className="flex min-w-0 flex-col">
-            {items.map((item) => (
-              item.kind === "tool"
-                ? <ToolRow key={item.id} tool={item.tool} />
-                : (
-                    <p key={item.id} className="max-w-full px-1.5 py-1 text-xs text-muted-foreground">
-                      {item.text}
-                    </p>
-                  )
-            ))}
-          </div>
-        )}
-      </CollapsibleContent>
-    </Collapsible>
-  )
-}
-
-/** 轨迹头四角星:运行中亮,落定后暗下去 */
+/** 轨迹头四角星:进行中亮,落定后暗下去 */
 function TraceStar({ working }: { working: boolean }) {
   return (
     <svg
@@ -232,6 +180,105 @@ function TraceStar({ working }: { working: boolean }) {
     >
       <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
     </svg>
+  )
+}
+
+/** 展开细节的容器:左侧一条竖线标出归属关系,与行首图标对齐。 */
+function DetailRail({ children }: { children: ReactNode }) {
+  return (
+    <div className="relative mt-0.5 ml-2 pl-4">
+      <span aria-hidden className="absolute inset-y-1 left-0 w-px bg-border" />
+      <div className="flex min-w-0 flex-col gap-1 py-1">{children}</div>
+    </div>
+  )
+}
+
+/** 阶段行的公共折叠骨架:默认折叠、点击向下展开;折叠时不构造内容
+ * (流式热路径),展开后 sticky 保持,关闭动画不受影响。 */
+function TraceCollapsible({ header, children }: { header: ReactNode; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  // P2 延迟挂载:sticky 只在事件回调里翻转,不做 render-phase setState。
+  const [contentMounted, setContentMounted] = useState(false)
+  return (
+    <Collapsible
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) setContentMounted(true)
+      }}
+      className="min-w-0"
+    >
+      <CollapsibleTrigger className="trace-row group flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-xs transition-colors duration-150 hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none">
+        {header}
+        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-300 group-data-[state=open]:rotate-180 motion-reduce:transition-none" />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="collapsible-section">
+        {contentMounted && children}
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
+/** thinking 阶段行:落定「已思考」/进行中「正在思考…」(流光),展开看思考文本。 */
+function ThinkingPhaseRow({ text, label, live }: { text: string; label: string; live: boolean }) {
+  return (
+    <TraceCollapsible
+      header={
+        <>
+          <TraceStar working={live} />
+          {live ? (
+            <ShiningText text={label} className="shrink-0" />
+          ) : (
+            <span className="min-w-0 truncate text-muted-foreground">{label}</span>
+          )}
+          <span className="flex-1" />
+        </>
+      }
+    >
+      <DetailRail>
+        <p className="max-w-full px-1.5 text-xs leading-relaxed whitespace-pre-wrap wrap-anywhere text-muted-foreground">
+          {text}
+        </p>
+      </DetailRail>
+    </TraceCollapsible>
+  )
+}
+
+/** 工具阶段行:落定「已使用 N 个工具」/进行中「正在使用工具」,展开后每行
+ * 一个具体 tool call(在跑的那行动词是现在时、琥珀点脉冲)。 */
+function ToolsPhaseRow({ tools, label, live }: { tools: ToolCall[]; label: string; live: boolean }) {
+  const status = toolGroupStatus(tools)
+  const failed = tools.filter((tool) => tool.status === "failed").length
+  return (
+    <TraceCollapsible
+      header={
+        <>
+          <Terminal className="size-3.5 shrink-0 text-muted-foreground" />
+          {live ? (
+            <ShiningText text={label} className="shrink-0" />
+          ) : (
+            <span className="min-w-0 truncate text-muted-foreground">{label}</span>
+          )}
+          <span className="flex-1" />
+          {status === "done" && <Check className="size-3.5 shrink-0 text-ok" />}
+          {status === "running" && (
+            <span className="size-2 shrink-0 animate-pulse rounded-full bg-brand motion-reduce:animate-none" />
+          )}
+          {status === "failed" && (
+            <span className="flex shrink-0 items-center gap-1 text-err">
+              <TriangleAlert className="size-3.5" />
+              <span className="type-micro tabular-nums">{failed}</span>
+            </span>
+          )}
+        </>
+      }
+    >
+      <DetailRail>
+        {tools.map((tool, i) => (
+          <ToolRow key={i} tool={tool} />
+        ))}
+      </DetailRail>
+    </TraceCollapsible>
   )
 }
 
@@ -254,27 +301,31 @@ function PlanRows({ plan }: { plan: PlanItem[] }) {
   )
 }
 
-/** 单个渲染块:工具组 / 引导条 / 一段文字。compact(live 窗口内)时文字
- * 限三行,过程文字比 thinking 亮一档——它是公开发言,thinking 是内部想法。 */
-function ActivityBlockRow({ block, compact }: { block: ActivityBlock; compact: boolean }) {
-  if (block.kind === "work") return <WorkGroup items={block.items} />
-  if (block.kind === "steer") {
+/** 阶段栈中的一行:thinking/tools 走折叠阶段行,steer 是引导条,progress 是
+ * 公开过程文字(比 thinking 亮一档;live 窗口内限三行)。 */
+function PhaseRowView({ row, livePhase, compact }: { row: PhaseRow; livePhase: boolean; compact: boolean }) {
+  if (row.kind === "thinking") {
+    return <ThinkingPhaseRow text={row.text} label={phaseLabel(row, livePhase)} live={livePhase} />
+  }
+  if (row.kind === "tools") {
+    return <ToolsPhaseRow tools={row.tools} label={phaseLabel(row, livePhase)} live={livePhase} />
+  }
+  if (row.kind === "steer") {
     return (
       <div className="flex items-start gap-2 rounded-md bg-secondary px-2 py-1.5 text-xs text-secondary-foreground">
         <Forward className="mt-0.5 size-3.5 shrink-0" />
-        <span className="min-w-0 wrap-anywhere">你补充：{block.text}</span>
+        <span className="min-w-0 wrap-anywhere">你补充：{row.text}</span>
       </div>
     )
   }
   return (
     <p
       className={cn(
-        "max-w-full px-1.5 py-0.5 text-xs leading-relaxed",
-        block.kind === "progress" ? "text-foreground/75" : "text-muted-foreground",
+        "max-w-full px-1.5 py-0.5 text-[13px] leading-relaxed text-foreground/75",
         compact && "line-clamp-3",
       )}
     >
-      {block.text}
+      {row.text}
     </p>
   )
 }
@@ -289,71 +340,61 @@ export function TurnActivity({
     usage?: HarnessUsage
     outcome?: "cancelled" | "error" | "interrupted"
   }
-  /** live = 回合运行中(Composer 左上);settled = 落定消息内的折叠 trace */
+  /** live = 回合运行中(Composer 左上);settled = 落定消息内的总折叠 trace */
   live: boolean
   shape: StyleTraits["tools"]
 }) {
-  const { activity, tools } = turn
-  // live 默认展开、settled 默认折叠；用户手动选择后保持其选择。
-  const [manual, setManual] = useState<boolean | null>(null)
-  const open = manual ?? live
-  // P2 延迟挂载:折叠的 trace 连 timeline 元素都不构造;live 从展开态(mounted)
-  // 起步。首次展开在 onOpenChange 里 sticky,关闭动画不受影响。
-  const [contentMounted, setContentMounted] = useState(live)
-
-  const blocks = groupActivity(activity)
+  const { activity } = turn
+  const phases = buildPhases(activity)
   const plan = turn.plan ?? []
-  const expandable = blocks.length > 0 || plan.length > 0
+  const liveId = live ? livePhaseId(phases) : undefined
 
-  const failed = tools.filter((tool) => tool.status === "failed").length
+  // settled 总折叠的折叠态(用户手动选择后保持)。live 分支提前 return,这两个
+  // state 只在 settled 路径生效——hooks 必须无条件声明,故提到分支之前。
+  const [manual, setManual] = useState<boolean | null>(null)
+  const [contentMounted, setContentMounted] = useState(false)
+
+  if (live) {
+    // 阶段栈逐行渲染;没有活跃工作段时(空栈/说话中/收到补充)由末尾的
+    // 兜底状态行承接——全窗口唯一的状态标题,不再别处补。
+    const fallback = liveId === undefined ? liveStatus(turn) : undefined
+    return (
+      <div className="flex min-w-0 max-w-full flex-col gap-0.5">
+        {plan.length > 0 && <PlanRows plan={plan} />}
+        {phases.map((row) => (
+          <PhaseRowView key={row.id} row={row} livePhase={row.id === liveId} compact />
+        ))}
+        {fallback && (
+          <div className="-ml-1.5 flex w-full min-w-0 cursor-default items-center gap-2 overflow-hidden rounded-md px-1.5 py-1 text-sm font-medium text-foreground/70">
+            <TraceStar working />
+            <ShiningText text={fallback.label} className="shrink-0" />
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // settled:一行总折叠「已工作 Xm XXs」,展开回看完整阶段栈;final 正文在组件外。
+  // P2 延迟挂载:折叠的总览连阶段栈元素都不构造;首次展开在 onOpenChange 里
+  // sticky,关闭动画不受影响。
+  const open = manual ?? false
+
+  const failed = turn.tools.filter((tool) => tool.status === "failed").length
   const usageText =
     turn.usage && (turn.usage.inputTokens || turn.usage.outputTokens || turn.usage.cost !== undefined)
       ? formatUsage(turn.usage)
       : undefined
-  const status = live ? liveStatus(turn) : undefined
-
-  const activityRows = contentMounted && (
-    <>
-      {blocks.map((block) => (
-        <ActivityBlockRow key={block.id} block={block} compact={live} />
-      ))}
-    </>
-  )
-
-  const list = contentMounted
-    ? shape === "flat"
-      ? (
-          <div className="relative mt-0.5 ml-2 pl-4">
-            <span aria-hidden className="absolute inset-y-1 left-0 w-px bg-border" />
-            <div className="flex min-w-0 flex-col gap-1 py-1">
-              {plan.length > 0 && <PlanRows plan={plan} />}
-              {activityRows}
-            </div>
-          </div>
-        )
-      : (
-          <div className="mt-1 divide-y divide-border overflow-hidden rounded-md border border-border bg-chrome">
-            {plan.length > 0 && <PlanRows plan={plan} />}
-            {activityRows}
-          </div>
-        )
-    : null
+  const expandable = phases.length > 0 || plan.length > 0
 
   const header = (
     <>
-      <TraceStar working={live} />
-      {live ? (
-        <>
-          <ShiningText text={status!.label} className="shrink-0" />
-        </>
-      ) : (
-        <span className="min-w-0 truncate">
-          {settledSummary(turn)}
-          {turn.durationMs !== undefined && ` · ${formatDuration(turn.durationMs)}`}
-          {usageText && ` · ${usageText}`}
-          {failed > 0 && <span className="text-err"> · {failed} 个失败</span>}
-        </span>
-      )}
+      <TraceStar working={false} />
+      <span className="min-w-0 truncate">
+        {settledMasterLabel(turn)}
+        {usageText && ` · ${usageText}`}
+        {failed > 0 && <span className="text-err"> · {failed} 个失败</span>}
+      </span>
+      <span className="flex-1" />
       {expandable && (
         <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-300 group-data-[state=open]:rotate-180 motion-reduce:transition-none" />
       )}
@@ -363,11 +404,33 @@ export function TurnActivity({
   const headerClass =
     "group -ml-1.5 flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-md px-1.5 py-1 text-sm font-medium text-foreground/70 transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none"
 
-  // 无活动占位(回合刚开始、什么都没流出来):只有一行标题,不可展开,
-  // 不渲染 chevron——运行中全窗口的状态标题只有这一处
+  // 无活动占位:只有一行标题,不可展开,不渲染 chevron
   if (!expandable) {
     return <div className={cn(headerClass, "cursor-default hover:text-foreground/70")}>{header}</div>
   }
+
+  const list = contentMounted
+    ? shape === "flat"
+      ? (
+          <div className="relative mt-0.5 ml-2 pl-4">
+            <span aria-hidden className="absolute inset-y-1 left-0 w-px bg-border" />
+            <div className="flex min-w-0 flex-col gap-1 py-1">
+              {plan.length > 0 && <PlanRows plan={plan} />}
+              {phases.map((row) => (
+                <PhaseRowView key={row.id} row={row} livePhase={false} compact={false} />
+              ))}
+            </div>
+          </div>
+        )
+      : (
+          <div className="mt-1 divide-y divide-border overflow-hidden rounded-md border border-border bg-chrome">
+            {plan.length > 0 && <PlanRows plan={plan} />}
+            {phases.map((row) => (
+              <PhaseRowView key={row.id} row={row} livePhase={false} compact={false} />
+            ))}
+          </div>
+        )
+    : null
 
   return (
     <Collapsible

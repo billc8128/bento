@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest"
 
 import {
-  groupActivity,
+  buildPhases,
+  cleanToolTarget,
+  livePhaseId,
   liveStatus,
   liveTurnState,
+  phaseLabel,
   resolveActivity,
+  settledMasterLabel,
   settledSummary,
   toolGroupStatus,
 } from "./activity"
@@ -24,57 +28,130 @@ const toolItem = (id: string, over: Partial<ToolCall> = {}): ActivityItem => ({
   tool: tool(over),
 })
 
-describe("groupActivity 工具分组边界", () => {
-  it("连续 tool 合并为一个工作段,单个工具也走工作段", () => {
-    const blocks = groupActivity([
+const thinking = (id: string, text: string): ActivityItem => ({ id, kind: "thinking", text })
+
+const progress = (id: string, text: string): ActivityItem => ({ id, kind: "progress", text })
+
+const kinds = (rows: { kind: string }[]) => rows.map((r) => r.kind)
+
+describe("buildPhases 阶段栈分组", () => {
+  it("连续 thinking 并成一段(text 拼接)、连续 tool 并成一组(保序)", () => {
+    const rows = buildPhases([
+      thinking("th1", "先想"),
+      thinking("th2", "，再想"),
       toolItem("t1"),
       toolItem("t2"),
+      thinking("th3", "再想"),
       toolItem("t3"),
-      toolItem("t4"),
     ])
-    expect(blocks).toEqual([
-      {
-        id: "t1",
-        kind: "work",
-        items: [
-          toolItem("t1"),
-          toolItem("t2"),
-          toolItem("t3"),
-          toolItem("t4"),
-        ],
-      },
-    ])
-    // 单个工具:一组一件
-    expect(groupActivity([toolItem("solo")])).toEqual([
-      { id: "solo", kind: "work", items: [toolItem("solo")] },
-    ])
+    expect(kinds(rows)).toEqual(["thinking", "tools", "thinking", "tools"])
+    expect(rows[0]).toEqual({ id: "th1", kind: "thinking", text: "先想，再想" })
+    expect(rows[1]).toMatchObject({ kind: "tools", tools: [tool(), tool()] })
+    expect(rows[2]).toEqual({ id: "th3", kind: "thinking", text: "再想" })
+    expect(rows[3]).toMatchObject({ kind: "tools", tools: [tool()] })
   })
 
-  it("thinking 与工具保持原顺序收进工作段,progress/steer 才切段", () => {
-    const blocks = groupActivity([
-      { id: "p1", kind: "progress", text: "先看一下" },
+  it("连续 thinking 合并时耗时求和;只有一边有数据保留那一边,都没有就缺席", () => {
+    const rows = buildPhases([
+      { id: "th1", kind: "thinking", text: "先想", durationMs: 2000 },
+      { id: "th2", kind: "thinking", text: "再想", durationMs: 1500 },
+    ])
+    expect(rows[0]).toEqual({ id: "th1", kind: "thinking", text: "先想再想", durationMs: 3500 })
+    const mixed = buildPhases([
+      { id: "th1", kind: "thinking", text: "先想", durationMs: 2000 },
+      { id: "th2", kind: "thinking", text: "再想" },
+      { id: "th3", kind: "thinking", text: "又想", durationMs: 1500 },
+    ])
+    expect(mixed[0]).toEqual({ id: "th1", kind: "thinking", text: "先想再想又想", durationMs: 3500 })
+
+    const noTiming = buildPhases([thinking("th1", "想"), thinking("th2", "，想")])
+    expect(noTiming[0]).toEqual({ id: "th1", kind: "thinking", text: "想，想" })
+  })
+
+  it("progress/steer 切段并独立成行", () => {
+    const rows = buildPhases([
+      progress("p1", "先看一下"),
       toolItem("t1"),
       toolItem("t2"),
-      { id: "th1", kind: "thinking", text: "再想" },
+      thinking("th1", "再想"),
       toolItem("t3"),
       { id: "s1", kind: "steer", text: "补充" },
       toolItem("t4"),
     ])
-    expect(blocks.map((b) => b.kind)).toEqual([
-      "progress",
-      "work",
-      "steer",
-      "work",
-    ])
-    const groups = blocks.filter((b) => b.kind === "work")
-    expect(groups.map((g) => g.kind === "work" && g.items.map((item) => item.kind))).toEqual([
-      ["tool", "tool", "thinking", "tool"],
-      ["tool"],
-    ])
+    expect(kinds(rows)).toEqual(["progress", "tools", "thinking", "tools", "steer", "tools"])
+    const toolRows = rows.filter((r) => r.kind === "tools")
+    expect(toolRows.map((r) => r.kind === "tools" && r.tools.length)).toEqual([2, 1, 1])
   })
 
-  it("空 timeline 不出块", () => {
-    expect(groupActivity([])).toEqual([])
+  it("空 timeline 不出行", () => {
+    expect(buildPhases([])).toEqual([])
+  })
+})
+
+describe("livePhaseId 活跃阶段判定", () => {
+  it("末段是 tools 且有 running → 工具阶段;全部落定 → 无 live 阶段", () => {
+    expect(livePhaseId(buildPhases([toolItem("t1", { status: "running" })]))).toBe("t1")
+    expect(livePhaseId(buildPhases([toolItem("t1")]))).toBeUndefined()
+  })
+
+  it("末段是 thinking → 思考阶段(流式或间隙都算);末段 progress/steer 或空栈 → 无 live 阶段", () => {
+    expect(livePhaseId(buildPhases([thinking("th1", "在想")]))).toBe("th1")
+    expect(livePhaseId(buildPhases([progress("p1", "说话")]))).toBeUndefined()
+    expect(livePhaseId(buildPhases([{ id: "s1", kind: "steer", text: "补充" }]))).toBeUndefined()
+    expect(livePhaseId([])).toBeUndefined()
+  })
+})
+
+describe("phaseLabel 阶段行标题", () => {
+  it("thinking:落定「已思考」,进行中「正在思考…」", () => {
+    expect(phaseLabel({ id: "x", kind: "thinking", text: "想" }, true)).toBe("正在思考…")
+    expect(phaseLabel({ id: "x", kind: "thinking", text: "想" }, false)).toBe("已思考")
+  })
+
+  it("thinking 落定且有计时数据:标题带整段耗时;缺时长数据回退无时长文案", () => {
+    expect(phaseLabel({ id: "x", kind: "thinking", text: "想", durationMs: 2000 }, false)).toBe("已思考 2.0s")
+    expect(phaseLabel({ id: "x", kind: "thinking", text: "想", durationMs: 61000 }, false)).toBe("已思考 1m01s")
+  })
+
+  it("tools:落定「已使用 N 个工具」;时态由该行自身 running 决定,不看是否栈末行(live)", () => {
+    expect(phaseLabel({ id: "x", kind: "tools", tools: [tool(), tool()] }, true)).toBe("已使用 2 个工具")
+    expect(phaseLabel({ id: "x", kind: "tools", tools: [tool(), tool()] }, false)).toBe("已使用 2 个工具")
+    // 栈末行被穿插的思考抢走(live=false)时,行内仍有 running 工具 → 现在时
+    expect(phaseLabel({ id: "x", kind: "tools", tools: [tool(), tool({ status: "running" })] }, false)).toBe("正在使用工具")
+    expect(phaseLabel({ id: "x", kind: "tools", tools: [tool({ status: "running" })] }, true)).toBe("正在使用工具")
+  })
+})
+
+describe("cleanToolTarget 剥 harness 前缀", () => {
+  it("kimi 的动作前缀被剥掉;无前缀的 target 恒等", () => {
+    expect(cleanToolTarget("Running: curl -s -o /dev/null")).toBe("curl -s -o /dev/null")
+    expect(cleanToolTarget("Editing /Users/bcc/src/a.ts")).toBe("/Users/bcc/src/a.ts")
+    expect(cleanToolTarget("Reading src/core/config.ts")).toBe("src/core/config.ts")
+    expect(cleanToolTarget("pnpm test")).toBe("pnpm test")
+    expect(cleanToolTarget("src/lib/llm.ts")).toBe("src/lib/llm.ts")
+  })
+
+  it("实证清单全量覆盖:子代理/后台/媒体/抓取/停任务前缀都被剥掉", () => {
+    expect(cleanToolTarget("Launching coder agent: 修复样式")).toBe("修复样式")
+    expect(cleanToolTarget("Reading output of task bash-123")).toBe("bash-123")
+    expect(cleanToolTarget("Starting background: pnpm dev")).toBe("pnpm dev")
+    expect(cleanToolTarget("Reading media: foo.png")).toBe("foo.png")
+    expect(cleanToolTarget("Stopping task bash-123")).toBe("bash-123")
+    expect(cleanToolTarget("Fetching: https://example.com")).toBe("https://example.com")
+  })
+
+  it("顺序约束:Reading media: 不能被 Reading 半剥成 media: foo.png(长前缀必须先命中)", () => {
+    expect(cleanToolTarget("Reading media: foo.png")).toBe("foo.png")
+    expect(cleanToolTarget("Reading media: foo.png")).not.toBe("media: foo.png")
+  })
+})
+
+describe("settledMasterLabel 落定总折叠行", () => {
+  it("有耗时:已工作 Xm XXs;缺 durationMs 回退内容摘要;非正常终结冠在前面", () => {
+    expect(settledMasterLabel({ thinking: "想过", tools: [tool()], durationMs: 72000 })).toBe("已工作 1m12s")
+    expect(settledMasterLabel({ thinking: "想过", tools: [tool()] })).toBe("思考并使用了 1 个工具")
+    expect(settledMasterLabel({ outcome: "cancelled", tools: [tool()], durationMs: 12000 })).toBe("已停止 · 已工作 12s")
+    expect(settledMasterLabel({ outcome: "error", tools: [tool(), tool()] })).toBe("执行失败 · 2 个工具")
   })
 })
 
@@ -123,7 +200,7 @@ describe("liveTurnState 单标题来源与结束折叠", () => {
 
   it("回合落定(running=false)返回 undefined:Composer 上方的活动块消失", () => {
     expect(liveTurnState([{ id: "u1", role: "user", text: "hi" }, finalized], false)).toBeUndefined()
-    // 同一批 activity 仍在落定消息上,由消息区折叠 trace 承接
+    // 同一批 activity 仍在落定消息上,由消息区总折叠 trace 承接
     if (finalized.role !== "assistant") throw new Error("fixture")
     expect(resolveActivity(finalized)).toEqual(finalized.activity)
     expect(settledSummary(finalized)).toBe("使用了 1 个工具")
@@ -143,7 +220,7 @@ describe("liveTurnState 单标题来源与结束折叠", () => {
   })
 })
 
-describe("liveStatus 状态文案由 timeline 最后一项决定", () => {
+describe("liveStatus 兜底状态文案(无活跃工作段时)", () => {
   it("存在 running 工具时只显示正在使用工具", () => {
     expect(
       liveStatus({ activity: [toolItem("t1", { status: "running", target: "a.ts" })], tools: [] }),
@@ -160,11 +237,11 @@ describe("liveStatus 状态文案由 timeline 最后一项决定", () => {
   })
 
   it("末项是文字:有工具在跑仍显示正在使用工具,已有过程则正在工作", () => {
-    const progress: ActivityItem = { id: "p1", kind: "progress", text: "过程" }
-    expect(liveStatus({ activity: [progress], tools: [tool({ status: "running" })] })).toEqual({
+    const p: ActivityItem = { id: "p1", kind: "progress", text: "过程" }
+    expect(liveStatus({ activity: [p], tools: [tool({ status: "running" })] })).toEqual({
       label: "正在使用工具",
     })
-    expect(liveStatus({ activity: [progress], tools: [] })).toEqual({ label: "正在工作" })
+    expect(liveStatus({ activity: [p], tools: [] })).toEqual({ label: "正在工作" })
   })
 })
 
@@ -184,7 +261,7 @@ describe("resolveActivity 旧历史回退", () => {
   })
 })
 
-describe("settledSummary 落定一行摘要", () => {
+describe("settledSummary 落定内容摘要(缺耗时旧数据的回退)", () => {
   it("有工具:思考并/使用了 N 个工具;无工具:思考完成", () => {
     expect(settledSummary({ thinking: "想过", tools: [tool(), tool()] })).toBe(
       "思考并使用了 2 个工具",

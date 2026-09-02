@@ -85,7 +85,7 @@ describe("replay", () => {
           { kind: "read", target: "src/App.tsx", detail: "", status: "done", startedAtMs: T, durationMs: 0 },
         ],
         activity: [
-          { id: "thinking-2", kind: "thinking", text: "先看代码" },
+          { id: "thinking-2", kind: "thinking", text: "先看代码", startedAtMs: T, durationMs: 0 },
           { id: "t1", kind: "tool", tool: { kind: "read", target: "src/App.tsx", detail: "", status: "done", startedAtMs: T, durationMs: 0 } },
         ],
         durationMs: 0,
@@ -154,7 +154,7 @@ describe("permission metadata 不终结 draft(TRACE_DATA_PLAN §3.4 P0 回归)",
         thinking: "想想",
         tools: [{ kind: "edit", target: "src/App.tsx", detail: "", status: "done", startedAtMs: T, durationMs: 0 }],
         activity: [
-          { id: "thinking-2", kind: "thinking", text: "想想" },
+          { id: "thinking-2", kind: "thinking", text: "想想", startedAtMs: T, durationMs: 0 },
           { id: "t1", kind: "tool", tool: { kind: "edit", target: "src/App.tsx", detail: "", status: "done", startedAtMs: T, durationMs: 0 } },
         ],
         durationMs: 0,
@@ -237,7 +237,7 @@ describe("finalizeTrailing 回放终界(TRACE_DATA_PLAN §3.3)", () => {
         thinking: "想想",
         tools: [{ kind: "read", target: "a.ts", detail: "", status: "running", startedAtMs: T }],
         activity: [
-          { id: "thinking-2", kind: "thinking", text: "想想" },
+          { id: "thinking-2", kind: "thinking", text: "想想", startedAtMs: T, durationMs: 0 },
           { id: "t1", kind: "tool", tool: { kind: "read", target: "a.ts", detail: "", status: "running", startedAtMs: T } },
         ],
       },
@@ -254,7 +254,7 @@ describe("finalizeTrailing 回放终界(TRACE_DATA_PLAN §3.3)", () => {
         thinking: "想想",
         tools: [{ kind: "read", target: "a.ts", detail: "", status: "failed", startedAtMs: T }],
         activity: [
-          { id: "thinking-2", kind: "thinking", text: "想想" },
+          { id: "thinking-2", kind: "thinking", text: "想想", startedAtMs: T, durationMs: 0 },
           { id: "t1", kind: "tool", tool: { kind: "read", target: "a.ts", detail: "", status: "failed", startedAtMs: T } },
         ],
         outcome: "interrupted",
@@ -680,10 +680,10 @@ describe("final message 按工具边界分段(过程文字不混入 final)", () 
     expect(m && m.role === "assistant" && m.text).toBe("最终回答。")
     expect(m && m.role === "assistant" && m.thinking).toBe("先想再想")
     expect(m && m.role === "assistant" && m.activity).toEqual([
-      { id: "thinking-2", kind: "thinking", text: "先想" },
+      { id: "thinking-2", kind: "thinking", text: "先想", startedAtMs: T + 10, durationMs: 10 },
       { id: "progress-4", kind: "progress", text: "第一段过程。" },
       { id: "t1", kind: "tool", tool: { kind: "read", target: "a.ts", detail: "", status: "done", startedAtMs: T + 30, durationMs: 10 } },
-      { id: "thinking-7", kind: "thinking", text: "再想" },
+      { id: "thinking-7", kind: "thinking", text: "再想", startedAtMs: T + 60, durationMs: 10 },
       { id: "progress-8", kind: "progress", text: "第二段过程。" },
       { id: "t2", kind: "tool", tool: { kind: "edit", target: "b.ts", detail: "", status: "done", startedAtMs: T + 70, durationMs: 10 } },
     ])
@@ -831,6 +831,81 @@ describe("final message 按工具边界分段(过程文字不混入 final)", () 
         ],
         durationMs: 40,
       },
+    ])
+  })
+})
+
+describe("thinking 段计时闭合(step2)", () => {
+  function atOffset(ms: number) {
+    return new Date(T + ms).toISOString()
+  }
+
+  it("思考→说话→再思考:闭合段不被续写,新思考开新段(buildPhases 求和由 activity.test 钉住)", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at: atOffset(0), kind: "event", payload: { type: "user_message", text: "做一下" } },
+      { seq: 2, at: atOffset(1_000), kind: "event", payload: { type: "agent_thought_chunk", text: "A" } },
+      { seq: 3, at: atOffset(5_000), kind: "event", payload: { type: "agent_message_chunk", text: "说一下。" } },
+      { seq: 4, at: atOffset(6_000), kind: "event", payload: { type: "agent_thought_chunk", text: "B" } },
+      { seq: 5, at: atOffset(9_000), kind: "event", payload: { type: "tool_started", id: "t1", kind: "bash", title: "ls", status: "running" } },
+      { seq: 6, at: atOffset(9_500), kind: "event", payload: { type: "tool_updated", id: "t1", status: "completed" } },
+      { seq: 7, at: atOffset(10_000), kind: "event", payload: { type: "turn_finished", reason: "end_turn" } },
+    ] as const
+    for (const r of records) applyRecord(acc, r)
+
+    const m = messagesOf(acc)[1]
+    if (m.role !== "assistant") throw new Error("fixture")
+    // 「说一下。」是唯一一段过程文字,turn_finished 时被提升为 final(从 timeline 摘掉)
+    expect(m.text).toBe("说一下。")
+    // A 段被说话闭合在 4s,B 段独立开段并在工具边界闭合 3s——续写进 A 会把 B 的 3s 永久丢掉
+    expect(m.activity).toEqual([
+      { id: "thinking-2", kind: "thinking", text: "A", startedAtMs: T + 1_000, durationMs: 4_000 },
+      { id: "thinking-4", kind: "thinking", text: "B", startedAtMs: T + 6_000, durationMs: 3_000 },
+      { id: "t1", kind: "tool", tool: { kind: "bash", target: "ls", detail: "", status: "done", startedAtMs: T + 9_000, durationMs: 500 } },
+    ])
+  })
+
+  it("思考段落遇 user_steer 闭合,非零耗时", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at: atOffset(0), kind: "event", payload: { type: "agent_thought_chunk", text: "想" } },
+      { seq: 2, at: atOffset(2_500), kind: "event", payload: { type: "user_steer", text: "补充", clientMessageId: "c1" } },
+    ] as const
+    for (const r of records) applyRecord(acc, r)
+
+    const m = messagesOf(acc)[0]
+    if (m.role !== "assistant") throw new Error("fixture")
+    expect(m.activity).toEqual([
+      { id: "thinking-1", kind: "thinking", text: "想", startedAtMs: T, durationMs: 2_500 },
+      { id: "steer-c1", kind: "steer", text: "补充" },
+    ])
+  })
+
+  it("finalizeTrailing 兜底闭合尾部思考段,非零耗时", () => {
+    const acc = createAccumulator()
+    applyRecord(acc, { seq: 1, at: atOffset(10), kind: "event", payload: { type: "agent_thought_chunk", text: "想到一半" } })
+    finalizeTrailing(acc, atOffset(5_000))
+
+    const m = messagesOf(acc)[0]
+    if (m.role !== "assistant") throw new Error("fixture")
+    expect(m.activity).toEqual([
+      { id: "thinking-1", kind: "thinking", text: "想到一半", startedAtMs: T + 10, durationMs: 4_990 },
+    ])
+  })
+
+  it("legacy v0.3 路径同样记 startedAtMs 并闭合时长", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at: atOffset(0), kind: "update", payload: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "旧想" } } },
+      { seq: 2, at: atOffset(1_200), kind: "update", payload: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "旧final。" } } },
+      { seq: 3, at: atOffset(1_500), kind: "turn_end", payload: {} },
+    ] as const
+    for (const r of records) applyRecord(acc, r)
+
+    const m = messagesOf(acc)[0]
+    if (m.role !== "assistant") throw new Error("fixture")
+    expect(m.activity).toEqual([
+      { id: "thinking-1", kind: "thinking", text: "旧想", startedAtMs: T, durationMs: 1_200 },
     ])
   })
 })

@@ -58,7 +58,15 @@ export type ToolCall = {
 }
 
 export type ActivityItem =
-  | { id: string; kind: "thinking"; text: string }
+  | {
+      id: string
+      kind: "thinking"
+      text: string
+      /** 本段思考开始的 epoch ms(首个 thought chunk 事件的 at);回放/实时同一条路径写入 */
+      startedAtMs?: number
+      /** 段落闭合(下一个非 thinking 事件到来)后的耗时 ms;流式中不存在 */
+      durationMs?: number
+    }
   /** 助手公开过程文字(工具调用前/工具之间),按工具边界切分;最后一次
    * 工具活动后的连续文本才是 final,过程段留在 timeline 里可折叠查看 */
   | { id: string; kind: "progress"; text: string }

@@ -96,6 +96,15 @@ type FinalizeOptions = {
   promoteProgress?: boolean
 }
 
+/** 思考段落的闭合:一旦有非 thinking 事件到来(说话/工具/补充/回合终结),上一段思考的流式事实上结束了,
+ * 写死 durationMs = at - startedAtMs。流式中该字段不存在,live 行的「正在思考…」不受它影响。 */
+function closeThinking(d: Draft, atMs: number) {
+  const last = d.activity.at(-1)
+  if (last?.kind === "thinking" && last.durationMs === undefined && last.startedAtMs !== undefined) {
+    last.durationMs = atMs - last.startedAtMs
+  }
+}
+
 function finalizeDraft(acc: Accumulator, atMs: number, options: FinalizeOptions = {}) {
   const d = acc.draft
   if (!d) return
@@ -105,6 +114,8 @@ function finalizeDraft(acc: Accumulator, atMs: number, options: FinalizeOptions 
   for (const tool of d.tools) {
     if (tool.status === "running") tool.status = "failed"
   }
+  // 回合终结也是思考段落的闭合点:尾部那大段「正在思考」流式已死,写死耗时,不回放成永远在思考。
+  closeThinking(d, atMs)
   // final = 最后一次工具活动之后的连续公开文本;工具前/工具间的文本已按
   // 工具边界切成 progress 留在 timeline。若回合没有独立 final(最后一段
   // 文本后面又开了新工具),把最后一段 progress 回退为 final,回答不能消失。
@@ -189,28 +200,38 @@ function applyEvent(acc: Accumulator, event: HarnessEvent, seq: number, atMs: nu
       finalizeDraft(acc, atMs, { outcome: "error", promoteProgress: false })
       acc.messages.push({ id: `n${seq}`, role: "assistant", text: `⚠️ ${event.text}` })
       return
-    case "agent_message_chunk":
+    case "agent_message_chunk": {
       // 公开文本:留在 draft.text 作为 final 候选;遇到下一个工具边界时
       // 由 flushProgress 切成 progress 留在 timeline,不混入 final message
-      ensureDraft(acc, atMs).text += event.text
+      const draft = ensureDraft(acc, atMs)
+      closeThinking(draft, atMs)
+      draft.text += event.text
       return
+    }
     case "agent_thought_chunk": {
       const draft = ensureDraft(acc, atMs)
       draft.thinking += event.text
       const last = draft.activity.at(-1)
-      if (last?.kind === "thinking") last.text += event.text
-      else draft.activity.push({ id: `thinking-${seq}`, kind: "thinking", text: event.text })
+      // 已闭合的思考段(durationMs 已写死)不能再被追加:思考 A → 说话 → 思考 B 时 speech 不产生
+      // activity 项,若继续往 A 里拼,B 的时长会永久丢失(A 的 durationMs 已被说话闭合)。
+      // 已闭合就开新段,buildPhases 合并相邻段时文本拼接、耗时求和。
+      if (last?.kind === "thinking" && last.durationMs === undefined) last.text += event.text
+      else draft.activity.push({ id: `thinking-${seq}`, kind: "thinking", text: event.text, startedAtMs: atMs })
       return
     }
-    case "user_steer":
-      ensureDraft(acc, atMs).activity.push({
+    case "user_steer": {
+      const draft = ensureDraft(acc, atMs)
+      closeThinking(draft, atMs)
+      draft.activity.push({
         id: `steer-${event.clientMessageId}`,
         kind: "steer",
         text: event.text,
       })
       return
+    }
     case "tool_started": {
       const draft = ensureDraft(acc, atMs)
+      closeThinking(draft, atMs)
       flushProgress(draft, `progress-${seq}`)
       draft.toolIndex.set(event.id, draft.tools.length)
       const tool: ToolCall = {
@@ -301,7 +322,11 @@ export function applyRecord(acc: Accumulator, r: LogRecord) {
   const u = p
   switch (u.sessionUpdate) {
     case "agent_message_chunk":
-      if (u.content?.type === "text") ensureDraft(acc, atMs).text += u.content.text
+      if (u.content?.type === "text") {
+        const draft = ensureDraft(acc, atMs)
+        closeThinking(draft, atMs)
+        draft.text += u.content.text
+      }
       return
     case "agent_thought_chunk":
       if (u.content?.type === "text") {
@@ -309,12 +334,14 @@ export function applyRecord(acc: Accumulator, r: LogRecord) {
         const draft = ensureDraft(acc, atMs)
         draft.thinking += text
         const last = draft.activity.at(-1)
-        if (last?.kind === "thinking") last.text += text
-        else draft.activity.push({ id: `thinking-${r.seq}`, kind: "thinking", text })
+        // 同上新事件路径:已闭合的思考段不再被追加,开新段交给 buildPhases 求和
+        if (last?.kind === "thinking" && last.durationMs === undefined) last.text += text
+        else draft.activity.push({ id: `thinking-${r.seq}`, kind: "thinking", text, startedAtMs: atMs })
       }
       return
     case "tool_call": {
       const d = ensureDraft(acc, atMs)
+      closeThinking(d, atMs)
       const toolCallId = u.toolCallId ?? "unknown"
       flushProgress(d, `progress-${r.seq}`)
       d.toolIndex.set(toolCallId, d.tools.length)

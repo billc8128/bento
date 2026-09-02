@@ -3,9 +3,10 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { WorkspacePanelDemo } from './demos/WorkspacePanelDemo.tsx'
+import { TurnActivityDemo } from './demos/TurnActivityDemo.tsx'
 
 const demo = new URLSearchParams(window.location.search).get("demo")
-const Root = demo === "workspace-panel" ? WorkspacePanelDemo : App
+const Root = demo === "workspace-panel" ? WorkspacePanelDemo : demo === "turn-activity" ? TurnActivityDemo : App
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
