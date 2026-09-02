@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { memo, useEffect, useRef, useState } from "react"
 import {
   ArrowDown,
   FileText,
@@ -35,7 +35,8 @@ function AttachmentChip({ name, kind }: { name: string; kind: "image" | "file" }
   )
 }
 
-function UserMessage({ m, shape }: { m: UserMsg; shape: MessageShape }) {
+// memo:流式 draft 每帧重建,历史消息引用稳定,只有新消息/草稿重渲染
+const UserMessage = memo(function UserMessage({ m, shape }: { m: UserMsg; shape: MessageShape }) {
   // 协作来源:envelope 不落 JSONL,这里只展示可信 origin,不当正文渲染
   const fromSession = m.origin?.kind === "session" ? m.origin.title : null
   // 无气泡的风格里,说话人靠一个标签和左侧竖线交代,读起来像日志
@@ -87,9 +88,9 @@ function UserMessage({ m, shape }: { m: UserMsg; shape: MessageShape }) {
       ))}
     </div>
   )
-}
+})
 
-function AssistantMessage({
+const AssistantMessage = memo(function AssistantMessage({
   m,
   message,
   tools,
@@ -142,7 +143,7 @@ function AssistantMessage({
       )}
     </div>
   )
-}
+})
 
 /** 距底多少像素以内算「还在看最新消息」 */
 const STICK_THRESHOLD = 80
@@ -207,8 +208,12 @@ export function ChatView({ messages, pending = true, turn, queued }: ChatViewPro
     const content = contentRef.current
     if (!viewport || !content) return
 
+    // P3:流式帧内 ResizeObserver 可能连续触发,同一帧只排一次滚动 rAF
+    let stickRaf = 0
     const stick = () => {
-      window.requestAnimationFrame(() => {
+      if (stickRaf) return
+      stickRaf = window.requestAnimationFrame(() => {
+        stickRaf = 0
         if (stuckRef.current) viewport.scrollTop = viewport.scrollHeight
       })
     }
@@ -225,6 +230,7 @@ export function ChatView({ messages, pending = true, turn, queued }: ChatViewPro
     ro.observe(content)
 
     return () => {
+      if (stickRaf) window.cancelAnimationFrame(stickRaf)
       viewport.removeEventListener("scroll", onScroll)
       ro.disconnect()
     }

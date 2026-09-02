@@ -1,3 +1,4 @@
+import { memo } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
@@ -9,7 +10,9 @@ import { hardBreaks } from "@/lib/markdown-breaks"
  * 代码块不做语法高亮库,先用等宽 + 底色,保持包体小。
  * 单个 \n 经 hardBreaks 转成真实换行——模型的纯换行输出不会再糊成一行。
  */
-export function Markdown({ text, className }: { text: string; className?: string }) {
+// memo(text/className 值相等即跳过):流式期间只有文本真正变化的 draft 会重解析,
+// 历史消息与纯 tool 更新帧不再重复 parse markdown
+export const Markdown = memo(function Markdown({ text, className }: { text: string; className?: string }) {
   return (
     <div className={cn("min-w-0 wrap-anywhere text-sm leading-relaxed", className)}>
       <ReactMarkdown
@@ -67,4 +70,4 @@ export function Markdown({ text, className }: { text: string; className?: string
       </ReactMarkdown>
     </div>
   )
-}
+})

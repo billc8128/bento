@@ -59,31 +59,41 @@ const TOOL_LABEL = {
  * 搜索行带 url 时目标渲染为外链。字段都可选,旧数据自动隐藏。 */
 function ToolRow({ tool }: { tool: ToolCall }) {
   const [open, setOpen] = useState(false)
+  // P2 延迟挂载:从未展开过就不构造 output 元素;展开后 sticky 保持构造,
+  // 关闭动画(Radix Presence)不受影响。sticky 只在事件回调里翻转,
+  // 不做 render-phase setState。
+  const [contentMounted, setContentMounted] = useState(false)
+  const applyOpen = (next: boolean) => {
+    setOpen(next)
+    if (next) setContentMounted(true)
+  }
   const expandable = Boolean(tool.output)
 
   const toggleKeys = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault()
-      setOpen((v) => !v)
+      applyOpen(!open)
     }
   }
 
   return expandable ? (
-    <Collapsible open={open} onOpenChange={setOpen}>
+    <Collapsible open={open} onOpenChange={applyOpen}>
       <div
         role="button"
         tabIndex={0}
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => applyOpen(!open)}
         onKeyDown={toggleKeys}
         className="trace-row flex h-7 cursor-pointer items-center gap-2 rounded-md px-1.5 text-xs transition-colors duration-150 hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none"
       >
         <ToolRowMain tool={tool} open={open} />
       </div>
       <CollapsibleContent className="collapsible-section">
-        <pre className="mb-1 max-h-48 overflow-y-auto rounded-md border border-border bg-chrome px-2.5 py-2 font-mono type-micro whitespace-pre-wrap break-words text-muted-foreground">
-          {tool.output}
-        </pre>
+        {contentMounted && (
+          <pre className="mb-1 max-h-48 overflow-y-auto rounded-md border border-border bg-chrome px-2.5 py-2 font-mono type-micro whitespace-pre-wrap break-words text-muted-foreground">
+            {tool.output}
+          </pre>
+        )}
       </CollapsibleContent>
     </Collapsible>
   ) : (
@@ -153,6 +163,9 @@ function ToolRowMain({ tool, open }: { tool: ToolCall; open?: boolean }) {
  * 原始事件顺序展示。公开 progress 会在 core/activity 中切断工作段。 */
 function WorkGroup({ items }: { items: Extract<ActivityBlock, { kind: "work" }>["items"] }) {
   const [open, setOpen] = useState(false)
+  // P2 延迟挂载:折叠的工作组不构造 thinking/工具行元素(流式热路径默认全折叠);
+  // 展开后 sticky 保持构造,关闭动画不受影响
+  const [contentMounted, setContentMounted] = useState(false)
   if (items.length === 1 && items[0].kind === "tool") return <ToolRow tool={items[0].tool} />
 
   const tools = items.flatMap((item) => item.kind === "tool" ? [item.tool] : [])
@@ -163,7 +176,14 @@ function WorkGroup({ items }: { items: Extract<ActivityBlock, { kind: "work" }>[
     : "思考"
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
+    <Collapsible
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) setContentMounted(true)
+      }}
+      className="min-w-0"
+    >
       <CollapsibleTrigger className="trace-row group flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-xs transition-colors duration-150 hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none">
         {tools.length > 0
           ? <Terminal className="size-3.5 shrink-0 text-muted-foreground" />
@@ -183,17 +203,19 @@ function WorkGroup({ items }: { items: Extract<ActivityBlock, { kind: "work" }>[
         <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-300 group-data-[state=open]:rotate-180 motion-reduce:transition-none" />
       </CollapsibleTrigger>
       <CollapsibleContent className="collapsible-section">
-        <div className="flex min-w-0 flex-col">
-          {items.map((item) => (
-            item.kind === "tool"
-              ? <ToolRow key={item.id} tool={item.tool} />
-              : (
-                  <p key={item.id} className="max-w-full px-1.5 py-1 text-xs text-muted-foreground">
-                    {item.text}
-                  </p>
-                )
-          ))}
-        </div>
+        {contentMounted && (
+          <div className="flex min-w-0 flex-col">
+            {items.map((item) => (
+              item.kind === "tool"
+                ? <ToolRow key={item.id} tool={item.tool} />
+                : (
+                    <p key={item.id} className="max-w-full px-1.5 py-1 text-xs text-muted-foreground">
+                      {item.text}
+                    </p>
+                  )
+            ))}
+          </div>
+        )}
       </CollapsibleContent>
     </Collapsible>
   )
@@ -275,6 +297,9 @@ export function TurnActivity({
   // live 默认展开、settled 默认折叠；用户手动选择后保持其选择。
   const [manual, setManual] = useState<boolean | null>(null)
   const open = manual ?? live
+  // P2 延迟挂载:折叠的 trace 连 timeline 元素都不构造;live 从展开态(mounted)
+  // 起步。首次展开在 onOpenChange 里 sticky,关闭动画不受影响。
+  const [contentMounted, setContentMounted] = useState(live)
 
   const blocks = groupActivity(activity)
   const plan = turn.plan ?? []
@@ -287,7 +312,7 @@ export function TurnActivity({
       : undefined
   const status = live ? liveStatus(turn) : undefined
 
-  const activityRows = (
+  const activityRows = contentMounted && (
     <>
       {blocks.map((block) => (
         <ActivityBlockRow key={block.id} block={block} compact={live} />
@@ -295,21 +320,24 @@ export function TurnActivity({
     </>
   )
 
-  const list =
-    shape === "flat" ? (
-      <div className="relative mt-0.5 ml-2 pl-4">
-        <span aria-hidden className="absolute inset-y-1 left-0 w-px bg-border" />
-        <div className="flex min-w-0 flex-col gap-1 py-1">
-          {plan.length > 0 && <PlanRows plan={plan} />}
-          {activityRows}
-        </div>
-      </div>
-    ) : (
-      <div className="mt-1 divide-y divide-border overflow-hidden rounded-md border border-border bg-chrome">
-        {plan.length > 0 && <PlanRows plan={plan} />}
-        {activityRows}
-      </div>
-    )
+  const list = contentMounted
+    ? shape === "flat"
+      ? (
+          <div className="relative mt-0.5 ml-2 pl-4">
+            <span aria-hidden className="absolute inset-y-1 left-0 w-px bg-border" />
+            <div className="flex min-w-0 flex-col gap-1 py-1">
+              {plan.length > 0 && <PlanRows plan={plan} />}
+              {activityRows}
+            </div>
+          </div>
+        )
+      : (
+          <div className="mt-1 divide-y divide-border overflow-hidden rounded-md border border-border bg-chrome">
+            {plan.length > 0 && <PlanRows plan={plan} />}
+            {activityRows}
+          </div>
+        )
+    : null
 
   const header = (
     <>
@@ -342,7 +370,14 @@ export function TurnActivity({
   }
 
   return (
-    <Collapsible open={open} onOpenChange={setManual} className="flex min-w-0 max-w-full flex-col">
+    <Collapsible
+      open={open}
+      onOpenChange={(next) => {
+        setManual(next)
+        if (next) setContentMounted(true)
+      }}
+      className="flex min-w-0 max-w-full flex-col"
+    >
       <CollapsibleTrigger className={headerClass}>{header}</CollapsibleTrigger>
       <CollapsibleContent className="collapsible-section">{list}</CollapsibleContent>
     </Collapsible>

@@ -36,18 +36,17 @@ export function resolveActivity(
   ]
 }
 
-/** 把 timeline 折叠成过程段 + 工作段；progress/steer 会开始新的阶段，
- * 工作段内部按原顺序保留 thinking/tool。 */
+/** 把 timeline 折叠成过程段 + 工作段;progress/steer 会开始新的阶段,
+ * 工作段内部按原顺序保留 thinking/tool。
+ * 注意:不做增量缓存——draft.activity 的项会被原位改写(thinking 追加文本、
+ * tool_updated 替换 tool),任何引用稳定性假设都会吞掉实时更新。 */
 export function groupActivity(items: ActivityItem[]): ActivityBlock[] {
   const blocks: ActivityBlock[] = []
   for (const item of items) {
     if (item.kind === "tool" || item.kind === "thinking") {
       const last = blocks[blocks.length - 1]
-      if (last?.kind === "work") {
-        last.items.push(item)
-      } else {
-        blocks.push({ id: item.id, kind: "work", items: [item] })
-      }
+      if (last?.kind === "work") last.items.push(item)
+      else blocks.push({ id: item.id, kind: "work", items: [item] })
       continue
     }
     blocks.push({ id: item.id, kind: item.kind, text: item.text })

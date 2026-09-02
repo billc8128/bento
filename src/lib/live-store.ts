@@ -46,6 +46,62 @@ function bump(patch?: Partial<Omit<LiveSnapshot, "version">>) {
   for (const l of listeners) l()
 }
 
+/* P0 流式合并:记录仍逐条同步 applyRecord(顺序、seq、replay 结果不变),
+ * 只有 UI 通知被合并——流式事件每 animation frame 最多 bump 一次。
+ * 终点事件(user_message/turn_finished/notice/user_steer 等)走 bumpNow
+ * 立即可见,并取消挂起的合并 flush,避免同一帧双 bump。
+ * rAF 在窗口隐藏时会被暂停,补 100ms 定时兜底,后台会话状态不僵死。 */
+let flushRaf: number | null = null
+let flushTimer: number | null = null
+
+function runFlush() {
+  // rAF 与定时器先到者 flush 并取消另一个,保证同帧不双 bump
+  if (flushRaf !== null) {
+    cancelAnimationFrame(flushRaf)
+    flushRaf = null
+  }
+  if (flushTimer !== null) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
+  bump()
+}
+
+/** 流式事件的帧级合并通知:同一帧内多次调用只 bump 一次 */
+function scheduleBump() {
+  if (flushRaf !== null || flushTimer !== null) return
+  flushRaf = requestAnimationFrame(runFlush)
+  flushTimer = setTimeout(runFlush, 100)
+}
+
+/** 立即通知(终点事件/用户动作):先取消挂起的合并 flush */
+function bumpNow(patch?: Partial<Omit<LiveSnapshot, "version">>) {
+  if (flushRaf !== null) {
+    cancelAnimationFrame(flushRaf)
+    flushRaf = null
+  }
+  if (flushTimer !== null) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
+  bump(patch)
+}
+
+/** 终点事件:用户可见的回合边界与系统通知,必须同步 flush */
+function isEndpointRecord(r: { kind: string; payload: unknown }): boolean {
+  if (r.kind === "event") {
+    const type = (r.payload as HarnessEvent).type
+    return (
+      type === "user_message" ||
+      type === "turn_finished" ||
+      type === "notice" ||
+      type === "user_steer"
+    )
+  }
+  // v0.3 legacy 落盘形态:同名 kind 即终点
+  return r.kind === "user_message" || r.kind === "turn_end" || r.kind === "notice"
+}
+
 /** 模块加载即初始化(桌面模式);web 模式静默什么都不做 */
 async function init() {
   const bento = window.bento
@@ -59,11 +115,46 @@ async function init() {
     bump({ initialized: true })
   }
   bento.onSessionEvent(({ key, record }) => {
+    // 先收集 runtime 变化(patch),再统一决定通知方式——每条记录最多一次 bump
+    let patch: Partial<Omit<LiveSnapshot, "version">> | undefined
+    // Session runtime 以 main 的真实事件推进。这样即使 sessions:changed 恰好在
+    // caller working 时刷新,turn_finished 也会把侧栏/Composer 收回 idle。
+    if (record.kind === "event") {
+      const payload = record.payload as HarnessEvent
+      if (payload.type === "user_steer" && queuedPrompts.get(key)?.id === payload.clientMessageId) {
+        queuedPrompts.delete(key)
+        patch = {}
+      }
+      if (payload.type === "user_message") {
+        if (payload.origin?.kind === "session") {
+          running.add(key)
+          if (key !== focusedSessionId) unreadSessionMessages.add(key)
+        }
+        patch = {
+          sessions: snapshot.sessions.map((session) =>
+            session.key === key
+              ? { ...session, live: true, runtime: "working", updatedAt: record.at }
+              : session,
+          ),
+        }
+      } else if (payload.type === "turn_finished") {
+        running.delete(key)
+        patch = {
+          sessions: snapshot.sessions.map((session) =>
+            session.key === key
+              ? { ...session, live: true, runtime: "idle", updatedAt: record.at }
+              : session,
+          ),
+        }
+      }
+    }
+
     const acc = accs.get(key)
+    const endpoint = isEndpointRecord(record)
     if (acc) {
       // 真实 user_message 到达时,若发送侧已乐观上屏同文消息,原地转正(换 id),
       // 不再走 applyRecord——revive 前 main 会先补一堆启动事件,seq 对不上,
-      // 靠 seq 去重会重影
+      // 靠 seq 去重会重影。sendPrompt 已设置 running/乐观态,这里只转正。
       if (record.kind === "event" && (record.payload as HarnessEvent).type === "user_message") {
         const event = record.payload as HarnessEvent & { type: "user_message" }
         if (event.clientMessageId && queuedPrompts.get(key)?.id === event.clientMessageId) {
@@ -80,43 +171,19 @@ async function init() {
             ...(event.attachments?.length ? { attachments: event.attachments } : {}),
           }
           if (record.seq > acc.lastSeq) acc.lastSeq = record.seq
-          bump()
+          bumpNow()
           return
         }
       }
       applyRecord(acc, record)
-      bump()
     }
-    // Session runtime 以 main 的真实事件推进。这样即使 sessions:changed 恰好在
-    // caller working 时刷新，turn_finished 也会把侧栏/Composer 收回 idle。
-    if (record.kind === "event") {
-      const payload = record.payload as HarnessEvent
-      if (payload.type === "user_steer" && queuedPrompts.get(key)?.id === payload.clientMessageId) {
-        queuedPrompts.delete(key)
-        bump()
-      }
-      if (payload.type === "user_message") {
-        if (payload.origin?.kind === "session") {
-          running.add(key)
-          if (key !== focusedSessionId) unreadSessionMessages.add(key)
-        }
-        bump({
-          sessions: snapshot.sessions.map((session) =>
-            session.key === key
-              ? { ...session, live: true, runtime: "working", updatedAt: record.at }
-              : session,
-          ),
-        })
-      } else if (payload.type === "turn_finished") {
-        running.delete(key)
-        bump({
-          sessions: snapshot.sessions.map((session) =>
-            session.key === key
-              ? { ...session, live: true, runtime: "idle", updatedAt: record.at }
-              : session,
-          ),
-        })
-      }
+
+    // patch 变化或终点事件同步可见(会话未加载时侧栏 runtime 也要刷新);
+    // 流式内容合并到下一帧。
+    if (patch) bumpNow(patch)
+    else if (acc) {
+      if (endpoint) bumpNow()
+      else scheduleBump()
     }
   })
   // 协作创建/重命名/删除:index 变化即重拉,Agent 建的 Session 立刻进侧栏
@@ -360,12 +427,12 @@ export async function removeLive(sessionId: string) {
   bump({ sessions: snapshot.sessions.filter((s) => s.key !== sessionId) })
 }
 
+/** 订阅 store 变化(useLive 的底层;非 React 上下文/测试可用) */
+export function subscribeLive(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
 export function useLive(): LiveSnapshot {
-  return useSyncExternalStore(
-    (cb) => {
-      listeners.add(cb)
-      return () => listeners.delete(cb)
-    },
-    () => snapshot,
-  )
+  return useSyncExternalStore(subscribeLive, () => snapshot)
 }
