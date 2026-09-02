@@ -5,7 +5,7 @@
  */
 
 import type { HarnessEvent, HarnessToolDiff, HarnessUsage, LogRecord } from "./events"
-import type { Message, PlanItem, ToolCall } from "./types"
+import type { ActivityItem, Message, PlanItem, ToolCall } from "./types"
 
 export type { LogRecord } from "./events"
 
@@ -42,6 +42,7 @@ type Draft = {
   thinking: string
   tools: ToolCall[]
   toolIndex: Map<string, number>
+  activity: ActivityItem[]
   /** 首个进入 draft 的事件时间(epoch ms),回合 durationMs 的起点 */
   startedAtMs: number
   /** 回合计划清单(ACP plan 事件整体替换,§7 P4) */
@@ -83,7 +84,7 @@ export function createAccumulator(): Accumulator {
 
 function ensureDraft(acc: Accumulator, atMs: number): Draft {
   if (!acc.draft) {
-    acc.draft = { text: "", thinking: "", tools: [], toolIndex: new Map(), startedAtMs: atMs }
+    acc.draft = { text: "", thinking: "", tools: [], toolIndex: new Map(), activity: [], startedAtMs: atMs }
   }
   return acc.draft
 }
@@ -102,8 +103,9 @@ function finalizeDraft(acc: Accumulator, atMs: number, usage?: HarnessUsage) {
     id: `a${acc.messages.length}`,
     role: "assistant",
     text: d.text,
-    thinking: d.thinking || undefined,
-    tools: d.tools.length ? d.tools : undefined,
+    ...(d.thinking ? { thinking: d.thinking } : {}),
+    ...(d.tools.length ? { tools: d.tools } : {}),
+    ...(d.activity.length ? { activity: d.activity } : {}),
     durationMs: atMs - d.startedAtMs,
     ...(d.plan?.length ? { plan: d.plan } : {}),
     ...(usage ? { usage } : {}),
@@ -130,6 +132,7 @@ function applyEvent(acc: Accumulator, event: HarnessEvent, seq: number, atMs: nu
         text: event.text,
         ...(event.attachments?.length ? { attachments: event.attachments } : {}),
         ...(event.origin ? { origin: event.origin } : {}),
+        ...(event.clientMessageId ? { clientMessageId: event.clientMessageId } : {}),
       })
       return
     case "turn_finished":
@@ -143,27 +146,44 @@ function applyEvent(acc: Accumulator, event: HarnessEvent, seq: number, atMs: nu
     case "agent_message_chunk":
       ensureDraft(acc, atMs).text += event.text
       return
-    case "agent_thought_chunk":
-      ensureDraft(acc, atMs).thinking += event.text
+    case "agent_thought_chunk": {
+      const draft = ensureDraft(acc, atMs)
+      draft.thinking += event.text
+      const last = draft.activity.at(-1)
+      if (last?.kind === "thinking") last.text += event.text
+      else draft.activity.push({ id: `thinking-${seq}`, kind: "thinking", text: event.text })
+      return
+    }
+    case "user_steer":
+      ensureDraft(acc, atMs).activity.push({
+        id: `steer-${event.clientMessageId}`,
+        kind: "steer",
+        text: event.text,
+      })
       return
     case "tool_started": {
       const draft = ensureDraft(acc, atMs)
       draft.toolIndex.set(event.id, draft.tools.length)
-      draft.tools.push({
+      const tool: ToolCall = {
         kind: event.kind,
         target: event.title,
         detail: "",
         status: toolStatus(event.status),
         startedAtMs: atMs,
         ...(event.diffs ? { diffs: event.diffs } : {}),
-      })
+      }
+      draft.tools.push(tool)
+      draft.activity.push({ id: event.id, kind: "tool", tool })
       return
     }
     case "tool_updated": {
       const draft = acc.draft
       const index = draft?.toolIndex.get(event.id)
       if (draft && index !== undefined) {
-        draft.tools[index] = mergeToolUpdate(draft.tools[index], event, atMs)
+        const tool = mergeToolUpdate(draft.tools[index], event, atMs)
+        draft.tools[index] = tool
+        const activity = draft.activity.find((item) => item.kind === "tool" && item.id === event.id)
+        if (activity?.kind === "tool") activity.tool = tool
       }
       return
     }
@@ -235,19 +255,28 @@ export function applyRecord(acc: Accumulator, r: LogRecord) {
       if (u.content?.type === "text") ensureDraft(acc, atMs).text += u.content.text
       return
     case "agent_thought_chunk":
-      if (u.content?.type === "text") ensureDraft(acc, atMs).thinking += u.content.text
+      if (u.content?.type === "text") {
+        const text = u.content.text ?? ""
+        const draft = ensureDraft(acc, atMs)
+        draft.thinking += text
+        const last = draft.activity.at(-1)
+        if (last?.kind === "thinking") last.text += text
+        else draft.activity.push({ id: `thinking-${r.seq}`, kind: "thinking", text })
+      }
       return
     case "tool_call": {
       const d = ensureDraft(acc, atMs)
       const toolCallId = u.toolCallId ?? "unknown"
       d.toolIndex.set(toolCallId, d.tools.length)
-      d.tools.push({
+      const tool: ToolCall = {
         kind: toolKind(u.kind),
         target: u.title ?? toolCallId,
         detail: "",
         status: toolStatus(u.status),
         startedAtMs: atMs,
-      })
+      }
+      d.tools.push(tool)
+      d.activity.push({ id: toolCallId, kind: "tool", tool })
       return
     }
     case "tool_call_update": {
@@ -255,7 +284,10 @@ export function applyRecord(acc: Accumulator, r: LogRecord) {
       const toolCallId = u.toolCallId
       const i = d && toolCallId !== undefined ? d.toolIndex.get(toolCallId) : undefined
       if (d && i !== undefined) {
-        d.tools[i] = mergeToolUpdate(d.tools[i], u, atMs)
+        const tool = mergeToolUpdate(d.tools[i], u, atMs)
+        d.tools[i] = tool
+        const activity = d.activity.find((item) => item.kind === "tool" && item.id === toolCallId)
+        if (activity?.kind === "tool") activity.tool = tool
       }
       return
     }
@@ -274,8 +306,9 @@ export function messagesOf(acc: Accumulator): Message[] {
       id: "draft",
       role: "assistant",
       text: d.text,
-      thinking: d.thinking || undefined,
-      tools: d.tools.length ? d.tools : undefined,
+      ...(d.thinking ? { thinking: d.thinking } : {}),
+      ...(d.tools.length ? { tools: d.tools } : {}),
+      ...(d.activity.length ? { activity: d.activity } : {}),
       ...(d.plan?.length ? { plan: d.plan } : {}),
     },
   ]

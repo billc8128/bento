@@ -35,6 +35,7 @@ export type LiveSessionRecord = {
   capabilities?: {
     modelSwitch: "none" | "new-session" | "live"
     effortSwitch: "none" | "new-session" | "live"
+    steer?: "none" | "live"
   }
   title: string
   createdAt: string
@@ -60,6 +61,11 @@ declare global {
         { key: string; record: LiveSessionRecord; error?: undefined } | { error: string }
       >
       prompt(key: string, input: PromptInput): Promise<{ stopReason: string } | { error: string }>
+      queuePrompt(key: string, input: PromptInput, clientMessageId: string): Promise<
+        { status: "queued" | "started"; steerAvailable: boolean } | { error: string }
+      >
+      steerQueued(key: string, clientMessageId: string): Promise<{ ok: true } | { error: string }>
+      cancelQueued(key: string, clientMessageId: string): Promise<{ ok: true }>
       cancel(key: string): Promise<void>
       setModel(key: string, selection: { providerId: string; modelId: string }): Promise<
         { record: LiveSessionRecord; error?: undefined } | { error: string }

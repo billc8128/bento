@@ -439,6 +439,30 @@ app.whenReady().then(async () => {
       return { error: String(err instanceof Error ? err.message : err) }
     }
   })
+  ipcMain.handle("session:queue-prompt", async (
+    _e,
+    key: string,
+    input: PromptInput,
+    clientMessageId: string,
+  ) => {
+    try {
+      return await sessions.queuePrompt(key, input, clientMessageId)
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.handle("session:steer-queued", async (_e, key: string, clientMessageId: string) => {
+    try {
+      await sessions.steerQueuedPrompt(key, clientMessageId)
+      return { ok: true }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.handle("session:cancel-queued", (_e, key: string, clientMessageId: string) => {
+    sessions.cancelQueuedPrompt(key, clientMessageId)
+    return { ok: true }
+  })
   ipcMain.handle("session:cancel", (_e, key: string) => sessions.cancel(key))
   ipcMain.handle("apps:list", () => apps.list())
   ipcMain.handle("apps:set-enabled", (_event, id: BentoAppId, enabled: boolean) => {

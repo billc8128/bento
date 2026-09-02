@@ -17,6 +17,9 @@ vi.hoisted(() => {
       ],
       readEvents: async () => [],
       prompt: async () => ({ stopReason: "end_turn" }),
+      queuePrompt: async () => ({ status: "queued", steerAvailable: true }),
+      steerQueued: async () => ({ ok: true }),
+      cancelQueued: async () => ({ ok: true }),
       onSessionEvent: (cb: (payload?: unknown) => void) => {
         listeners.sessionEvent.add(cb)
         emitEvent = (record: unknown) => { for (const cb of listeners.sessionEvent) cb({ key: "a", record }) }
@@ -95,5 +98,20 @@ describe("live-store 协作切片", () => {
     ]
     bento.__sessionsChanged()
     await vi.waitFor(() => expect(live.liveSessionsSnapshot().some((s) => s.key === "agent-created")).toBe(true))
+  })
+
+  it("运行中后续消息保留为可 steer 队列，真实事件到达后移除", async () => {
+    await live.queueLivePrompt("a", "下一条")
+    const queued = live.queuedPrompt("a")
+    expect(queued).toMatchObject({ input: { text: "下一条" }, steerAvailable: true, state: "queued" })
+    await live.steerQueuedPrompt("a")
+    expect(live.queuedPrompt("a")?.state).toBe("steering")
+    bento.__emit({
+      seq: 20,
+      at: "2024-01-01T00:00:04Z",
+      kind: "event",
+      payload: { type: "user_steer", text: "下一条", clientMessageId: queued!.id },
+    })
+    expect(live.queuedPrompt("a")).toBeUndefined()
   })
 })

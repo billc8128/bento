@@ -1,10 +1,110 @@
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
+
 import { describe, expect, it } from "vitest"
 
-import { PI_CAPABILITIES, piModelRef, translatePiEvent } from "./pi"
+import { PI_CAPABILITIES, piDriver, piModelRef, translatePiEvent } from "./pi"
 
 describe("Pi capabilities", () => {
-  it("与已实现的 set_model / set_thinking_level 保持一致", () => {
-    expect(PI_CAPABILITIES).toEqual({ modelSwitch: "live", effortSwitch: "live" })
+  it("与已实现的 set_model / set_thinking_level / steer 保持一致", () => {
+    expect(PI_CAPABILITIES).toEqual({
+      modelSwitch: "live",
+      effortSwitch: "live",
+      steer: "live",
+    })
+  })
+})
+
+async function waitForFrames(file: string, predicate: (frames: Array<Record<string, unknown>>) => boolean) {
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
+    const frames = fs.existsSync(file)
+      ? fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean)
+          .map((line) => JSON.parse(line) as Record<string, unknown>)
+      : []
+    if (predicate(frames)) return frames
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  throw new Error("等待 Pi RPC 测试帧超时")
+}
+
+describe("Pi RPC steer", () => {
+  it("运行中的 prompt 后发送 steer，复用图片/文件语义且不提前结束原回合", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-pi-steer-"))
+    const executable = path.join(dir, "pi")
+    const log = path.join(dir, "frames.jsonl")
+    const image = path.join(dir, "reference.png")
+    const file = path.join(dir, "notes.csv")
+    fs.writeFileSync(image, Buffer.from([0, 1, 2, 3]))
+    fs.writeFileSync(file, "a,b\n1,2\n")
+    fs.writeFileSync(executable, `#!/usr/bin/env node
+const fs = require("node:fs")
+const readline = require("node:readline")
+const log = process.env.BENTO_PI_TEST_LOG
+const output = (frame) => process.stdout.write(JSON.stringify(frame) + "\\n")
+readline.createInterface({ input: process.stdin }).on("line", (line) => {
+  const frame = JSON.parse(line)
+  fs.appendFileSync(log, JSON.stringify(frame) + "\\n")
+  if (frame.type === "get_state") {
+    output({ id: frame.id, type: "response", command: frame.type, success: true,
+      data: { sessionId: "pi-test", sessionFile: "/tmp/pi-test.jsonl" } })
+  } else if (frame.type === "prompt" || frame.type === "steer") {
+    output({ id: frame.id, type: "response", command: frame.type, success: true })
+  } else if (frame.type === "abort") {
+    output({ id: frame.id, type: "response", command: frame.type, success: true })
+    output({ type: "agent_end" })
+  }
+})
+`)
+    fs.chmodSync(executable, 0o755)
+
+    const previousOverride = process.env.BENTO_PI_PATH
+    process.env.BENTO_PI_PATH = executable
+    let connection: Awaited<ReturnType<typeof piDriver.start>> | undefined
+    try {
+      connection = await piDriver.start({
+        cwd: dir,
+        proxyEnv: { env: { BENTO_PI_TEST_LOG: log } },
+      }, () => {})
+
+      const attachments = [
+        { name: "reference.png", path: image, mimeType: "image/png", size: 4, kind: "image" as const },
+        { name: "notes.csv", path: file, mimeType: "text/csv", size: 8, kind: "file" as const },
+      ]
+      let completed = false
+      const completion = connection.prompt({ text: "先分析", attachments }).then((result) => {
+        completed = true
+        return result
+      })
+      await waitForFrames(log, (frames) => frames.some((frame) => frame.type === "prompt"))
+
+      await connection.steer?.({ text: "优先看附件", attachments })
+      expect(completed).toBe(false)
+
+      const frames = await waitForFrames(log, (values) => values.some((frame) => frame.type === "steer"))
+      const prompt = frames.find((frame) => frame.type === "prompt")
+      const steer = frames.find((frame) => frame.type === "steer")
+      expect(prompt).toMatchObject({
+        type: "prompt",
+        message: `先分析\n\n附件文件：\n- ${file}`,
+        images: [{ type: "image", data: "AAECAw==", mimeType: "image/png" }],
+      })
+      expect(steer).toMatchObject({
+        type: "steer",
+        message: `优先看附件\n\n附件文件：\n- ${file}`,
+        images: [{ type: "image", data: "AAECAw==", mimeType: "image/png" }],
+      })
+
+      await connection.cancel()
+      await expect(completion).resolves.toEqual({ stopReason: "end_turn" })
+      expect(completed).toBe(true)
+    } finally {
+      connection?.close()
+      if (previousOverride === undefined) delete process.env.BENTO_PI_PATH
+      else process.env.BENTO_PI_PATH = previousOverride
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

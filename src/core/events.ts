@@ -30,9 +30,12 @@ export type HarnessEvent =
       attachments?: Array<{ name: string; kind: "image" | "file" }>
       /** 跨 Session 消息的可信来源;缺省按 human 处理(历史兼容)。 */
       origin?: MessageOrigin
+      /** Renderer 发起的待发送消息 id；真实入队后用于替换乐观队列气泡。 */
+      clientMessageId?: string
     }
   | { type: "agent_message_chunk"; text: string }
   | { type: "agent_thought_chunk"; text: string }
+  | { type: "user_steer"; text: string; clientMessageId: string }
   | {
       type: "tool_started"
       id: string

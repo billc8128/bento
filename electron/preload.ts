@@ -27,6 +27,12 @@ const api = {
   }) =>
     ipcRenderer.invoke("session:create", opts),
   prompt: (key: string, input: PromptInput) => ipcRenderer.invoke("session:prompt", key, input),
+  queuePrompt: (key: string, input: PromptInput, clientMessageId: string) =>
+    ipcRenderer.invoke("session:queue-prompt", key, input, clientMessageId),
+  steerQueued: (key: string, clientMessageId: string) =>
+    ipcRenderer.invoke("session:steer-queued", key, clientMessageId),
+  cancelQueued: (key: string, clientMessageId: string) =>
+    ipcRenderer.invoke("session:cancel-queued", key, clientMessageId),
   cancel: (key: string) => ipcRenderer.invoke("session:cancel", key),
   setModel: (key: string, selection: { providerId: string; modelId: string }) =>
     ipcRenderer.invoke("session:set-model", key, selection),

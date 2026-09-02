@@ -1,4 +1,4 @@
-import type { Effort } from "../../src/core/types"
+import type { Effort, PromptInput } from "../../src/core/types"
 import type { HarnessUsage } from "../../src/core/events"
 import type { ProviderModel } from "../../src/core/provider"
 import { managedCodexBinary } from "../binaries/manager"
@@ -198,20 +198,24 @@ export const codexDriver: HarnessDriver = {
     }
     const threadId = String(thread.id)
 
+    const userInput = (input: string | PromptInput): JsonObject[] => {
+      const request = normalizePromptInput(input)
+      const values: JsonObject[] = [{ type: "text", text: request.text }]
+      for (const attachment of request.attachments) {
+        values.push(attachment.kind === "image"
+          ? { type: "localImage", path: attachment.path }
+          : { type: "mention", name: attachment.name, path: attachment.path })
+      }
+      return values
+    }
+
     return {
       nativeSessionId: threadId,
-      capabilities: { modelSwitch: "live", effortSwitch: "live" },
+      capabilities: { modelSwitch: "live", effortSwitch: "live", steer: "live" },
       async prompt(input) {
-        const request = normalizePromptInput(input)
-        const userInput: JsonObject[] = [{ type: "text", text: request.text }]
-        for (const attachment of request.attachments) {
-          userInput.push(attachment.kind === "image"
-            ? { type: "localImage", path: attachment.path }
-            : { type: "mention", name: attachment.name, path: attachment.path })
-        }
         const response = await rpc.request("turn/start", {
           threadId,
-          input: userInput,
+          input: userInput(input),
           ...(modelId ? { model: modelId } : {}),
           effort: wireEffort(effort),
         })
@@ -226,6 +230,14 @@ export const codexDriver: HarnessDriver = {
         const { promise, resolve } = Promise.withResolvers<{ stopReason?: string; usage?: HarnessUsage }>()
         turnWaiters.set(turn.id, (status) => resolve({ stopReason: status, ...(latestUsage ? { usage: latestUsage } : {}) }))
         return promise
+      },
+      async steer(input) {
+        if (!activeTurnId) throw new Error("当前没有可引导的 Codex 回合")
+        await rpc.request("turn/steer", {
+          threadId,
+          expectedTurnId: activeTurnId,
+          input: userInput(input),
+        })
       },
       async cancel() {
         if (activeTurnId) await rpc.request("turn/interrupt", { threadId, turnId: activeTurnId })

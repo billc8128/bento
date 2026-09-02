@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { HarnessEvent } from "../../src/core/events"
 import { configureBinaryManager } from "../binaries/manager"
@@ -109,6 +109,35 @@ describe("codexDriver thread 参数", () => {
       { type: "localImage", path: "/tmp/shot.png" },
       { type: "mention", name: "report.csv", path: "/tmp/report.csv" },
     ])
+  })
+
+  it("运行中通过 turn/steer 向当前 turn 立即追加引导", async () => {
+    const requests: Array<{ method: string; params?: Record<string, unknown> }> = []
+    let notify: ((method: string, params: Record<string, unknown>) => void) | undefined
+    const createRpc: RpcFactory = async (_cwd, handlers) => {
+      notify = handlers.onNotification
+      return {
+        request: async (method: string, params?: Record<string, unknown>) => {
+          requests.push({ method, params })
+          if (method === "thread/start") return { thread: { id: "thr-steer" } }
+          if (method === "turn/start") return { turn: { id: "turn-steer" } }
+          if (method === "turn/steer") return { turnId: "turn-steer" }
+          return {}
+        },
+        notify: () => {}, onExit: () => () => {}, close: () => {},
+      } as unknown as CodexRpc
+    }
+    const connection = await codexDriver.start({ cwd: "/tmp" }, () => {}, { createRpc })
+    const completion = connection.prompt("先实现主体")
+    await vi.waitFor(() => expect(requests.some((request) => request.method === "turn/start")).toBe(true))
+    await connection.steer?.("先把移动端做好")
+    expect(requests.find((request) => request.method === "turn/steer")?.params).toEqual({
+      threadId: "thr-steer",
+      expectedTurnId: "turn-steer",
+      input: [{ type: "text", text: "先把移动端做好" }],
+    })
+    notify?.("turn/completed", { turn: { id: "turn-steer", status: "completed" } })
+    await expect(completion).resolves.toEqual({ stopReason: "completed" })
   })
 
   it("sandbox/approvalPolicy 使用服务端枚举 kebab-case", { timeout: 30_000 }, async () => {

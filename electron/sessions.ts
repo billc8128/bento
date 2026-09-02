@@ -62,12 +62,19 @@ type LiveSession = {
   cancelRequested: boolean
   /** 当前运行中的根 Prompt;null = idle。startPrompt 原子占用。 */
   activeTurn: ActiveTurn | null
+  /** 人类在运行中提交的一条可见后续消息；本轮结束后自动启动。 */
+  queuedPrompt: QueuedPrompt | null
 }
 
 /** 一次根 Prompt 的运行态:acceptedSeq 关联提交,completion 携带回合结果。 */
 type ActiveTurn = {
   acceptedSeq: number
   completion: Promise<TurnResult>
+}
+
+type QueuedPrompt = {
+  clientMessageId: string
+  input: PromptInput
 }
 
 type TurnResult = {
@@ -362,6 +369,7 @@ export class SessionManager {
       disposeExit: () => {},
       cancelRequested: false,
       activeTurn: null,
+      queuedPrompt: null,
     }
     for (const event of pending) this.append(session, event)
 
@@ -500,7 +508,7 @@ export class SessionManager {
   async startPrompt(
     key: string,
     value: string | PromptInput,
-    opts: { wireText?: string; origin?: MessageOrigin } = {},
+    opts: { wireText?: string; origin?: MessageOrigin; clientMessageId?: string } = {},
   ): Promise<{ acceptedSeq: number; completion: Promise<TurnResult> }> {
     // 每 key 串行化 guard 检查与 activeTurn 占用,保证并发 send 原子地一胜一败。
     const previous = this.turnChains.get(key) ?? Promise.resolve()
@@ -517,7 +525,7 @@ export class SessionManager {
   private async beginTurn(
     key: string,
     value: string | PromptInput,
-    opts: { wireText?: string; origin?: MessageOrigin },
+    opts: { wireText?: string; origin?: MessageOrigin; clientMessageId?: string },
   ): Promise<{ acceptedSeq: number; completion: Promise<TurnResult> }> {
     const session = await this.ensureLive(key)
     if (session.activeTurn) throw new CollaborationError("session_busy")
@@ -529,6 +537,7 @@ export class SessionManager {
       type: "user_message",
       text: input.text,
       ...(opts.origin ? { origin: opts.origin } : {}),
+      ...(opts.clientMessageId ? { clientMessageId: opts.clientMessageId } : {}),
       ...(input.attachments.length ? {
         attachments: input.attachments.map(({ name, kind }) => ({ name, kind })),
       } : {}),
@@ -557,10 +566,65 @@ export class SessionManager {
       .finally(() => {
         if (session.activeTurn?.acceptedSeq === acceptedSeq) session.activeTurn = null
         this.notifyCollaboration({ key, type: "turn_settled", seq: acceptedSeq })
+        const queued = session.queuedPrompt
+        if (queued) {
+          session.queuedPrompt = null
+          void this.startPrompt(key, queued.input, { clientMessageId: queued.clientMessageId })
+            .then(({ completion }) => completion.catch(() => {}))
+            .catch((error) => {
+              this.append(session, {
+                type: "notice",
+                text: `待发送消息启动失败:${error instanceof Error ? error.message : String(error)}`,
+              })
+            })
+        }
       })
     session.activeTurn = { acceptedSeq, completion }
     this.notifyCollaboration({ key, type: "turn_started", seq: acceptedSeq })
     return { acceptedSeq, completion }
+  }
+
+  async queuePrompt(
+    key: string,
+    value: string | PromptInput,
+    clientMessageId: string,
+  ): Promise<{ status: "queued" | "started"; steerAvailable: boolean }> {
+    const session = await this.ensureLive(key)
+    const input = promptInput(value)
+    if (!session.activeTurn) {
+      const { completion } = await this.startPrompt(key, input, { clientMessageId })
+      completion.catch(() => {})
+      return { status: "started", steerAvailable: false }
+    }
+    if (session.queuedPrompt) throw new Error("已有一条待发送消息")
+    session.queuedPrompt = { clientMessageId, input }
+    return {
+      status: "queued",
+      steerAvailable: session.connection.capabilities.steer === "live" && Boolean(session.connection.steer),
+    }
+  }
+
+  async steerQueuedPrompt(key: string, clientMessageId: string): Promise<void> {
+    const session = this.live.get(key)
+    const queued = session?.queuedPrompt
+    if (!session?.activeTurn || !queued || queued.clientMessageId !== clientMessageId) {
+      throw new Error("待发送消息不存在")
+    }
+    if (session.connection.capabilities.steer !== "live" || !session.connection.steer) {
+      throw new Error("当前 Harness 不支持即时引导")
+    }
+    await session.connection.steer(queued.input)
+    session.queuedPrompt = null
+    this.append(session, {
+      type: "user_steer",
+      text: queued.input.text,
+      clientMessageId,
+    })
+  }
+
+  cancelQueuedPrompt(key: string, clientMessageId: string): void {
+    const session = this.live.get(key)
+    if (session?.queuedPrompt?.clientMessageId === clientMessageId) session.queuedPrompt = null
   }
 
   /** 精确等待:只等同一 Session 且 acceptedSeq 匹配的 active turn;seq 不匹配

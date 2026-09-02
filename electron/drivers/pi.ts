@@ -12,6 +12,7 @@ import type { HarnessCapabilities, HarnessConnection, HarnessDriver } from "./ty
 export const PI_CAPABILITIES: HarnessCapabilities = {
   modelSwitch: "live",
   effortSwitch: "live",
+  steer: "live",
 }
 
 type RpcResponse = {
@@ -26,6 +27,30 @@ type RpcResponse = {
 type PendingRequest = {
   resolve: (response: RpcResponse) => void
   reject: (error: Error) => void
+}
+
+type PiInputCommand = {
+  type: "prompt" | "steer"
+  message: string
+  images?: Array<{ type: "image"; data: string; mimeType: string }>
+}
+
+/** prompt 与 steer 必须共享完全相同的附件语义：普通文件作为本地路径上下文，
+ * 图片走 Pi RPC 原生 image content。 */
+function piInputCommand(type: PiInputCommand["type"], value: string | PromptInput): PiInputCommand {
+  const input = normalizePromptInput(value)
+  const files = input.attachments.filter((attachment) => attachment.kind === "file")
+  const message = files.length === 0
+    ? input.text
+    : `${input.text}\n\n附件文件：\n${files.map((file) => `- ${file.path}`).join("\n")}`
+  const images = input.attachments
+    .filter((attachment) => attachment.kind === "image")
+    .map((attachment) => ({
+      type: "image" as const,
+      data: fs.readFileSync(attachment.path).toString("base64"),
+      mimeType: attachment.mimeType,
+    }))
+  return { type, message, ...(images.length ? { images } : {}) }
 }
 function toolKind(name: string): HarnessToolKind {
   if (name === "read" || name === "ls") return "read"
@@ -262,30 +287,22 @@ class PiRpcProcess {
   }
 
   async prompt(value: string | PromptInput) {
-    const input = normalizePromptInput(value)
     if (this.turn) throw new Error("Pi 正在处理上一轮请求")
     this.usage = undefined
     const completed = new Promise<void>((resolve, reject) => {
       this.turn = { resolve, reject }
     })
     try {
-      const files = input.attachments.filter((attachment) => attachment.kind === "file")
-      const message = files.length === 0
-        ? input.text
-        : `${input.text}\n\n附件文件：\n${files.map((file) => `- ${file.path}`).join("\n")}`
-      const images = input.attachments
-        .filter((attachment) => attachment.kind === "image")
-        .map((attachment) => ({
-          type: "image",
-          data: fs.readFileSync(attachment.path).toString("base64"),
-          mimeType: attachment.mimeType,
-        }))
-      await this.request({ type: "prompt", message, ...(images.length ? { images } : {}) })
+      await this.request(piInputCommand("prompt", value))
       await completed
     } catch (error) {
       this.turn = undefined
       throw error
     }
+  }
+
+  async steer(value: string | PromptInput) {
+    await this.request(piInputCommand("steer", value))
   }
 
   onExit(callback: (code: number | null) => void) {
@@ -333,6 +350,9 @@ export const piDriver: HarnessDriver = {
       async prompt(input) {
         await rpc.prompt(input)
         return { stopReason: "end_turn", ...(rpc.usage ? { usage: rpc.usage } : {}) }
+      },
+      async steer(input) {
+        await rpc.steer(input)
       },
       async cancel() {
         await rpc.request({ type: "abort" })

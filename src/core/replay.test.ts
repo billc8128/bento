@@ -6,6 +6,25 @@ const at = "2026-08-24T00:00:00.000Z"
 const T = Date.parse(at)
 
 describe("replay", () => {
+  it("按事件顺序保留 thinking、tool 与 steer 时间线", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at, kind: "event", payload: { type: "agent_thought_chunk", text: "先分析" } },
+      { seq: 2, at, kind: "event", payload: { type: "tool_started", id: "t1", kind: "search", title: "搜索资料", status: "running" } },
+      { seq: 3, at, kind: "event", payload: { type: "agent_thought_chunk", text: "再判断" } },
+      { seq: 4, at, kind: "event", payload: { type: "user_steer", text: "先做移动端", clientMessageId: "c1" } },
+    ] as const
+    for (const record of records) applyRecord(acc, record)
+    expect(messagesOf(acc)[0]).toMatchObject({
+      activity: [
+        { kind: "thinking", text: "先分析" },
+        { kind: "tool", tool: { target: "搜索资料" } },
+        { kind: "thinking", text: "再判断" },
+        { kind: "steer", text: "先做移动端" },
+      ],
+    })
+  })
+
   it("用户附件元数据进入消息流但不包含本地路径", () => {
     const acc = createAccumulator()
     applyRecord(acc, {
@@ -64,6 +83,10 @@ describe("replay", () => {
         thinking: "先看代码",
         tools: [
           { kind: "read", target: "src/App.tsx", detail: "", status: "done", startedAtMs: T, durationMs: 0 },
+        ],
+        activity: [
+          { id: "thinking-2", kind: "thinking", text: "先看代码" },
+          { id: "t1", kind: "tool", tool: { kind: "read", target: "src/App.tsx", detail: "", status: "done", startedAtMs: T, durationMs: 0 } },
         ],
         durationMs: 0,
       },
@@ -130,6 +153,10 @@ describe("permission metadata 不终结 draft(TRACE_DATA_PLAN §3.4 P0 回归)",
         text: "改好了",
         thinking: "想想",
         tools: [{ kind: "edit", target: "src/App.tsx", detail: "", status: "done", startedAtMs: T, durationMs: 0 }],
+        activity: [
+          { id: "thinking-2", kind: "thinking", text: "想想" },
+          { id: "t1", kind: "tool", tool: { kind: "edit", target: "src/App.tsx", detail: "", status: "done", startedAtMs: T, durationMs: 0 } },
+        ],
         durationMs: 0,
       },
     ])
@@ -176,6 +203,7 @@ describe("finalize 强制 running→failed(错误路径回放一致性)", () => 
         role: "assistant",
         text: "",
         tools: [{ kind: "bash", target: "sleep 100", detail: "", status: "failed", startedAtMs: T }],
+        activity: [{ id: "t1", kind: "tool", tool: { kind: "bash", target: "sleep 100", detail: "", status: "failed", startedAtMs: T } }],
         durationMs: 0,
       },
       { id: "n3", role: "assistant", text: "⚠️ Claude: overloaded" },
@@ -207,6 +235,10 @@ describe("finalizeTrailing 回放终界(TRACE_DATA_PLAN §3.3)", () => {
         text: "",
         thinking: "想想",
         tools: [{ kind: "read", target: "a.ts", detail: "", status: "running", startedAtMs: T }],
+        activity: [
+          { id: "thinking-2", kind: "thinking", text: "想想" },
+          { id: "t1", kind: "tool", tool: { kind: "read", target: "a.ts", detail: "", status: "running", startedAtMs: T } },
+        ],
       },
     ])
 
@@ -220,6 +252,10 @@ describe("finalizeTrailing 回放终界(TRACE_DATA_PLAN §3.3)", () => {
         text: "",
         thinking: "想想",
         tools: [{ kind: "read", target: "a.ts", detail: "", status: "failed", startedAtMs: T }],
+        activity: [
+          { id: "thinking-2", kind: "thinking", text: "想想" },
+          { id: "t1", kind: "tool", tool: { kind: "read", target: "a.ts", detail: "", status: "failed", startedAtMs: T } },
+        ],
         durationMs: 0,
       },
     ])

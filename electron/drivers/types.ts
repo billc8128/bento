@@ -9,6 +9,8 @@ export type DriverId = HarnessId | "glm"
 export type HarnessCapabilities = {
   modelSwitch: "none" | "new-session" | "live"
   effortSwitch: "none" | "new-session" | "live"
+  /** 当前回合运行时是否接受即时用户引导。缺省按 none。 */
+  steer?: "none" | "live"
 }
 
 export type HarnessMcpServer = {
@@ -43,6 +45,7 @@ export type HarnessConnection = {
   nativeSessionId: string
   capabilities: HarnessCapabilities
   prompt(input: string | PromptInput): Promise<{ stopReason?: string; usage?: HarnessUsage }>
+  steer?(input: string | PromptInput): Promise<void>
   cancel(): Promise<void>
   close(): void
   onExit(callback: (code: number | null) => void): () => void

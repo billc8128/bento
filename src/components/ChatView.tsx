@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
   Check,
+  ArrowDown,
   ChevronDown,
   FileText,
   ImageIcon,
@@ -8,6 +9,8 @@ import {
   Search,
   Terminal,
   TriangleAlert,
+  Forward,
+  X,
 } from "lucide-react"
 
 import {
@@ -21,7 +24,7 @@ import { ShiningText } from "@/components/ShiningText"
 import { cn } from "@/lib/utils"
 import { useTraits } from "@/lib/style-context"
 import { formatDuration, formatUsage } from "@/core/formatDuration"
-import type { Message, ToolCall } from "@/core/types"
+import type { ActivityItem, Message, ToolCall } from "@/core/types"
 import {
   CHAT_CONTENT_GUTTER,
   COLUMN,
@@ -178,6 +181,13 @@ function TraceBlock({
   const settled = tools.every((t) => t.status !== "running")
   const failed = tools.filter((t) => t.status === "failed").length
   const active = running || !settled
+  const fallbackActivity: ActivityItem[] = [
+    ...(m.thinking ? [{ id: "thinking", kind: "thinking" as const, text: m.thinking }] : []),
+    ...tools.map((tool, index) => ({ id: `tool-${index}`, kind: "tool" as const, tool })),
+  ]
+  const activity = m.activity?.length ? m.activity : fallbackActivity
+  const visibleActivity = active ? activity.slice(-4) : activity
+  const hiddenActivityCount = activity.length - visibleActivity.length
   // null = 跟随自动状态:跑的时候展开、落定收起;用户点过就听用户的
   const [manual, setManual] = useState<boolean | null>(null)
   const open = manual ?? active
@@ -202,10 +212,36 @@ function TraceBlock({
     ? formatUsage(m.usage)
     : undefined
 
-  const thinkingRow = m.thinking && (
-    <p className="max-w-[64ch] px-1.5 py-0.5 text-xs leading-relaxed text-muted-foreground">
-      {m.thinking}
-    </p>
+  const activityRows = (
+    <>
+      {hiddenActivityCount > 0 && (
+        <p className="px-1.5 py-0.5 type-micro text-muted-foreground">
+          之前还有 {hiddenActivityCount} 项活动
+        </p>
+      )}
+      {visibleActivity.map((item) => {
+        if (item.kind === "tool") return <ToolRow key={item.id} tool={item.tool} />
+        if (item.kind === "steer") {
+          return (
+            <div key={item.id} className="flex items-start gap-2 rounded-md bg-secondary px-2 py-1.5 text-xs text-secondary-foreground">
+              <Forward className="mt-0.5 size-3.5 shrink-0" />
+              <span className="min-w-0 wrap-anywhere">你补充：{item.text}</span>
+            </div>
+          )
+        }
+        return (
+          <p
+            key={item.id}
+            className={cn(
+              "max-w-[64ch] px-1.5 py-0.5 text-xs leading-relaxed text-muted-foreground",
+              active && "line-clamp-3",
+            )}
+          >
+            {item.text}
+          </p>
+        )
+      })}
+    </>
   )
 
   const plan = m.plan ?? []
@@ -237,20 +273,14 @@ function TraceBlock({
           style={{ height: lineHeight ? lineHeight + 2 : 0 }}
         />
         <div ref={traceRef} className="flex flex-col gap-1 py-1">
-          {thinkingRow}
           {planRows}
-          {tools.map((t, i) => (
-            <ToolRow key={i} tool={t} />
-          ))}
+          {activityRows}
         </div>
       </div>
     ) : (
       <div className="mt-1 divide-y divide-border overflow-hidden rounded-md border border-border bg-chrome">
-        {thinkingRow}
         {planRows}
-        {tools.map((t, i) => (
-          <ToolRow key={i} tool={t} />
-        ))}
+        {activityRows}
       </div>
     )
 
@@ -395,7 +425,7 @@ function groupTurns(list: Message[]): Message[][] {
 const BOTTOM_PAD: Record<ComposerShape, string> = {
   docked: "pb-8",
   card: "pb-10",
-  floating: "pb-48",
+  floating: "pb-56",
   inline: "pb-8",
 }
 
@@ -404,12 +434,31 @@ type ChatViewProps = {
   /** 是否显示「生成中」占位行 */
   pending?: boolean
   pendingLabel?: React.ReactNode
+  queued?: {
+    text: string
+    steerAvailable: boolean
+    steering: boolean
+    onSteer: () => void
+    onCancel: () => void
+  }
 }
 
-export function ChatView({ messages, pending = true, pendingLabel }: ChatViewProps) {
+export function ChatView({ messages, pending = true, pendingLabel, queued }: ChatViewProps) {
   const traits = useTraits()
   const rootRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+  const stuckRef = useRef(true)
+  const [following, setFollowing] = useState(true)
+
+  const scrollToLatest = (behavior: ScrollBehavior = "auto") => {
+    const viewport = rootRef.current?.querySelector<HTMLDivElement>(
+      '[data-slot="scroll-area-viewport"]',
+    )
+    if (!viewport) return
+    stuckRef.current = true
+    setFollowing(true)
+    viewport.scrollTo({ top: viewport.scrollHeight, behavior })
+  }
 
   // 停在最新一条,并在内容长高时跟随——但只在用户本来就贴着底部时,
   // 免得他往回翻历史的时候被硬拽回来。
@@ -420,19 +469,21 @@ export function ChatView({ messages, pending = true, pendingLabel }: ChatViewPro
     const content = contentRef.current
     if (!viewport || !content) return
 
-    let stuck = true
     const stick = () => {
-      viewport.scrollTop = viewport.scrollHeight
+      window.requestAnimationFrame(() => {
+        if (stuckRef.current) viewport.scrollTop = viewport.scrollHeight
+      })
     }
     const onScroll = () => {
-      stuck =
-        viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < STICK_THRESHOLD
+      const next = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < STICK_THRESHOLD
+      stuckRef.current = next
+      setFollowing(next)
     }
 
     stick()
     viewport.addEventListener("scroll", onScroll, { passive: true })
     // 字体或窗口变化会改内容高度,ResizeObserver 比 mount 时滚一次可靠
-    const ro = new ResizeObserver(() => stuck && stick())
+    const ro = new ResizeObserver(() => stuckRef.current && stick())
     ro.observe(content)
 
     return () => {
@@ -448,7 +499,8 @@ export function ChatView({ messages, pending = true, pendingLabel }: ChatViewPro
     last?.role === "assistant" && !last.thinking && !last.tools?.length && !last.text
 
   return (
-    <ScrollArea ref={rootRef} className="chat-scroll-area min-h-0 flex-1">
+    <div className="relative min-h-0 flex-1">
+    <ScrollArea ref={rootRef} className="chat-scroll-area h-full min-h-0">
       <div
         ref={contentRef}
         className={cn(
@@ -489,7 +541,52 @@ export function ChatView({ messages, pending = true, pendingLabel }: ChatViewPro
         {pending && draftBlank && (
           <ShiningText text={pendingLabel ?? "正在生成…"} className="text-sm" />
         )}
+
+        {queued && (
+          <div className="flex min-w-0 flex-col items-end gap-1.5" data-queued-message>
+            <div className="max-w-[75%] wrap-anywhere rounded-3xl rounded-br-lg bg-secondary px-4 py-2.5 text-sm text-secondary-foreground">
+              {queued.text}
+            </div>
+            <div className="flex items-center gap-1.5 type-micro text-muted-foreground">
+              <span>下一条</span>
+              {queued.steerAvailable && (
+                <button
+                  type="button"
+                  disabled={queued.steering}
+                  onClick={queued.onSteer}
+                  className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 font-medium text-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:text-muted-foreground"
+                >
+                  <Forward className="size-3" />
+                  {queued.steering ? "正在引导" : "立即引导"}
+                </button>
+              )}
+              <button
+                type="button"
+                aria-label="取消待发送消息"
+                title="取消待发送消息"
+                onClick={queued.onCancel}
+                className="grid size-6 place-items-center rounded-md hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </ScrollArea>
+    {!following && (
+      <button
+        type="button"
+        onClick={() => scrollToLatest("smooth")}
+        className={cn(
+          "absolute right-4 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-card px-3 text-xs font-medium shadow-pop hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+          traits.composer === "floating" ? "bottom-56" : "bottom-3",
+        )}
+      >
+        <ArrowDown className="size-3.5" />
+        回到最新
+      </button>
+    )}
+    </div>
   )
 }

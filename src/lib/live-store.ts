@@ -31,6 +31,13 @@ const accs = new Map<string, Accumulator>()
 const loaded = new Set<string>()
 const running = new Set<string>()
 const unreadSessionMessages = new Set<string>()
+export type QueuedPromptView = {
+  id: string
+  input: PromptInput
+  steerAvailable: boolean
+  state: "queued" | "steering"
+}
+const queuedPrompts = new Map<string, QueuedPromptView>()
 let focusedSessionId: string | null = null
 const listeners = new Set<() => void>()
 
@@ -59,6 +66,9 @@ async function init() {
       // 靠 seq 去重会重影
       if (record.kind === "event" && (record.payload as HarnessEvent).type === "user_message") {
         const event = record.payload as HarnessEvent & { type: "user_message" }
+        if (event.clientMessageId && queuedPrompts.get(key)?.id === event.clientMessageId) {
+          queuedPrompts.delete(key)
+        }
         const text = event.text
         const i = acc.messages.findIndex(
           (m) => m.id.startsWith("opt-") && m.role === "user" && m.text === text,
@@ -81,6 +91,10 @@ async function init() {
     // caller working 时刷新，turn_finished 也会把侧栏/Composer 收回 idle。
     if (record.kind === "event") {
       const payload = record.payload as HarnessEvent
+      if (payload.type === "user_steer" && queuedPrompts.get(key)?.id === payload.clientMessageId) {
+        queuedPrompts.delete(key)
+        bump()
+      }
       if (payload.type === "user_message") {
         if (payload.origin?.kind === "session") {
           running.add(key)
@@ -140,6 +154,10 @@ export function liveMessages(sessionId: string): Message[] {
 
 export function isRunning(sessionId: string): boolean {
   return running.has(sessionId)
+}
+
+export function queuedPrompt(sessionId: string): QueuedPromptView | undefined {
+  return queuedPrompts.get(sessionId)
 }
 
 export function hasUnreadSessionMessage(sessionId: string): boolean {
@@ -276,6 +294,47 @@ export async function sendPrompt(sessionId: string, value: string | PromptInput)
   }
 }
 
+export async function queueLivePrompt(sessionId: string, value: string | PromptInput) {
+  const bento = window.bento
+  if (!bento || queuedPrompts.has(sessionId)) return
+  const input = normalizePromptInput(value)
+  const id = crypto.randomUUID()
+  queuedPrompts.set(sessionId, { id, input, steerAvailable: false, state: "queued" })
+  bump()
+  const res = await bento.queuePrompt(sessionId, input, id)
+  if ("error" in res) {
+    queuedPrompts.delete(sessionId)
+    bump()
+    return res.error
+  }
+  const queued = queuedPrompts.get(sessionId)
+  if (res.status === "started") queuedPrompts.delete(sessionId)
+  else if (queued) queuedPrompts.set(sessionId, { ...queued, steerAvailable: res.steerAvailable })
+  bump()
+}
+
+export async function steerQueuedPrompt(sessionId: string) {
+  const bento = window.bento
+  const queued = queuedPrompts.get(sessionId)
+  if (!bento || !queued || !queued.steerAvailable) return
+  queuedPrompts.set(sessionId, { ...queued, state: "steering" })
+  bump()
+  const res = await bento.steerQueued(sessionId, queued.id)
+  if ("error" in res) {
+    queuedPrompts.set(sessionId, { ...queued, state: "queued" })
+    bump()
+  }
+}
+
+export async function cancelQueuedPrompt(sessionId: string) {
+  const bento = window.bento
+  const queued = queuedPrompts.get(sessionId)
+  if (!bento || !queued) return
+  queuedPrompts.delete(sessionId)
+  bump()
+  await bento.cancelQueued(sessionId, queued.id)
+}
+
 export async function cancelPrompt(sessionId: string) {
   await window.bento?.cancel(sessionId)
 }
@@ -297,6 +356,7 @@ export async function removeLive(sessionId: string) {
   loaded.delete(sessionId)
   running.delete(sessionId)
   unreadSessionMessages.delete(sessionId)
+  queuedPrompts.delete(sessionId)
   bump({ sessions: snapshot.sessions.filter((s) => s.key !== sessionId) })
 }
 

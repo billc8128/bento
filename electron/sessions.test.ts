@@ -854,26 +854,28 @@ describe("SessionManager 错误/中断路径(TRACE_DATA_PLAN §3.4 P0-1)", () =>
 
 type Deferred = { resolve: (value: { stopReason?: string }) => void; reject: (e: unknown) => void }
 
-function deferredDriver() {
+function deferredDriver(options: { steer?: boolean } = {}) {
   const received: Array<string | PromptInput> = []
+  const steered: Array<string | PromptInput> = []
   const deferreds: Deferred[] = []
   const driver: HarnessDriver = {
     id: "kimi",
     async start() {
       return {
         nativeSessionId: "collab-native",
-        capabilities: { modelSwitch: "none", effortSwitch: "none" },
+        capabilities: { modelSwitch: "none", effortSwitch: "none", ...(options.steer ? { steer: "live" as const } : {}) },
         prompt: async (input) => {
           received.push(input)
           return new Promise((resolve, reject) => deferreds.push({ resolve, reject }))
         },
         cancel: async () => {},
+        ...(options.steer ? { steer: async (input: string | PromptInput) => { steered.push(input) } } : {}),
         close: () => {},
         onExit: () => () => {},
       }
     },
   }
-  return { driver, received, deferreds }
+  return { driver, received, steered, deferreds }
 }
 
 function collabManager(dir: string, driver: HarnessDriver) {
@@ -883,6 +885,45 @@ function collabManager(dir: string, driver: HarnessDriver) {
 }
 
 describe("SessionManager 协作切片(active turn / origin / wait)", () => {
+  it("运行中只保留一条后续消息，本轮结束后自动启动", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-queued-prompt-"))
+    const { driver, received, deferreds } = deferredDriver()
+    const { manager } = collabManager(tempDir, driver)
+    const { key } = await manager.createSession({
+      harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "model",
+    })
+    const first = await manager.startPrompt(key, "第一条")
+    await expect(manager.queuePrompt(key, "下一条", "client-next")).resolves.toEqual({
+      status: "queued", steerAvailable: false,
+    })
+    await expect(manager.queuePrompt(key, "第三条", "client-third")).rejects.toThrow("已有一条")
+    deferreds[0].resolve({ stopReason: "end_turn" })
+    await first.completion
+    await vi.waitFor(() => expect(received).toHaveLength(2))
+    expect(received[1]).toEqual({ text: "下一条", attachments: [] })
+    deferreds[1].resolve({ stopReason: "end_turn" })
+  })
+
+  it("支持 steer 的 Harness 可把待发送消息立即加入当前回合", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-steer-prompt-"))
+    const { driver, steered, deferreds } = deferredDriver({ steer: true })
+    const { manager, emitted } = collabManager(tempDir, driver)
+    const { key } = await manager.createSession({
+      harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "model",
+    })
+    const first = await manager.startPrompt(key, "第一条")
+    await expect(manager.queuePrompt(key, "改变方向", "client-steer")).resolves.toEqual({
+      status: "queued", steerAvailable: true,
+    })
+    await manager.steerQueuedPrompt(key, "client-steer")
+    expect(steered).toEqual([{ text: "改变方向", attachments: [] }])
+    expect(emitted.some((record) =>
+      record.kind === "event" && record.payload.type === "user_steer" && record.payload.text === "改变方向"))
+      .toBe(true)
+    deferreds[0].resolve({ stopReason: "end_turn" })
+    await first.completion
+  })
+
   it("startPrompt 落原文+origin,connection 只收 wireText;现有 prompt 行为不变", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-collab-turn-"))
     const { driver, received, deferreds } = deferredDriver()

@@ -57,14 +57,21 @@ export type ToolCall = {
   url?: string
 }
 
+export type ActivityItem =
+  | { id: string; kind: "thinking"; text: string }
+  | { id: string; kind: "tool"; tool: ToolCall }
+  | { id: string; kind: "steer"; text: string }
+
 export type Message =
-  | { id: string; role: "user"; text: string; attachments?: { name: string; kind: "image" | "file" }[]; origin?: MessageOrigin }
+  | { id: string; role: "user"; text: string; attachments?: { name: string; kind: "image" | "file" }[]; origin?: MessageOrigin; clientMessageId?: string }
   | {
       id: string
       role: "assistant"
       text: string
       tools?: ToolCall[]
       thinking?: string
+      /** thinking/tool/steer 按真实事件顺序排列；旧历史缺失时 UI 回退旧字段。 */
+      activity?: ActivityItem[]
       /** 回合耗时 ms:本回合首个事件到最后一个事件(turn_finished / 下一个 user_message) */
       durationMs?: number
       /** 回合计划清单(来自 metadata 的 plan 事件,存在才渲染) */

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { ArrowUp, FileText, ImageIcon, Paperclip, Square, X } from "lucide-react"
+import { ArrowUp, FileText, ImageIcon, LoaderCircle, Paperclip, Square, X } from "lucide-react"
 
 import { RuntimePicker } from "@/components/RuntimePicker"
 import { FolderIcon } from "@/components/FolderIcon"
@@ -14,6 +14,8 @@ import { shouldSubmitComposerKey } from "@/core/composer-keyboard"
 import type { Effort, PromptAttachment, PromptInput, SessionScope } from "@/core/types"
 import { useProviderCatalog } from "@/lib/provider-store"
 import { COLUMN, type ComposerShape } from "@/data/styles"
+
+type LiveActivity = { label: string; detail?: string }
 
 type Attachment = PromptAttachment & { id: string; url?: string }
 
@@ -53,6 +55,8 @@ type ComposerProps = {
   onModelChange?: (providerId: string, modelId: string) => void
   onEffortChange?: (effort: Effort) => void
   onHarnessChange?: (harnessId: HarnessId) => void
+  liveActivity?: LiveActivity
+  queueFull?: boolean
 }
 
 export function Composer({
@@ -68,6 +72,8 @@ export function Composer({
   onModelChange,
   onEffortChange,
   onHarnessChange,
+  liveActivity,
+  queueFull = false,
 }: ComposerProps) {
   const { composer: shape, width } = useTraits()
   const [text, setText] = useState("")
@@ -123,11 +129,11 @@ export function Composer({
     addFiles(e.dataTransfer.files, "file")
   }
 
-  const canSend = (text.trim().length > 0 || attachments.length > 0) && Boolean(providerId && model && providerConnected)
+  const canSend = !queueFull && (text.trim().length > 0 || attachments.length > 0) && Boolean(providerId && model && providerConnected)
 
   function send() {
     const t = text.trim()
-    if ((!t && attachments.length === 0) || running) return
+    if ((!t && attachments.length === 0) || queueFull) return
     const sentAttachments = attachments.map(({ name, path, mimeType, size, kind }) => ({
       name, path, mimeType, size, kind,
     }))
@@ -141,6 +147,13 @@ export function Composer({
     <div className={OUTER[shape]}>
       {/* 输入区跟正文同宽,不然满宽风格里会出现一条居中的窄输入框 */}
       <div className={cn("w-full", COLUMN[width])}>
+        {liveActivity && (
+          <div className="pointer-events-auto mb-2 flex h-7 min-w-0 items-center gap-2 px-2 text-xs text-muted-foreground">
+            <LoaderCircle className="size-3.5 shrink-0 animate-spin text-brand motion-reduce:animate-none" />
+            <span className="shrink-0 font-medium text-foreground/75">{liveActivity.label}</span>
+            {liveActivity.detail && <span className="min-w-0 truncate">{liveActivity.detail}</span>}
+          </div>
+        )}
         <div
           onDragOver={(e) => {
             e.preventDefault()
@@ -323,17 +336,21 @@ export function Composer({
               />
             </div>
 
-            {/* 发送 / 停止 */}
-            {running ? (
-              <Button size="sm" variant="secondary" onClick={onToggleRun} className="h-7 gap-1.5 rounded-full px-2.5 text-sm">
-                <Square className="size-3 fill-current" />
-                停止
-              </Button>
-            ) : (
-              <Button size="icon" className="size-7 rounded-full" disabled={!canSend} onClick={send}>
-                <ArrowUp className="size-4" />
-                <span className="sr-only">发送</span>
-              </Button>
+            {/* 运行中仍允许发下一条；停止保持独立动作。 */}
+            <Button size="icon" className="size-7 rounded-full" disabled={!canSend} onClick={send}>
+              <ArrowUp className="size-4" />
+              <span className="sr-only">{running ? "发送为下一条" : "发送"}</span>
+            </Button>
+            {running && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button size="icon" variant="secondary" onClick={onToggleRun} className="size-7 rounded-full">
+                    <Square className="size-3 fill-current" />
+                    <span className="sr-only">停止</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>停止当前任务</TooltipContent>
+              </Tooltip>
             )}
           </div>
         </div>
