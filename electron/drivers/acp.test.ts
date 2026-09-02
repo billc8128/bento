@@ -1,4 +1,7 @@
 import { EventEmitter } from "node:events"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
 import { describe, expect, it, vi } from "vitest"
 
 import { acpMcpServers, createAcpDriver, sendLegacySessionModel } from "./acp"
@@ -83,5 +86,39 @@ describe("ACP Driver session lifecycle", () => {
     })
     expect(fake.newSession).not.toHaveBeenCalled()
     expect(connection.nativeSessionId).toBe("existing-session")
+  })
+
+  it("已连接进程后续 spawn error 会结束会话", async () => {
+    const fake = fakeOpen()
+    const connection = await createAcpDriver("opencode").start(
+      { cwd: "/workspace" },
+      vi.fn(),
+      { open: fake.open },
+    )
+    const onExit = vi.fn()
+    connection.onExit(onExit)
+
+    fake.child.emit("error", new Error("spawn failed"))
+
+    expect(onExit).toHaveBeenCalledWith(null)
+  })
+
+  it("正式启动 spawn 失败时拒绝 start 而不是打崩主进程", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-acp-driver-spawn-"))
+    const executable = path.join(dir, "opencode")
+    const previous = process.env.BENTO_OPENCODE_PATH
+    fs.writeFileSync(executable, "#!/definitely/missing/interpreter\n")
+    fs.chmodSync(executable, 0o755)
+    process.env.BENTO_OPENCODE_PATH = executable
+    try {
+      await expect(createAcpDriver("opencode").start(
+        { cwd: dir },
+        vi.fn(),
+      )).rejects.toThrow("ENOENT")
+    } finally {
+      if (previous === undefined) delete process.env.BENTO_OPENCODE_PATH
+      else process.env.BENTO_OPENCODE_PATH = previous
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

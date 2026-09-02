@@ -20,10 +20,7 @@ import {
   type CustomProviderConfig,
   type CustomModelConfig,
 } from "../src/core/provider"
-import {
-  applyPresetModelMetadata,
-  providerConfigFromPreset,
-} from "../src/core/provider-preset"
+import { providerConfigFromPreset } from "../src/core/provider-preset"
 import { getProviderPreset } from "../src/data/provider-presets"
 import {
   LEGACY_SUBSCRIPTION_PROVIDER_IDS,
@@ -257,15 +254,11 @@ export function migrateCustomProvider(config: CustomProviderConfig): CustomProvi
   }
   const presetConfig = providerConfigFromPreset(preset, [...models.values()], config.name)
   const runtimes = { ...presetConfig.runtimes, ...config.runtimes }
-  const presetModels = preset.modelDiscovery.method === "static"
-    ? preset.modelDiscovery.models
-    : []
   for (const [harnessId, runtime] of Object.entries(runtimes)) {
     if (!runtime) continue
     runtimes[harnessId as keyof typeof runtimes] = {
       ...runtime,
-      models: mergeDiscoveredModels(runtime.models, presetModels)
-        .map((model) => applyPresetModelMetadata(preset, model)),
+      models: runtime.models,
     }
   }
   for (const harnessId of config.disabledHarnesses ?? []) delete runtimes[harnessId]

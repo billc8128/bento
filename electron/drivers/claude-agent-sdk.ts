@@ -4,6 +4,7 @@ import {
   query as createSdkQuery,
   type Options,
   type Query,
+  type ModelInfo,
   type SDKMessage,
   type SDKResultMessage,
   type SDKUserMessage,
@@ -11,10 +12,11 @@ import {
 
 import { ClaudeAgentTranslator } from "./claude-agent-translator"
 import { harnessUsage } from "./usage"
-import { localHarnessExecutable } from "../harness-runtime"
+import { assertHarnessCwd, resolveHarnessRuntime, type HarnessRuntimePreference } from "../harness-runtime"
 import { isNativeProviderId } from "../../src/core/provider"
 import { normalizePromptInput } from "../../src/core/types"
 import type { HarnessConnection, HarnessDriver, HarnessStartOptions } from "./types"
+import type { ProviderDiscoveryResult } from "../provider-discovery"
 
 export type ClaudeQueryFactory = (params: Parameters<typeof createSdkQuery>[0]) => Query
 
@@ -23,6 +25,56 @@ type ClaudeImageMediaType = (typeof CLAUDE_IMAGE_MEDIA_TYPES)[number]
 
 function isClaudeImageMediaType(value: string): value is ClaudeImageMediaType {
   return CLAUDE_IMAGE_MEDIA_TYPES.some((mediaType) => mediaType === value)
+}
+
+function claudeExecutable(preference: HarnessRuntimePreference): Promise<string | undefined> {
+  return resolveHarnessRuntime(
+    "claude-code",
+    preference,
+    (path) => path,
+    async () => undefined,
+  )
+}
+
+export function parseClaudeModels(models: ModelInfo[]): ProviderDiscoveryResult {
+  return {
+    models: models.map((model) => {
+      const efforts = model.supportedEffortLevels?.map((effort) =>
+        effort === "xhigh" ? "max" as const : effort) ?? []
+      return {
+        id: model.value,
+        name: model.displayName,
+        description: model.description,
+        reasoning: model.supportsEffort === true || model.supportsAdaptiveThinking === true,
+        ...(efforts.length > 0 ? { efforts: [...new Set(efforts)] } : {}),
+      }
+    }),
+  }
+}
+
+export async function discoverClaudeModels(
+  cwd: string,
+  proxyEnv?: HarnessStartOptions["proxyEnv"],
+  preference: HarnessRuntimePreference = "local",
+  deps: { query?: ClaudeQueryFactory } = {},
+): Promise<ProviderDiscoveryResult> {
+  assertHarnessCwd(cwd)
+  const executable = await claudeExecutable(preference)
+  const sdk = (deps.query ?? createSdkQuery)({
+    prompt: "",
+    options: {
+      cwd,
+      env: claudeSdkEnv(proxyEnv),
+      ...(executable ? { pathToClaudeCodeExecutable: executable } : {}),
+      settingSources: ["project"],
+      tools: [],
+    },
+  })
+  try {
+    return parseClaudeModels(await sdk.supportedModels())
+  } finally {
+    sdk.close()
+  }
 }
 
 export function claudeSdkEnv(proxyEnv?: HarnessStartOptions["proxyEnv"]): NodeJS.ProcessEnv {
@@ -60,7 +112,9 @@ export const claudeAgentSdkDriver: HarnessDriver = {
       throw new Error("Claude Agent SDK 缺少 Bento provider 路由环境")
     }
     const queryFactory = deps.query ?? createSdkQuery
-    const localExecutable = localHarnessExecutable("claude-code")?.path
+    const localExecutable = await claudeExecutable(
+      options.runtimePreference ?? (options.proxyEnv ? "managed" : "local"),
+    )
     const nativeSessionId = options.nativeSessionId ?? randomUUID()
     let resume = options.nativeSessionId
     let modelId = options.modelId

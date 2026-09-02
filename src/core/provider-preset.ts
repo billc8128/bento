@@ -46,7 +46,7 @@ export type ProviderDiscoveryParser =
 
 export type ProviderModelDiscovery =
   | { method: "http"; url: string; parser: ProviderDiscoveryParser }
-  | { method: "static"; models: CustomModelConfig[] }
+  | { method: "manual" }
   | { method: "adapter"; adapter: string }
 
 export type ProviderPreset = {
@@ -59,20 +59,9 @@ export type ProviderPreset = {
   auth: ProviderPresetAuth
   runtimes: Partial<Record<CustomHarnessId, ProviderPresetRuntime>>
   modelDiscovery: ProviderModelDiscovery
-  /** 模型列表接口不返回能力时，用预设补齐已知的推理模型。 */
-  reasoningModelIds?: string[]
   sourceIds: string[]
   /** false 表示已经纳入目录，但必须通过专用 adapter/本机来源连接。 */
   directConnect: boolean
-}
-
-export function applyPresetModelMetadata(
-  preset: ProviderPreset,
-  model: CustomModelConfig,
-): CustomModelConfig {
-  return preset.reasoningModelIds?.includes(model.id)
-    ? { ...model, reasoning: true }
-    : model
 }
 
 export type ProviderPresetView = Omit<ProviderPreset, "auth"> & {
@@ -114,7 +103,7 @@ export function providerConfigFromPreset(
       ...(preset.auth.method === "apiKey"
         ? { auth: { inference: preset.auth.inference, ...(preset.auth.discovery ? { discovery: preset.auth.discovery } : {}) } }
         : {}),
-      models: models.map((model) => applyPresetModelMetadata(preset, model)),
+      models: models.map((model) => ({ ...model })),
     }
   }
   return {

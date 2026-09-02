@@ -65,18 +65,14 @@ describe("ProviderRegistry", () => {
     }
   })
 
-  it("OpenAI OAuth 模型对 Responses-compatible 三方 Harness 可见", async () => {
+  it("OpenAI OAuth 未完成账户发现前不发布静态模型", async () => {
     const registry = new ProviderRegistry(undefined, (config) => config.id === "openai")
-    for (const harnessId of ["pi", "omp", "hermes", "kimi", "opencode"] as const) {
+    for (const harnessId of ["codex", "pi", "omp", "hermes", "kimi", "opencode"] as const) {
       const providers = await registry.list({ harnessId, cwd: "/tmp" })
       expect(providers.find((provider) => provider.id === "openai")).toMatchObject({
         connected: true,
-        models: {
-          [harnessId]: [{
-            id: ["pi", "omp", "opencode"].includes(harnessId) ? "bento/gpt-5.4" : "gpt-5.4",
-            name: "GPT-5.4",
-          }],
-        },
+        modelDiscovery: "idle",
+        models: { [harnessId]: [] },
       })
     }
   })
@@ -120,13 +116,13 @@ describe("ProviderRegistry", () => {
     expect(calls).toBe(1)
   })
 
-  it("Pi 首次列表可复用旧版 Codex OAuth 磁盘缓存", async () => {
+  it("OpenAI OAuth 账户目录跨 cwd 与 Harness 复用", async () => {
     const discovery = {
       currentModelId: "gpt-5.6-sol",
       models: [{ id: "gpt-5.6-sol", name: "GPT-5.6-Sol", reasoning: true }],
     }
     const persistentCache = {
-      get: vi.fn((key: string) => key === "builtin\0openai\0codex\0/tmp" ? discovery : undefined),
+      get: vi.fn((key: string) => key === "builtin-account\0openai" ? discovery : undefined),
       set: vi.fn(),
     } as unknown as ProviderModelCache
     const registry = new ProviderRegistry(
@@ -139,9 +135,13 @@ describe("ProviderRegistry", () => {
       persistentCache,
     )
 
-    const providers = await registry.list({ harnessId: "pi", cwd: "/tmp" })
-    expect(providers.find((provider) => provider.id === "openai")?.models.pi).toMatchObject([
-      { id: "bento/gpt-5.6-sol", name: "GPT-5.6-Sol" },
+    const codex = await registry.list({ harnessId: "codex", cwd: "/project-a" })
+    const pi = await registry.list({ harnessId: "pi", cwd: "/project-b" })
+    expect(codex.find((provider) => provider.id === "openai")?.models.codex).toMatchObject([
+      { id: "gpt-5.6-sol" },
+    ])
+    expect(pi.find((provider) => provider.id === "openai")?.models.pi).toMatchObject([
+      { id: "bento/gpt-5.6-sol" },
     ])
   })
 
@@ -176,6 +176,31 @@ describe("ProviderRegistry", () => {
       { id: "bento/glm-5.3", name: "GLM 5.3", reasoning: true },
       { id: "bento/glm-5.3-flash", name: "GLM 5.3 Flash", reasoning: true },
     ])
+  })
+
+  it("builtin OAuth 不借本机 CLI 目录补模型", () => {
+    const builtin: ProviderView = {
+      id: "anthropic",
+      canonicalId: "anthropic",
+      name: "Anthropic",
+      source: "builtin",
+      authMethod: "oauth",
+      harnessIds: ["claude-code"],
+      connected: true,
+      modelDiscovery: "idle",
+      models: { "claude-code": [] },
+    }
+    const native: ProviderView = {
+      ...builtin,
+      id: "native-claude-code",
+      source: "native",
+      authMethod: "native",
+      modelDiscovery: "ready",
+      models: { "claude-code": [{ id: "native-only", name: "Native", reasoning: true }] },
+    }
+
+    expect(mergeDiscoveredModelsIntoConfigured([builtin], [native], "claude-code"))
+      .toEqual([builtin])
   })
 
   it("本机 CLI 尚未发现真实模型时不发布默认哨兵", async () => {
@@ -327,7 +352,7 @@ describe("ProviderRegistry", () => {
     expect(native?.defaultModelIds?.codex).toBe("gpt-5.4")
   })
 
-  it("本机 Claude Code 发布 CLI 公开的稳定模型别名", async () => {
+  it("本机 Claude Code 只发布 SDK 实际发现的模型", async () => {
     const registry = new ProviderRegistry(
       undefined,
       undefined,
@@ -338,16 +363,21 @@ describe("ProviderRegistry", () => {
         usable: true,
         fallbackAvailable: true,
       }),
+      async () => ({
+        models: [
+          { id: "actual-opus", name: "Actual Opus", reasoning: true },
+          { id: "actual-sonnet", name: "Actual Sonnet", reasoning: true },
+        ],
+      }),
     )
 
     const providers = await registry.list({ harnessId: "claude-code", cwd: "/tmp", discover: true })
     const native = providers.find((provider) => provider.id === "native-claude-code")
     expect(native?.models["claude-code"]?.map((model) => model.id)).toEqual([
-      "fable",
-      "opus",
-      "sonnet",
+      "actual-opus",
+      "actual-sonnet",
     ])
-    expect(native?.defaultModelIds?.["claude-code"]).toBe("fable")
+    expect(native?.defaultModelIds?.["claude-code"]).toBe("actual-opus")
   })
 
   it("本机 CLI 删除后，旧 native 会话允许受管 fallback 恢复", async () => {
@@ -376,28 +406,30 @@ describe("ProviderRegistry", () => {
     )).toBe(false)
   })
 
-  it("builtin provider 连接态来自凭证判定,模型来自身份卡", async () => {
+  it("builtin provider 连接态来自凭证判定,账户发现前不发布模型", async () => {
     const registry = new ProviderRegistry()
     const [provider] = await registry.list({ harnessId: "codex" })
     expect(provider).toMatchObject({
       id: "openai",
       source: "builtin",
       connected: false,
-      modelDiscovery: "ready",
+      modelDiscovery: "idle",
     })
-    expect(provider.models.codex?.map((model) => model.id)).toEqual(["gpt-5.4"])
+    expect(provider.models.codex).toEqual([])
   })
 
   it("内置供应商关闭的模型保留在管理目录但不进入选择器", async () => {
     const registry = new ProviderRegistry(
       undefined,
-      undefined,
-      undefined,
+      () => true,
+      async () => ({
+        models: [{ id: "gpt-5.4", name: "GPT-5.4", reasoning: true }],
+      }),
       undefined,
       undefined,
       (_providerId, modelId) => modelId !== "gpt-5.4",
     )
-    const [provider] = await registry.list({ harnessId: "codex" })
+    const [provider] = await registry.list({ harnessId: "codex", discover: true })
     expect(provider.models.codex?.[0]?.enabled).toBe(false)
     expect(modelsForProvider(provider, "codex")).toEqual([])
   })
@@ -574,7 +606,11 @@ describe("ProviderRegistry", () => {
       modelId: "gpt-5.4",
     })).resolves.toBeNull()
 
-    const connected = new ProviderRegistry(undefined, (config) => config.id === "openai")
+    const connected = new ProviderRegistry(
+      undefined,
+      (config) => config.id === "openai",
+      async () => ({ models: [{ id: "gpt-5.4", name: "GPT-5.4", reasoning: true }] }),
+    )
     await expect(connected.resolveSelection({
       harnessId: "codex",
       cwd: "/tmp",
@@ -584,6 +620,9 @@ describe("ProviderRegistry", () => {
 
   it("显式 Bento provider 校验不启动本机 runtime 发现", async () => {
     let runtimeReads = 0
+    const discovery = {
+      models: [{ id: "gpt-5.4", name: "GPT-5.4", reasoning: true }],
+    }
     const registry = new ProviderRegistry(
       undefined,
       (config) => config.id === "openai",
@@ -592,6 +631,12 @@ describe("ProviderRegistry", () => {
         runtimeReads += 1
         throw new Error("不应读取本机 runtime")
       },
+      undefined,
+      undefined,
+      {
+        get: vi.fn((key: string) => key === "builtin-account\0openai" ? discovery : undefined),
+        set: vi.fn(),
+      } as unknown as ProviderModelCache,
     )
 
     await expect(registry.resolveSelection({

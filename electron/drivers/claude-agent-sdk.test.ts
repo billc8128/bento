@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest"
 import {
   claudeAgentSdkDriver,
   claudeSdkEnv,
+  discoverClaudeModels,
+  parseClaudeModels,
   type ClaudeQueryFactory,
 } from "./claude-agent-sdk"
 
@@ -49,6 +51,37 @@ function result(sessionId: string): SDKMessage {
 }
 
 describe("claudeAgentSdkDriver", () => {
+  it("模型目录只使用 SDK initialization 的实际返回", async () => {
+    expect(parseClaudeModels([{
+      value: "actual-model",
+      displayName: "Actual Model",
+      description: "from SDK",
+      supportsEffort: true,
+      supportedEffortLevels: ["low", "xhigh"],
+    }])).toEqual({
+      models: [{
+        id: "actual-model",
+        name: "Actual Model",
+        description: "from SDK",
+        reasoning: true,
+        efforts: ["low", "max"],
+      }],
+    })
+
+    const close = vi.fn()
+    const query = vi.fn(() => ({
+      supportedModels: vi.fn(async () => [{
+        value: "account-model",
+        displayName: "Account Model",
+        description: "available",
+      }]),
+      close,
+    }) as unknown as Query)
+    await expect(discoverClaudeModels("/tmp", undefined, "managed", { query }))
+      .resolves.toMatchObject({ models: [{ id: "account-model" }] })
+    expect(close).toHaveBeenCalledOnce()
+  })
+
   it("用隔离 env 创建 SDK session,翻译流并在后续 turn resume", async () => {
     const calls: Parameters<ClaudeQueryFactory>[0][] = []
     const query: ClaudeQueryFactory = vi.fn((params) => {
@@ -103,6 +136,7 @@ describe("claudeAgentSdkDriver", () => {
         "bento-apps": { type: "stdio", command: "/bin/node", args: ["browser.mjs"] },
       },
     })
+    expect(calls[0]?.options?.pathToClaudeCodeExecutable).toBeUndefined()
     expect(calls[1]?.options).toMatchObject({
       resume: connection.nativeSessionId,
       model: "claude-opus-4-8",

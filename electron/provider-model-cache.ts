@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
-type CacheFile = { version: 1; entries: Record<string, unknown> }
+type CacheFile = { version: 2; entries: Record<string, unknown> }
 
 export class ProviderModelCache {
   private readonly file: string
@@ -13,7 +13,7 @@ export class ProviderModelCache {
     this.file = path.join(dir, "model-cache.json")
     try {
       const saved = JSON.parse(fs.readFileSync(this.file, "utf8")) as CacheFile
-      this.entries = saved.version === 1 && saved.entries ? saved.entries : {}
+      this.entries = saved.version === 2 && saved.entries ? saved.entries : {}
     } catch {
       this.entries = {}
     }
@@ -26,7 +26,7 @@ export class ProviderModelCache {
   set(key: string, value: unknown): void {
     this.entries[key] = value
     const temp = `${this.file}.tmp`
-    fs.writeFileSync(temp, JSON.stringify({ version: 1, entries: this.entries }))
+    fs.writeFileSync(temp, JSON.stringify({ version: 2, entries: this.entries }))
     fs.renameSync(temp, this.file)
   }
 }

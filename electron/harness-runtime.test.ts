@@ -1,9 +1,14 @@
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { harnessRuntimeStatus, localHarnessExecutable } from "./harness-runtime"
+import {
+  assertHarnessCwd,
+  harnessRuntimeStatus,
+  localHarnessExecutable,
+  resolveHarnessRuntime,
+} from "./harness-runtime"
 
 let tempDir = ""
 const originalPath = process.env.PATH
@@ -17,6 +22,11 @@ afterEach(() => {
 })
 
 describe("Harness runtime resolution", () => {
+  it("在 spawn 前把无效 cwd 报成明确的目录错误", () => {
+    expect(() => assertHarnessCwd(path.join(os.tmpdir(), "bento-cwd-does-not-exist")))
+      .toThrow(/项目目录不存在或不可访问/)
+  })
+
   it("优先识别 PATH 中的本机 CLI 并读取版本", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-runtime-test-"))
     const hermes = path.join(tempDir, "hermes")
@@ -61,5 +71,42 @@ describe("Harness runtime resolution", () => {
     process.env.BENTO_PI_PATH = path.join(tempDir, "missing-pi")
 
     expect(localHarnessExecutable("pi")).toEqual({ path: pi, source: "local" })
+  })
+
+  it("native 偏好 PATH，Bento 偏好 managed，显式覆盖始终最高", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-runtime-test-"))
+    const local = path.join(tempDir, "pi")
+    const override = path.join(tempDir, "pi-override")
+    fs.writeFileSync(local, "#!/bin/sh\n")
+    fs.writeFileSync(override, "#!/bin/sh\n")
+    fs.chmodSync(local, 0o755)
+    fs.chmodSync(override, 0o755)
+    process.env.PATH = tempDir
+    const managed = vi.fn(async () => "managed")
+
+    await expect(resolveHarnessRuntime("pi", "local", (path) => path, managed))
+      .resolves.toBe(local)
+    expect(managed).not.toHaveBeenCalled()
+
+    await expect(resolveHarnessRuntime("pi", "managed", (path) => path, managed))
+      .resolves.toBe("managed")
+    process.env.BENTO_PI_PATH = override
+    await expect(resolveHarnessRuntime("pi", "managed", (path) => path, managed))
+      .resolves.toBe(override)
+  })
+
+  it("managed 不可用时才退回 PATH 中的 CLI", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-runtime-test-"))
+    const local = path.join(tempDir, "opencode")
+    fs.writeFileSync(local, "#!/bin/sh\n")
+    fs.chmodSync(local, 0o755)
+    process.env.PATH = tempDir
+
+    await expect(resolveHarnessRuntime(
+      "opencode",
+      "managed",
+      (path) => path,
+      async () => { throw new Error("download failed") },
+    )).resolves.toBe(local)
   })
 })

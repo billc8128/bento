@@ -90,6 +90,41 @@ describe("ProviderRoutingService OAuth", () => {
     routing.dispose()
   })
 
+  it("Anthropic OAuth 目录来自隔离 SDK 初始化并清理临时租约", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-anthropic-models-"))
+    dirs.push(dir)
+    const store = new CustomProviderStore(dir, memorySecrets())
+    store.writeOAuthTokens("anthropic", {
+      accessToken: "oauth-access",
+      refreshToken: "oauth-refresh",
+      expiresAt: Date.now() + 60 * 60 * 1000,
+    })
+    const discoverClaude = vi.fn(async (
+      _cwd: string,
+      proxyEnv?: { env: Record<string, string> },
+      preference?: string,
+    ) => {
+      expect(proxyEnv?.env.CLAUDE_CONFIG_DIR).toContain("cc-discovery-")
+      expect(preference).toBe("managed")
+      return { models: [{ id: "actual-claude", name: "Actual Claude", reasoning: true }] }
+    })
+    const routing = new ProviderRoutingService(
+      dir,
+      () => store,
+      undefined,
+      undefined,
+      discoverClaude,
+    )
+
+    await expect(routing.discoverProviderModels("anthropic", "claude-code", dir))
+      .resolves.toMatchObject({ models: [{ id: "actual-claude" }] })
+    expect(routing.sessionsUsing("anthropic")).toBe(0)
+    expect(fs.readdirSync(path.join(dir, "providers")).some(
+      (name) => name.startsWith("cc-discovery-"),
+    )).toBe(false)
+    routing.dispose()
+  })
+
   it("Pi 生成隔离 models.json，密钥只进进程环境", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-pi-"))
     dirs.push(dir)

@@ -67,7 +67,7 @@ function openAI(input: {
       hermes: runtime,
     },
     modelDiscovery: input.modelsUrl === false
-      ? { method: "static", models: [] }
+      ? { method: "manual" }
       : httpModels(
           input.modelsUrl ?? `${input.baseUrl.replace(/\/$/, "")}/models`,
           input.modelsParser,
@@ -82,13 +82,11 @@ function dual(input: {
   claudeBaseUrl: string
   codexBaseUrl: string
   modelsUrl?: string | false
-  staticModels?: Extract<ProviderModelDiscovery, { method: "static" }>["models"]
   region?: ProviderRegion
   category?: ProviderCategory
   codexProtocol?: "openai-chat" | "openai-responses"
   codexRequestPath?: string
   auth?: ProviderPresetAuth
-  reasoningModelIds?: string[]
 }): ProviderPreset {
   return define({
     id: input.id,
@@ -97,7 +95,6 @@ function dual(input: {
     region: input.region ?? "global",
     docsUrl: input.docsUrl,
     auth: input.auth ?? { method: "apiKey", inference: bearer },
-    ...(input.reasoningModelIds ? { reasoningModelIds: input.reasoningModelIds } : {}),
     runtimes: {
       "claude-code": { baseUrl: input.claudeBaseUrl, wireProtocol: "anthropic-messages" },
       codex: {
@@ -127,7 +124,7 @@ function dual(input: {
       },
     },
     modelDiscovery: input.modelsUrl === false
-      ? { method: "static", models: input.staticModels ?? [] }
+      ? { method: "manual" }
       : httpModels(input.modelsUrl ?? `${input.codexBaseUrl.replace(/\/$/, "")}/models`),
   })
 }
@@ -204,7 +201,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   openAI({ id: "groq", name: "Groq", baseUrl: "https://api.groq.com/openai/v1", docsUrl: "https://console.groq.com/docs/overview" }),
   openAI({ id: "huggingface", name: "Hugging Face Inference Providers", baseUrl: "https://router.huggingface.co/v1", docsUrl: "https://huggingface.co/docs/inference-providers/guides/openai" }),
   openAI({ id: "kilocode", name: "Kilo Code", baseUrl: "https://api.kilo.ai/api/gateway", docsUrl: "https://kilocode.ai/docs/" }),
-  dual({ id: "kimi-code", name: "Kimi Code", docsUrl: "https://www.kimi.com/zh-cn/help/kimi-code/third-party-agents", claudeBaseUrl: "https://api.kimi.com/coding", codexBaseUrl: "https://api.kimi.com/coding/v1", category: "plan", region: "any", modelsUrl: "https://api.kimi.com/coding/v1/models", reasoningModelIds: ["k3", "k3-256k", "kimi-for-coding", "kimi-for-coding-highspeed"] }),
+  dual({ id: "kimi-code", name: "Kimi Code", docsUrl: "https://www.kimi.com/zh-cn/help/kimi-code/third-party-agents", claudeBaseUrl: "https://api.kimi.com/coding", codexBaseUrl: "https://api.kimi.com/coding/v1", category: "plan", region: "any", modelsUrl: "https://api.kimi.com/coding/v1/models" }),
   openAI({ id: "litellm", name: "LiteLLM Proxy", baseUrl: "http://127.0.0.1:4000/v1", docsUrl: "https://docs.litellm.ai/docs/proxy/quick_start", category: "local", region: "any", auth: { method: "none" } }),
   openAI({ id: "llamacpp", name: "llama.cpp", baseUrl: "http://127.0.0.1:8080/v1", docsUrl: "https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md", category: "local", region: "any", auth: { method: "none" } }),
   openAI({ id: "lmstudio", name: "LM Studio", baseUrl: "http://127.0.0.1:1234/v1", docsUrl: "https://lmstudio.ai/docs/app/api", category: "local", region: "any", auth: { method: "none" } }),
@@ -299,13 +296,6 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     modelsUrl: false,
     category: "plan",
     region: "cn",
-    staticModels: [
-      { id: "glm-5.3", name: "GLM 5.3", reasoning: true },
-      { id: "glm-5.3-flash", name: "GLM 5.3 Flash", reasoning: true },
-      { id: "glm-5-turbo", name: "GLM 5 Turbo", reasoning: true, enabled: false },
-      { id: "glm-5.2", name: "GLM 5.2", reasoning: true, enabled: false },
-      { id: "glm-4.7", name: "GLM 4.7", reasoning: true, enabled: false },
-    ],
   }),
   dual({ id: "zai-coding-plan-global", name: "Z.ai GLM Coding Plan Global", docsUrl: "https://docs.z.ai/devpack/overview", claudeBaseUrl: "https://api.z.ai/api/anthropic", codexBaseUrl: "https://api.z.ai/api/coding/paas/v4", modelsUrl: false, category: "plan" }),
   dual({ id: "zenmux", name: "ZenMux", docsUrl: "https://docs.zenmux.ai/", claudeBaseUrl: "https://zenmux.ai/api/anthropic", codexBaseUrl: "https://zenmux.ai/api/v1", modelsUrl: false }),

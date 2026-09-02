@@ -332,10 +332,11 @@ app.whenReady().then(async () => {
         .map((provider) => [provider.id, provider]),
     )
     return configs
-      .filter((config) =>
-        config.runtimes[harnessId] &&
-        customProviders.hasCredentialFor(config, harnessId) &&
-        config.runtimes[harnessId]!.models.some((model) => model.enabled !== false))
+      .filter((config) => {
+        const models = configuredViews.get(config.id)?.models[harnessId] ?? []
+        return config.runtimes[harnessId] &&
+          customProviders.hasCredentialFor(config, harnessId) && models.length > 0
+      })
       .map((config) => {
         const runtime = config.runtimes[harnessId]!
         return {
@@ -553,10 +554,11 @@ app.whenReady().then(async () => {
     const preset = getProviderPreset(candidate.presetId)
     const apiKey = localProviderScanner.credential(candidateId)
     if (!preset || !apiKey) return { error: "credential-missing", message: "没有可复用凭证" }
-    // 来源配置自带的模型清单(omp models.json)优先于预设的静态/HTTP 发现
+    // 来源配置自带的模型清单(如 OMP models.json)优先于远端发现。
     const localModels = localProviderScanner.localModels(candidateId)
     if (localModels && localModels.length > 0) return { ok: true, models: localModels }
-    if (preset.modelDiscovery.method === "static") return { ok: true, models: preset.modelDiscovery.models }
+    if (preset.modelDiscovery.method === "manual")
+      return { error: "manual-required", message: "该供应商没有可验证的模型列表，请手动添加模型 ID" }
     if (preset.modelDiscovery.method !== "http") return { error: "adapter-required", message: "该供应商需要专用发现适配器" }
     const auth = preset.auth.method === "apiKey"
       ? preset.auth.discovery ?? preset.auth.inference
@@ -602,8 +604,8 @@ app.whenReady().then(async () => {
     const apiKey = payload.apiKey?.trim() || storedKey || undefined
     if (preset.auth.method === "apiKey" && !apiKey)
       return { error: "no-key", message: "请输入 API Key" }
-    if (preset.modelDiscovery.method === "static")
-      return { ok: true, models: preset.modelDiscovery.models }
+    if (preset.modelDiscovery.method === "manual")
+      return { error: "manual-required", message: "该供应商没有可验证的模型列表，请手动添加模型 ID" }
     if (preset.modelDiscovery.method === "adapter")
       return { error: "adapter-required", message: "该供应商需要专用模型发现适配器" }
     const auth = preset.auth.method === "apiKey"

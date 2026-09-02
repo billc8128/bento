@@ -13,6 +13,17 @@ type RuntimeDefinition = {
   fallback: "managed" | "bundled" | "missing"
 }
 
+export type HarnessRuntimePreference = "local" | "managed"
+
+export function assertHarnessCwd(cwd: string): void {
+  try {
+    if (fs.statSync(cwd).isDirectory()) return
+  } catch {
+    // 统一在下方给出面向用户的错误。
+  }
+  throw new Error(`项目目录不存在或不可访问: ${cwd}`)
+}
+
 const DEFINITIONS: Record<HarnessId, RuntimeDefinition> = {
   codex: { command: "codex", overrideEnv: "BENTO_CODEX_PATH", fallback: "managed" },
   "claude-code": { command: "claude", overrideEnv: "BENTO_CLAUDE_CODE_PATH", fallback: "bundled" },
@@ -37,22 +48,55 @@ function executableOnPath(command: string, env: NodeJS.ProcessEnv = process.env)
   return null
 }
 
+export function overrideHarnessExecutable(harnessId: HarnessId): {
+  path: string
+  source: "override"
+} | null {
+  const override = process.env[DEFINITIONS[harnessId].overrideEnv]
+  if (!override) return null
+  try {
+    fs.accessSync(override, fs.constants.X_OK)
+    return { path: override, source: "override" }
+  } catch {
+    return null
+  }
+}
+
+export function pathHarnessExecutable(harnessId: HarnessId): {
+  path: string
+  source: "local"
+} | null {
+  const executable = executableOnPath(DEFINITIONS[harnessId].command)
+  return executable ? { path: executable, source: "local" } : null
+}
+
 export function localHarnessExecutable(harnessId: HarnessId): {
   path: string
   source: "override" | "local"
 } | null {
-  const definition = DEFINITIONS[harnessId]
-  const override = process.env[definition.overrideEnv]
-  if (override) {
-    try {
-      fs.accessSync(override, fs.constants.X_OK)
-      return { path: override, source: "override" }
-    } catch {
-      // 无效覆盖不应遮住用户 PATH 中仍可用的 CLI。
-    }
+  return overrideHarnessExecutable(harnessId) ?? pathHarnessExecutable(harnessId)
+}
+
+/**
+ * 显式覆盖始终最高；native 偏好本机 CLI，Bento 偏好固定 managed/bundled。
+ * 首选 managed 安装失败时才退回 PATH，避免 Bento 会话被本机版本漂移影响。
+ */
+export async function resolveHarnessRuntime<T>(
+  harnessId: HarnessId,
+  preference: HarnessRuntimePreference,
+  fromExecutable: (path: string) => T,
+  managed: () => Promise<T>,
+): Promise<T> {
+  const override = overrideHarnessExecutable(harnessId)
+  if (override) return fromExecutable(override.path)
+  const local = pathHarnessExecutable(harnessId)
+  if (preference === "local" && local) return fromExecutable(local.path)
+  try {
+    return await managed()
+  } catch (error) {
+    if (local) return fromExecutable(local.path)
+    throw error
   }
-  const executable = executableOnPath(definition.command)
-  return executable ? { path: executable, source: "local" } : null
 }
 
 async function executableVersion(executable: string): Promise<string | undefined> {

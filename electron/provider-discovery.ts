@@ -13,8 +13,8 @@ import {
 } from "../src/data/provider-sources"
 import { getProviderPreset } from "../src/data/provider-presets"
 import { managedBinary, managedBinaryIfInstalled } from "./binaries/manager"
-import { localHarnessExecutable } from "./harness-runtime"
-import { resolvePiRpcEntry } from "./pi-rpc-entry"
+import { assertHarnessCwd, resolveHarnessRuntime } from "./harness-runtime"
+import { resolvePiCommand } from "./drivers/pi"
 import {
   fetchProviderModels,
   type FetchProviderModelsOptions,
@@ -75,34 +75,37 @@ export function parseAcpModelDiscovery(setup: unknown): ProviderDiscoveryResult 
 }
 
 async function acpCommand(harnessId: Extract<HarnessId, "kimi" | "opencode" | "omp" | "hermes">) {
-  const local = localHarnessExecutable(harnessId)
-  if (local) {
-    return { cmd: local.path, args: ["acp"] }
-  }
-  if (harnessId === "hermes") {
-    const uvx = await managedBinaryIfInstalled("uvx")
-    if (!uvx) throw new Error("Hermes 本机或已安装的 managed runtime 不可用")
-    return {
-      cmd: uvx,
-      args: ["--offline", "--python", "3.12", "--from", "hermes-agent[acp]==0.19.0", "hermes-acp"],
-    }
-  }
-  return {
-    cmd: await managedBinary(harnessId),
-    args: ["acp"],
-  }
+  return resolveHarnessRuntime(
+    harnessId,
+    "local",
+    (cmd) => ({ cmd, args: ["acp"] }),
+    async () => {
+      if (harnessId !== "hermes") {
+        return { cmd: await managedBinary(harnessId), args: ["acp"] }
+      }
+      const uvx = await managedBinaryIfInstalled("uvx")
+      if (!uvx) throw new Error("Hermes 本机或已安装的 managed runtime 不可用")
+      return {
+        cmd: uvx,
+        args: ["--offline", "--python", "3.12", "--from", "hermes-agent[acp]==0.19.0", "hermes-acp"],
+      }
+    },
+  )
 }
 
 export async function discoverAcpProvider(
   harnessId: Extract<HarnessId, "kimi" | "opencode" | "omp" | "hermes">,
   cwd: string,
 ): Promise<ProviderDiscoveryResult> {
+  assertHarnessCwd(cwd)
   const spec = await acpCommand(harnessId)
   const child = spawn(spec.cmd, spec.args, {
     stdio: ["pipe", "pipe", "pipe"],
     cwd,
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
   })
+  const spawnFailure = Promise.withResolvers<never>()
+  child.once("error", spawnFailure.reject)
   child.stderr?.resume()
   const stream = acp.ndJsonStream(
     Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>,
@@ -116,21 +119,25 @@ export async function discoverAcpProvider(
     stream,
   )
   try {
-    await connection.initialize({
-      protocolVersion: acp.PROTOCOL_VERSION,
-      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
-    })
-    return parseAcpModelDiscovery(await connection.newSession({ cwd, mcpServers: [] }))
+    return await Promise.race([
+      (async () => {
+        await connection.initialize({
+          protocolVersion: acp.PROTOCOL_VERSION,
+          clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+        })
+        return parseAcpModelDiscovery(await connection.newSession({ cwd, mcpServers: [] }))
+      })(),
+      spawnFailure.promise,
+    ])
   } finally {
     child.kill()
   }
 }
 
 export async function discoverPiProvider(cwd: string): Promise<ProviderDiscoveryResult> {
-  const local = localHarnessExecutable("pi")
-  const child = spawn(local?.path ?? process.execPath, local
-    ? ["--mode", "rpc", "--approve"]
-    : [resolvePiRpcEntry(), "--approve"], {
+  assertHarnessCwd(cwd)
+  const command = await resolvePiCommand("local")
+  const child = spawn(command.cmd, command.args, {
     cwd,
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },

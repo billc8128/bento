@@ -2,7 +2,7 @@ import type { Effort, PromptInput } from "../../src/core/types"
 import type { HarnessUsage } from "../../src/core/events"
 import type { ProviderModel } from "../../src/core/provider"
 import { managedCodexBinary } from "../binaries/manager"
-import { localHarnessExecutable } from "../harness-runtime"
+import { assertHarnessCwd, resolveHarnessRuntime, type HarnessRuntimePreference } from "../harness-runtime"
 import { CodexRpc } from "./codex-rpc"
 import { translateCodexNotification } from "./codex-translator"
 import { harnessUsage } from "./usage"
@@ -56,17 +56,30 @@ export function parseCodexModelList(value: JsonObject): ProviderDiscoveryResult 
 }
 
 /** RPC 构造可注入:测试传 fake 验证参数契约,不 spawn 真进程 */
-type RpcFactory = (cwd: string, handlers: RpcHandlers, env?: NodeJS.ProcessEnv) => CodexRpc | Promise<CodexRpc>
+type RpcFactory = (
+  cwd: string,
+  handlers: RpcHandlers,
+  env?: NodeJS.ProcessEnv,
+  runtimePreference?: HarnessRuntimePreference,
+) => CodexRpc | Promise<CodexRpc>
 
 type RpcHandlers = {
   onNotification: (method: string, params: JsonObject) => void
   onServerRequest: (method: string, params: JsonObject) => Promise<JsonObject>
 }
 
-function defaultCreateRpc(cwd: string, handlers: RpcHandlers, env?: NodeJS.ProcessEnv): Promise<CodexRpc> {
-  const local = localHarnessExecutable("codex")
-  const binary = local ? Promise.resolve(local.path) : managedCodexBinary()
-  return binary.then(
+function defaultCreateRpc(
+  cwd: string,
+  handlers: RpcHandlers,
+  env?: NodeJS.ProcessEnv,
+  runtimePreference: HarnessRuntimePreference = "local",
+): Promise<CodexRpc> {
+  return resolveHarnessRuntime(
+    "codex",
+    runtimePreference,
+    (path) => path,
+    managedCodexBinary,
+  ).then(
     (binary) => new CodexRpc(binary, cwd, handlers.onNotification, handlers.onServerRequest, env),
   )
 }
@@ -74,15 +87,16 @@ function defaultCreateRpc(cwd: string, handlers: RpcHandlers, env?: NodeJS.Proce
 export async function discoverCodexModels(
   cwd: string,
   env?: NodeJS.ProcessEnv,
-  deps: { createRpc?: RpcFactory } = {},
+  deps: { createRpc?: RpcFactory; runtimePreference?: HarnessRuntimePreference } = {},
 ): Promise<ProviderDiscoveryResult> {
+  assertHarnessCwd(cwd)
   const createRpc = deps.createRpc ?? defaultCreateRpc
   const rpc = await createRpc(cwd, {
     onNotification: () => {},
     onServerRequest: async (method) => {
       throw new Error(`模型发现不支持 Codex 服务端请求: ${method}`)
     },
-  }, env)
+  }, env, deps.runtimePreference)
   try {
     await rpc.request("initialize", {
       clientInfo: { name: "bento", title: "Bento", version: "0.3.1" },
@@ -148,7 +162,12 @@ export const codexDriver: HarnessDriver = {
     }
 
     const createRpc = (deps.createRpc ?? defaultCreateRpc) as RpcFactory
-    const rpc = await createRpc(options.cwd, handlers, options.proxyEnv?.env)
+    const rpc = await createRpc(
+      options.cwd,
+      handlers,
+      options.proxyEnv?.env,
+      options.runtimePreference ?? (options.proxyEnv ? "managed" : "local"),
+    )
     rpc.onExit(() => {
       for (const waiter of turnWaiters.values()) waiter("process_exit")
       turnWaiters.clear()

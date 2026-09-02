@@ -21,6 +21,7 @@ import type { OAuthTokens, CustomProviderStore } from "./custom-providers"
 import { RouteRegistry, startLocalModelProxy, type LocalModelProxy, type ProxyRoute } from "./model-proxy"
 import { refreshOAuthToken } from "./oauth-runner"
 import { discoverCodexModels } from "./drivers/codex"
+import { discoverClaudeModels } from "./drivers/claude-agent-sdk"
 import type { ProviderDiscoveryResult } from "./provider-discovery"
 
 export type SessionRoute = {
@@ -41,6 +42,7 @@ export class ProviderRoutingService {
     private readonly providers: () => CustomProviderStore,
     private readonly refreshToken: typeof refreshOAuthToken = refreshOAuthToken,
     private readonly discoverCodex: typeof discoverCodexModels = discoverCodexModels,
+    private readonly discoverClaude: typeof discoverClaudeModels = discoverClaudeModels,
   ) {}
 
   private refreshOAuthInBackground(
@@ -443,19 +445,36 @@ export class ProviderRoutingService {
     cwd: string,
   ): Promise<ProviderDiscoveryResult | null> {
     const config = this.providers().getProviderConfig(providerId)
-    if (providerId !== "openai" || !config?.runtimes[harnessId as keyof typeof config.runtimes]) {
+    if (!config?.runtimes[harnessId as keyof typeof config.runtimes] ||
+      (providerId !== "openai" && providerId !== "anthropic")) {
       return null
     }
     const sessionKey = `discovery-${randomUUID()}`
-    // OpenAI OAuth 是账户级目录。Codex app-server 提供稳定 model/list 探针，
-    // 但探测结果由 Provider Registry 投影给所有共享 Responses runtime 的 Harness。
-    const route = await this.issueRoute(sessionKey, providerId, "codex")
-    const proxyEnv = this.codexHomeEnv(sessionKey, route, providerId)
+    if (providerId === "openai") {
+      // OpenAI OAuth 是账户级目录。固定 managed Codex 负责 model/list，
+      // 结果再由 Provider Registry 投影给所有 Responses-compatible Harness。
+      const route = await this.issueRoute(sessionKey, providerId, "codex")
+      const proxyEnv = this.codexHomeEnv(sessionKey, route, providerId)
+      try {
+        return await this.discoverCodex(cwd, proxyEnv.env, { runtimePreference: "managed" })
+      } finally {
+        this.revokeRoute(sessionKey)
+        this.disposeCodexHome(sessionKey)
+      }
+    }
+
+    // Anthropic OAuth 同样只接受 SDK 初始化返回的账户真实目录。
+    const route = await this.issueRoute(sessionKey, providerId, "claude-code")
+    const isolated = this.claudeCodeEnv(route)
+    const configDir = this.claudeCodeConfigDir(sessionKey)
     try {
-      return await this.discoverCodex(cwd, proxyEnv.env)
+      return await this.discoverClaude(cwd, {
+        env: { ...isolated.env, CLAUDE_CONFIG_DIR: configDir },
+        strip: isolated.strip,
+      }, "managed")
     } finally {
       this.revokeRoute(sessionKey)
-      this.disposeCodexHome(sessionKey)
+      fs.rmSync(configDir, { recursive: true, force: true })
     }
   }
 

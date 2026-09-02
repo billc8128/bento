@@ -14,6 +14,7 @@ import { CollaborationError } from "../src/core/collaboration"
 import { isNativeProviderId, NATIVE_MODEL_ID } from "../src/core/provider"
 import type { Effort, PromptAttachment, PromptInput, SessionScope } from "../src/core/types"
 import { getDriver } from "./drivers/registry"
+import { assertHarnessCwd } from "./harness-runtime"
 import type { ProviderRoutingService } from "./provider-routing"
 import type { AppSessionLease } from "./app-runtime-host"
 import { appStartOptions } from "./app-harness-adapter"
@@ -232,6 +233,7 @@ export class SessionManager {
   }
 
   private async connectSession(record: SessionRecord): Promise<LiveSession> {
+    assertHarnessCwd(record.cwd)
     const legacyGlm = record.harnessId === "glm"
     if (legacyGlm) record.harnessId = "claude-code"
     const resolved = this.resolveProviderSelection
@@ -332,6 +334,7 @@ export class SessionManager {
       connection = await this.resolveDriver(record.harnessId).start(
         {
           cwd: record.cwd,
+          runtimePreference: configLease?.mode === "bento" ? "managed" : "local",
           ...(record.nativeSessionId ? { nativeSessionId: record.nativeSessionId } : {}),
           ...(record.providerId ? { providerId: record.providerId } : {}),
           ...(wireModelId ? { modelId: wireModelId } : {}),

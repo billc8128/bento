@@ -1,8 +1,27 @@
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
 import { describe, expect, it } from "vitest"
 
-import { parseAcpModelDiscovery, parsePiModelDiscovery } from "../provider-discovery"
+import { discoverAcpProvider, parseAcpModelDiscovery, parsePiModelDiscovery } from "../provider-discovery"
 
 describe("ProviderDiscoveryService ACP 解析", () => {
+  it("发现进程 spawn 失败时返回普通错误而不是未捕获异常", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-acp-spawn-"))
+    const executable = path.join(dir, "opencode")
+    const previous = process.env.BENTO_OPENCODE_PATH
+    fs.writeFileSync(executable, "#!/definitely/missing/interpreter\n")
+    fs.chmodSync(executable, 0o755)
+    process.env.BENTO_OPENCODE_PATH = executable
+    try {
+      await expect(discoverAcpProvider("opencode", dir)).rejects.toThrow("ENOENT")
+    } finally {
+      if (previous === undefined) delete process.env.BENTO_OPENCODE_PATH
+      else process.env.BENTO_OPENCODE_PATH = previous
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it("兼容读取 legacy session models", () => {
     expect(parseAcpModelDiscovery({
       models: {

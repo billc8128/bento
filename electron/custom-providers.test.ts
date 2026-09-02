@@ -158,7 +158,7 @@ describe("mergeDiscoveredModels", () => {
 })
 
 describe("CustomProviderStore", () => {
-  it("Kimi Code 预设迁移会补齐已知模型的推理能力", () => {
+  it("Kimi Code 预设迁移不再静态猜测推理能力", () => {
     const config: CustomProviderConfig = {
       id: "user-kimi-code",
       presetId: "kimi-code",
@@ -173,10 +173,10 @@ describe("CustomProviderStore", () => {
       },
     }
 
-    expect(migrateCustomProvider(config).runtimes.pi?.models[0]?.reasoning).toBe(true)
+    expect(migrateCustomProvider(config).runtimes.pi?.models[0]?.reasoning).toBeUndefined()
   })
 
-  it("智谱 Coding Plan 预设迁移会补齐静态模型清单", () => {
+  it("智谱 Coding Plan 预设迁移不再补静态模型", () => {
     const config: CustomProviderConfig = {
       id: "user-zhipu-coding-plan-cn",
       presetId: "zhipu-coding-plan-cn",
@@ -192,7 +192,7 @@ describe("CustomProviderStore", () => {
     }
 
     expect(migrateCustomProvider(config).runtimes.pi?.models.map((model) => model.id))
-      .toContain("glm-5.3-flash")
+      .toEqual(["glm-5.3"])
   })
 
   it("v1 预设配置幂等迁移到 v2，并补齐新增 Harness runtime", () => {

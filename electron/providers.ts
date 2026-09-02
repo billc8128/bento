@@ -15,6 +15,7 @@ import {
 import { type HarnessId, type HarnessRuntimeStatus } from "../src/core/harness"
 import { builtinProvidersForHarness } from "./builtin-providers"
 import { discoverCodexModels } from "./drivers/codex"
+import { discoverClaudeModels } from "./drivers/claude-agent-sdk"
 import type { ProviderModelCache } from "./provider-model-cache"
 import {
   ProviderDiscoveryService,
@@ -81,6 +82,8 @@ export function mergeDiscoveredModelsIntoConfigured(
   }
 
   return configured.map((provider) => {
+    // builtin OAuth 必须只认自己的隔离账户发现，不能借本机 CLI 目录补模型。
+    if (provider.source === "builtin") return provider
     if (!provider.canonicalId) return provider
     const sources = byCanonical.get(providerFamilyId(provider.canonicalId)) ?? []
     if (sources.length === 0) return provider
@@ -144,15 +147,9 @@ export class ProviderRegistry {
     }),
     private readonly discoverNative: NativeDiscoverer = async (harnessId, cwd) =>
       harnessId === "codex"
-        ? discoverCodexModels(cwd)
+        ? discoverCodexModels(cwd, undefined, { runtimePreference: "local" })
         : harnessId === "claude-code"
-          ? {
-              models: [
-                { id: "fable", name: "Claude Fable (latest)", reasoning: true },
-                { id: "opus", name: "Claude Opus (latest)", reasoning: true },
-                { id: "sonnet", name: "Claude Sonnet (latest)", reasoning: true },
-              ],
-            }
+          ? discoverClaudeModels(cwd, undefined, "local")
           : null,
     private readonly modelEnabled: ModelEnabledReader = () => true,
     private readonly persistentCache?: ProviderModelCache,
@@ -179,6 +176,7 @@ export class ProviderRegistry {
     return {
       ...view,
       harnessIds: [harnessId],
+      modelDiscovery: models.length > 0 ? "ready" : "idle",
       models: {
         [harnessId]: source === "builtin"
           ? models.map((model) => ({
@@ -220,20 +218,17 @@ export class ProviderRegistry {
       if (!view.connected) return view
       const key = `${provider.id}\0${options.harnessId}\0${cwd}`
       const persistentKey = `builtin\0${key}`
-      const accountKey = `${provider.id}\0${cwd}`
+      const accountKey = provider.id
       const accountPersistentKey = `builtin-account\0${accountKey}`
-      const accountCatalog = provider.id === "openai"
+      const accountCatalog = provider.auth.method === "oauth"
       let discovered = options.refresh
         ? undefined
         : this.builtinCache.get(key) ??
           (accountCatalog ? this.builtinAccountCache.get(accountKey) : undefined) ??
-          this.persistentCache?.get<ProviderDiscoveryResult>(persistentKey) ??
           (accountCatalog
-            ? this.persistentCache?.get<ProviderDiscoveryResult>(accountPersistentKey) ??
-              this.persistentCache?.get<ProviderDiscoveryResult>(
-                `builtin\0${provider.id}\0codex\0${cwd}`,
-              )
-            : undefined)
+            ? this.persistentCache?.get<ProviderDiscoveryResult>(accountPersistentKey)
+            : undefined) ??
+          this.persistentCache?.get<ProviderDiscoveryResult>(persistentKey)
       if (discovered && !this.builtinCache.has(key)) this.builtinCache.set(key, discovered)
       if (discovered && accountCatalog && !this.builtinAccountCache.has(accountKey)) {
         this.builtinAccountCache.set(accountKey, discovered)
@@ -252,6 +247,7 @@ export class ProviderRegistry {
         } catch (error) {
           return {
             ...view,
+            modelDiscovery: "failed" as const,
             discoveryError: error instanceof Error ? error.message : String(error),
           }
         }
@@ -260,6 +256,7 @@ export class ProviderRegistry {
       const published = discoveredForHarness(discovered, options.harnessId)
       return {
         ...view,
+        modelDiscovery: "ready" as const,
         models: {
           [options.harnessId]: published.models.map((model) => ({
             ...model,
@@ -408,12 +405,9 @@ export class ProviderRegistry {
           const cwd = options.cwd.trim() || os.homedir()
           const key = `${config.id}\0${options.harnessId}\0${cwd}`
           const discovered = this.builtinCache.get(key) ??
-            this.builtinAccountCache.get(`${config.id}\0${cwd}`) ??
-            this.persistentCache?.get<ProviderDiscoveryResult>(`builtin\0${key}`) ??
-            this.persistentCache?.get<ProviderDiscoveryResult>(`builtin-account\0${config.id}\0${cwd}`) ??
-            (config.id === "openai"
-              ? this.persistentCache?.get<ProviderDiscoveryResult>(`builtin\0openai\0codex\0${cwd}`)
-              : undefined)
+            this.builtinAccountCache.get(config.id) ??
+            this.persistentCache?.get<ProviderDiscoveryResult>(`builtin-account\0${config.id}`) ??
+            this.persistentCache?.get<ProviderDiscoveryResult>(`builtin\0${key}`)
           if (discovered?.models.length) {
             const published = discoveredForHarness(discovered, options.harnessId)
             provider = {

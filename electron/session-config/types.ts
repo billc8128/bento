@@ -1,8 +1,8 @@
 /**
  * SessionConfigAdapter 契约(SESSION_CONFIG_ADAPTER_PLAN §4)。
  *
- * 二进制来源(本机 PATH → managed)与配置来源(native passthrough → Bento 隔离配置)
- * 相互独立;Adapter 只负责后者。运行在 Electron main,输出租约不输出永久副本。
+ * 二进制来源与配置来源相互独立；配置模式只决定默认偏好：native 是 PATH-first，
+ * Bento 是 managed/bundled-first。Adapter 只负责配置，输出租约不输出永久副本。
  */
 
 import type { HarnessId } from "../../src/core/harness"

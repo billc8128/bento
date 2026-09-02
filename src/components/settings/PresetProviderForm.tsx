@@ -12,10 +12,10 @@ import type { CustomProviderEntry } from "@/lib/custom-provider-store"
 
 type SelectableModel = CustomModelConfig & { enabled: boolean }
 
-function initialModels(preset: ProviderPreset, editing?: CustomProviderEntry): SelectableModel[] {
+function initialModels(editing?: CustomProviderEntry): SelectableModel[] {
   const source = editing
     ? Object.values(editing.runtimes).flatMap((runtime) => runtime?.models ?? [])
-    : preset.modelDiscovery.method === "static" ? preset.modelDiscovery.models : []
+    : []
   const seen = new Set<string>()
   return source.flatMap((model) => {
     if (seen.has(model.id)) return []
@@ -46,7 +46,7 @@ export function PresetProviderForm({
   const [name, setName] = useState(editing?.name ?? preset.name)
   const [apiKey, setApiKey] = useState("")
   const [showKey, setShowKey] = useState(false)
-  const [models, setModels] = useState<SelectableModel[]>(() => initialModels(preset, editing))
+  const [models, setModels] = useState<SelectableModel[]>(() => initialModels(editing))
   const [manualId, setManualId] = useState("")
   const [query, setQuery] = useState("")
   const [loading, setLoading] = useState(false)
@@ -58,6 +58,7 @@ export function PresetProviderForm({
   const allEnabled = models.length > 0 && models.every((model) => model.enabled)
   const selectedCount = useMemo(() => models.filter((model) => model.enabled).length, [models])
   const canConnect = !needsKey || hasCredential || Boolean(apiKey.trim())
+  const manualDiscovery = preset.modelDiscovery.method === "manual"
   const canSave = Boolean(name.trim()) && canConnect && selectedCount > 0
   const q = query.trim().toLowerCase()
   const visibleModels = q ? models.filter((model) => `${model.name} ${model.id}`.toLowerCase().includes(q)) : models
@@ -97,7 +98,7 @@ export function PresetProviderForm({
   // 填入 key(或编辑态已有凭证)后防抖自动拉取;失败不对同一 key 重试,改了 key 再自动拉
   const lastAutoKey = useRef<string | null>(null)
   useEffect(() => {
-    if (fetched || loading) return
+    if (manualDiscovery || fetched || loading) return
     const key = apiKey.trim()
     const ready = needsKey ? key.length > 0 || hasCredential : true
     const signature = needsKey && hasCredential && !key ? "__saved__" : key
@@ -107,7 +108,7 @@ export function PresetProviderForm({
       void discoverRef.current()
     }, 800)
     return () => clearTimeout(timer)
-  }, [apiKey, fetched, loading, needsKey, hasCredential])
+  }, [apiKey, fetched, loading, needsKey, hasCredential, manualDiscovery])
 
   function addManualModel() {
     const id = manualId.trim()
@@ -208,10 +209,14 @@ export function PresetProviderForm({
 
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <Button type="button" variant="outline" disabled={loading || !canConnect} onClick={() => void discover()}>
-                {loading && <Loader2 className="animate-spin" />}
-                {fetched ? "刷新模型" : "获取模型列表"}
-              </Button>
+              {manualDiscovery ? (
+                <span className="text-xs text-muted-foreground">该供应商不提供可验证的模型列表，请手动添加模型 ID。</span>
+              ) : (
+                <Button type="button" variant="outline" disabled={loading || !canConnect} onClick={() => void discover()}>
+                  {loading && <Loader2 className="animate-spin" />}
+                  {fetched ? "刷新模型" : "获取模型列表"}
+                </Button>
+              )}
               {models.length > 0 && (
                 <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
                   全部展示

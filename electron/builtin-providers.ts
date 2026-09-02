@@ -2,21 +2,12 @@
 
 import type { CustomProviderConfig } from "../src/core/provider"
 
-const REASONING_EFFORTS = ["low", "medium", "high"] as const
-
 const OPENAI_OAUTH_RUNTIME = {
   baseUrl: "https://chatgpt.com/backend-api/codex",
   requestPath: "/responses",
   wireProtocol: "openai-responses" as const,
-  models: [
-    {
-      id: "gpt-5.4",
-      name: "GPT-5.4",
-      reasoning: true,
-      reasoningEfforts: [...REASONING_EFFORTS],
-      defaultEffort: "medium" as const,
-    },
-  ],
+  // OAuth 可用模型只认账户的 model/list；禁止用发布时静态清单伪造权限。
+  models: [],
 }
 
 export const BUILTIN_PROVIDER_IDS = ["anthropic", "openai"] as const
@@ -42,23 +33,7 @@ export const BUILTIN_PROVIDERS: Record<BuiltinProviderId, CustomProviderConfig> 
       "claude-code": {
         baseUrl: "https://api.anthropic.com",
         wireProtocol: "anthropic-messages",
-        models: [
-          {
-            id: "claude-opus-4-8",
-            name: "Claude Opus 4.8",
-            reasoning: true,
-            reasoningEfforts: [...REASONING_EFFORTS],
-            defaultEffort: "medium",
-          },
-          {
-            id: "claude-sonnet-4-6",
-            name: "Claude Sonnet 4.6",
-            reasoning: true,
-            reasoningEfforts: [...REASONING_EFFORTS],
-            defaultEffort: "medium",
-          },
-          { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
-        ],
+        models: [],
       },
     },
   },

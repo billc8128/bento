@@ -308,6 +308,7 @@ describe("Kimi bento adapter 集成", () => {
       harnessId: "kimi", cwd: dir, providerId: "native-kimi", modelId: "kimi-code/k3",
     })
     // native:无 env 注入、无临时目录,原始 model id
+    expect(starts[0]!.runtimePreference).toBe("local")
     expect(starts[0]!.proxyEnv).toBeUndefined()
     expect(starts[0]!.modelId).toBe("kimi-code/k3")
 
@@ -496,6 +497,7 @@ describe("OpenCode bento adapter 集成", () => {
     })
 
     expect(starts).toHaveLength(1)
+    expect(starts[0]!.runtimePreference).toBe("managed")
     const configFile = starts[0]!.proxyEnv!.env.OPENCODE_CONFIG!
     expect(configFile).toContain("opencode-bento-")
     const text = fs.readFileSync(configFile, "utf8")

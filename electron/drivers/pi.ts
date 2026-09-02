@@ -5,7 +5,7 @@ import { countContentLines, diffStatFromOldNew } from "../../src/core/diffstat"
 import { harnessUsage } from "./usage"
 import type { HarnessEvent, HarnessToolDiff, HarnessToolKind, HarnessUsage } from "../../src/core/events"
 import { normalizePromptInput, type Effort, type PromptInput } from "../../src/core/types"
-import { localHarnessExecutable } from "../harness-runtime"
+import { resolveHarnessRuntime, type HarnessRuntimePreference } from "../harness-runtime"
 import { resolvePiRpcEntry } from "../pi-rpc-entry"
 import type { HarnessCapabilities, HarnessConnection, HarnessDriver } from "./types"
 
@@ -33,6 +33,17 @@ type PiInputCommand = {
   type: "prompt" | "steer"
   message: string
   images?: Array<{ type: "image"; data: string; mimeType: string }>
+}
+
+type PiCommand = { cmd: string; args: string[] }
+
+export function resolvePiCommand(preference: HarnessRuntimePreference): Promise<PiCommand> {
+  return resolveHarnessRuntime(
+    "pi",
+    preference,
+    (cmd) => ({ cmd, args: ["--mode", "rpc", "--approve"] }),
+    async () => ({ cmd: process.execPath, args: [resolvePiRpcEntry(), "--approve"] }),
+  )
 }
 
 /** prompt 与 steer 必须共享完全相同的附件语义：普通文件作为本地路径上下文，
@@ -191,23 +202,21 @@ class PiRpcProcess {
   private exitCode: number | null | undefined
 
   constructor(
+    command: PiCommand,
     cwd: string,
     nativeSessionId: string | undefined,
     private readonly emit: (event: HarnessEvent) => void,
     proxyEnv?: { env: Record<string, string>; strip?: string[] },
     app?: { args?: string[]; env?: Record<string, string> },
   ) {
-    const local = localHarnessExecutable("pi")
-    const args = local
-      ? ["--mode", "rpc", "--approve"]
-      : [resolvePiRpcEntry(), "--approve"]
+    const args = [...command.args]
     args.push(...(app?.args ?? []))
     if (nativeSessionId) args.push("--session", nativeSessionId)
     const env = Object.fromEntries(
       Object.entries(process.env).filter(([key]) =>
         !(proxyEnv?.strip ?? []).some((prefix) => key.startsWith(prefix))),
     )
-    this.child = spawn(local?.path ?? process.execPath, args, {
+    this.child = spawn(command.cmd, args, {
       cwd,
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...env, ...proxyEnv?.env, ...app?.env, ELECTRON_RUN_AS_NODE: "1" },
@@ -331,7 +340,10 @@ export function piModelRef(value: string): { provider: string; modelId: string }
 export const piDriver: HarnessDriver = {
   id: "pi",
   async start(options, emit): Promise<HarnessConnection> {
-    const rpc = new PiRpcProcess(options.cwd, options.nativeSessionId, emit, options.proxyEnv, {
+    const command = await resolvePiCommand(
+      options.runtimePreference ?? (options.proxyEnv ? "managed" : "local"),
+    )
+    const rpc = new PiRpcProcess(command, options.cwd, options.nativeSessionId, emit, options.proxyEnv, {
       args: options.appArgs,
       env: options.appEnv,
     })

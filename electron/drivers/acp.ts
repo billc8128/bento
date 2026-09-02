@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url"
 import * as acp from "@agentclientprotocol/sdk"
 
 import { managedBinary, managedUvxBinary } from "../binaries/manager"
-import { localHarnessExecutable } from "../harness-runtime"
+import { resolveHarnessRuntime, type HarnessRuntimePreference } from "../harness-runtime"
 import { harnessUsage } from "./usage"
 import { translateAcpUpdate } from "./acp-translator"
 import type { HarnessUsage } from "../../src/core/events"
@@ -63,29 +63,24 @@ type AcpOpen = (
   isLoading: () => boolean,
   proxyEnv?: HarnessStartOptions["proxyEnv"],
   usage?: { current: HarnessUsage | undefined },
+  runtimePreference?: HarnessRuntimePreference,
 ) => Promise<AcpOpenResult>
 
-async function harnessCommand(id: AcpDriverId): Promise<SpawnSpec> {
-  const local = localHarnessExecutable(id)
-  if (local) {
-    return {
-      cmd: local.path,
-      args: ["acp"],
-    }
-  }
-  switch (id) {
-    case "kimi":
-      return { cmd: await managedBinary("kimi"), args: ["acp"] }
-    case "opencode":
-      return { cmd: await managedBinary("opencode"), args: ["acp"] }
-    case "omp":
-      return { cmd: await managedBinary("omp"), args: ["acp"] }
-    case "hermes":
-      return {
-        cmd: await managedUvxBinary(),
-        args: ["--python", "3.12", "--from", "hermes-agent[acp]==0.19.0", "hermes-acp"],
-      }
-  }
+async function harnessCommand(
+  id: AcpDriverId,
+  preference: HarnessRuntimePreference,
+): Promise<SpawnSpec> {
+  return resolveHarnessRuntime(
+    id,
+    preference,
+    (cmd) => ({ cmd, args: ["acp"] }),
+    async () => id === "hermes"
+      ? {
+          cmd: await managedUvxBinary(),
+          args: ["--python", "3.12", "--from", "hermes-agent[acp]==0.19.0", "hermes-acp"],
+        }
+      : { cmd: await managedBinary(id), args: ["acp"] },
+  )
 }
 
 function cleanEnv(spec: SpawnSpec): NodeJS.ProcessEnv {
@@ -110,8 +105,9 @@ class AcpDriver implements HarnessDriver {
     isLoading: () => boolean,
     proxyEnv?: { env: Record<string, string>; strip?: string[] },
     usage?: { current: HarnessUsage | undefined },
+    runtimePreference: HarnessRuntimePreference = "local",
   ) {
-    const spec = await harnessCommand(this.id)
+    const spec = await harnessCommand(this.id, runtimePreference)
     // provider 会话若有 host 路由 env,先 strip 宿主同名前缀再注入。
     const merged: SpawnSpec = proxyEnv
       ? {
@@ -125,6 +121,8 @@ class AcpDriver implements HarnessDriver {
       cwd,
       env: cleanEnv(merged),
     })
+    const spawnFailure = Promise.withResolvers<never>()
+    child.once("error", spawnFailure.reject)
     child.stderr.on("data", (data: Buffer) => {
       console.error(`[${this.id}]`, data.toString().trimEnd())
     })
@@ -159,10 +157,13 @@ class AcpDriver implements HarnessDriver {
     const conn = new acp.ClientSideConnection(() => clientImpl, stream)
     let init: acp.InitializeResponse
     try {
-      init = await conn.initialize({
-        protocolVersion: acp.PROTOCOL_VERSION,
-        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
-      })
+      init = await Promise.race([
+        conn.initialize({
+          protocolVersion: acp.PROTOCOL_VERSION,
+          clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+        }),
+        spawnFailure.promise,
+      ])
     } catch (error) {
       child.kill()
       throw error
@@ -187,6 +188,7 @@ class AcpDriver implements HarnessDriver {
       () => loading,
       options.proxyEnv,
       usage,
+      options.runtimePreference ?? (options.proxyEnv ? "managed" : "local"),
     )
     if (nativeSessionId && init.agentCapabilities?.sessionCapabilities?.resume) {
       try {
@@ -308,10 +310,13 @@ class AcpDriver implements HarnessDriver {
   ): HarnessConnection {
     const exitListeners = new Set<(code: number | null) => void>()
     let exitCode: number | null | undefined
-    child.on("exit", (code) => {
+    const finish = (code: number | null) => {
+      if (exitCode !== undefined) return
       exitCode = code
       for (const listener of exitListeners) listener(code)
-    })
+    }
+    child.on("exit", finish)
+    child.on("error", () => finish(null))
     return {
       nativeSessionId,
       capabilities: {
