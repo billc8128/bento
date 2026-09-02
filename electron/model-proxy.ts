@@ -147,6 +147,31 @@ export function upstreamUrlOf(route: ProxyRoute, suffix: string, search: string)
   return `${base}${path}${search}`
 }
 
+/**
+ * ChatGPT codex 后端只认 Codex CLI 实际发送的字段集;omp/pi/kimi 对
+ * openai-responses provider 会各自默认附加 max_output_tokens(omp http-400
+ * 日志 + pi 0.84 复现实测:400 Unsupported parameter: max_output_tokens)。
+ * 只对 ChatGPT codex 上游剥离:标准 OpenAI Responses API 支持该参数,不能误剥。
+ * 判定口径与 provider-routing.resolveRoute 的 headerOverrides 一致。
+ */
+const CHATGPT_CODEX_UNSUPPORTED_PARAMS = new Set(["max_output_tokens"])
+
+export function isChatGptCodexUpstream(route: ProxyRoute): boolean {
+  return route.providerId === "openai" || route.baseUrl.includes("chatgpt.com/backend-api/codex")
+}
+
+export function stripUnsupportedResponsesParams(body: Buffer): Buffer {
+  const request = JSON.parse(body.toString("utf8")) as Record<string, unknown>
+  let stripped = false
+  for (const key of CHATGPT_CODEX_UNSUPPORTED_PARAMS) {
+    if (key in request) {
+      delete request[key]
+      stripped = true
+    }
+  }
+  return stripped ? Buffer.from(JSON.stringify(request)) : body
+}
+
 export function normalizeOpenAiChatBody(body: Buffer): Buffer {
   const request = JSON.parse(body.toString("utf8")) as { messages?: Array<Record<string, unknown>> }
   if (!Array.isArray(request.messages) || !request.messages.some((message) => message.role === "developer")) {
@@ -233,6 +258,18 @@ async function handleRequest(
       /\/chat\/completions\/?$/.test(split.suffix)
     ) {
       const normalized = normalizeOpenAiChatBody(body)
+      if (normalized !== body) {
+        body = normalized
+        delete headers["content-length"]
+      }
+    }
+    if (
+      body &&
+      route.wireProtocol === "openai-responses" &&
+      isChatGptCodexUpstream(route) &&
+      /\/(v1\/)?responses\/?$/.test(split.suffix)
+    ) {
+      const normalized = stripUnsupportedResponsesParams(body)
       if (normalized !== body) {
         body = normalized
         delete headers["content-length"]

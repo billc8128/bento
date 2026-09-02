@@ -200,6 +200,8 @@ class PiRpcProcess {
   /** §7 P4:turn_end 的 assistant 消息带 usage(input/output/cost.total) */
   usage: HarnessUsage | undefined
   private exitCode: number | null | undefined
+  /** 崩溃时 Pi 只给退出码;留最后几行 stderr 让「进程退出(1)」可读可排查。 */
+  private readonly stderrTail: string[] = []
 
   constructor(
     command: PiCommand,
@@ -223,7 +225,12 @@ class PiRpcProcess {
     })
     this.child.stdout!.on("data", (chunk: Buffer) => this.read(chunk.toString()))
     this.child.stderr!.on("data", (chunk: Buffer) => {
-      console.error("[pi]", chunk.toString().trimEnd())
+      const text = chunk.toString().trimEnd()
+      console.error("[pi]", text)
+      if (text) {
+        this.stderrTail.push(text)
+        if (this.stderrTail.length > 5) this.stderrTail.shift()
+      }
     })
     this.child.on("exit", (code) => this.handleExit(code))
     this.child.on("error", (error) => this.fail(error))
@@ -278,7 +285,11 @@ class PiRpcProcess {
 
   private handleExit(code: number | null) {
     this.exitCode = code
-    this.fail(new Error(`Pi 进程退出(${code ?? "signal"})`))
+    // stderr 可能带 loopback token/会话 id,与 extension_error 同口径脱敏
+    const detail = this.stderrTail.join("\n")
+      .replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, "<redacted>")
+      .slice(-500)
+    this.fail(new Error(`Pi 进程退出(${code ?? "signal"})${detail ? `:${detail}` : ""}`))
     for (const listener of this.exitListeners) listener(code)
   }
 

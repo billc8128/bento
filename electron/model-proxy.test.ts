@@ -4,9 +4,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import {
   buildProxyHeaders,
+  isChatGptCodexUpstream,
   RouteRegistry,
   splitTokenPath,
   startLocalModelProxy,
+  stripUnsupportedResponsesParams,
   upstreamUrlOf,
   normalizeOpenAiChatBody,
   type LocalModelProxy,
@@ -75,6 +77,44 @@ describe("normalizeOpenAiChatBody", () => {
         { role: "user", content: "hi" },
       ],
     })
+  })
+})
+
+describe("ChatGPT codex 上游的 responses 参数剥离", () => {
+  const codexRoute: ProxyRoute = {
+    providerId: "openai",
+    agent: "omp",
+    baseUrl: "https://chatgpt.com/backend-api/codex",
+    wireProtocol: "openai-responses",
+    apiKey: "tok",
+  }
+
+  it("识别 ChatGPT codex 上游:openai builtin 或 backend-api/codex URL", () => {
+    expect(isChatGptCodexUpstream(codexRoute)).toBe(true)
+    expect(isChatGptCodexUpstream({ ...codexRoute, providerId: "user-x" })).toBe(true)
+    expect(isChatGptCodexUpstream({
+      ...codexRoute,
+      providerId: "user-x",
+      baseUrl: "https://api.openai.com/v1",
+    })).toBe(false)
+  })
+
+  it("剥掉 max_output_tokens,其余字段原样保留;无可剥时原 buffer 返回", () => {
+    const body = Buffer.from(JSON.stringify({
+      model: "gpt-5.5",
+      stream: true,
+      store: false,
+      max_output_tokens: 64000,
+      reasoning: { effort: "high" },
+    }))
+    expect(JSON.parse(stripUnsupportedResponsesParams(body).toString("utf8"))).toEqual({
+      model: "gpt-5.5",
+      stream: true,
+      store: false,
+      reasoning: { effort: "high" },
+    })
+    const clean = Buffer.from(JSON.stringify({ model: "gpt-5.5", stream: true }))
+    expect(stripUnsupportedResponsesParams(clean)).toBe(clean)
   })
 })
 
@@ -372,5 +412,84 @@ describe("openai-chat → responses 桥全链路(codex 方向,fake openai 上游
     expect(text).toContain('"type":"function_call","status":"in_progress","call_id":"c1","name":"read"')
     expect(text).toContain("event: response.completed")
     expect(text).toContain('"input_tokens":4')
+  })
+})
+
+describe("openai-responses 直通参数剥离(omp/pi → ChatGPT codex 后端)", () => {
+  let proxy: LocalModelProxy
+  let upstream: http.Server
+  const routes = new RouteRegistry()
+  const seenBodies: Record<string, unknown>[] = []
+
+  beforeAll(async () => {
+    upstream = http.createServer((req, res) => {
+      let raw = ""
+      req.on("data", (chunk) => { raw += chunk })
+      req.on("end", () => {
+        seenBodies.push(JSON.parse(raw) as Record<string, unknown>)
+        res.writeHead(200, { "content-type": "application/json" })
+        res.end(JSON.stringify({ ok: true }))
+      })
+    })
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
+    const upstreamBase = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`
+    proxy = await startLocalModelProxy(routes)
+    // ChatGPT codex 上游:providerId=openai(builtin)即命中剥离口径,
+    // baseUrl 用 fake 上游代替真实 backend-api/codex
+    routes.issue("tok-codex", {
+      providerId: "openai",
+      agent: "omp",
+      baseUrl: upstreamBase,
+      requestPath: "/responses",
+      wireProtocol: "openai-responses",
+      apiKey: "tok",
+    })
+    // 标准 Responses API 上游:max_output_tokens 合法,必须透传
+    routes.issue("tok-standard", {
+      providerId: "user-openai-api",
+      agent: "pi",
+      baseUrl: upstreamBase,
+      wireProtocol: "openai-responses",
+      apiKey: "sk",
+    })
+  })
+  afterAll(() => {
+    proxy.close()
+    upstream.close()
+  })
+
+  it("ChatGPT codex 上游:剥离 max_output_tokens,保留 stream/store/reasoning", async () => {
+    seenBodies.length = 0
+    const res = await fetch(`http://127.0.0.1:${proxy.port}/s/tok-codex/responses`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "gpt-5.5",
+        stream: true,
+        store: false,
+        max_output_tokens: 64000,
+        reasoning: { effort: "high" },
+        input: [],
+      }),
+    })
+    expect(res.status).toBe(200)
+    expect(seenBodies[0]).toEqual({
+      model: "gpt-5.5",
+      stream: true,
+      store: false,
+      reasoning: { effort: "high" },
+      input: [],
+    })
+  })
+
+  it("标准 Responses 上游:max_output_tokens 原样透传", async () => {
+    seenBodies.length = 0
+    const res = await fetch(`http://127.0.0.1:${proxy.port}/s/tok-standard/responses`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "gpt-5.5", max_output_tokens: 64000, input: [] }),
+    })
+    expect(res.status).toBe(200)
+    expect(seenBodies[0]).toMatchObject({ max_output_tokens: 64000 })
   })
 })

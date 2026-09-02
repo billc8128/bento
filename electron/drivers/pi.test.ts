@@ -108,6 +108,30 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
   })
 })
 
+describe("Pi 进程退出错误可读性", () => {
+  it("启动即退出(1)时,错误带 stderr 尾部并脱敏 UUID", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-pi-exit-"))
+    const executable = path.join(dir, "pi")
+    fs.writeFileSync(executable, `#!/usr/bin/env node
+process.stderr.write("Error: Cannot find module for 123e4567-e89b-12d3-a456-426614174000\\n")
+process.exit(1)
+`)
+    fs.chmodSync(executable, 0o755)
+
+    const previousOverride = process.env.BENTO_PI_PATH
+    process.env.BENTO_PI_PATH = executable
+    try {
+      await expect(piDriver.start({ cwd: dir }, () => {})).rejects.toThrow(
+        /^Pi 进程退出\(1\):Error: Cannot find module for <redacted>$/,
+      )
+    } finally {
+      if (previousOverride === undefined) delete process.env.BENTO_PI_PATH
+      else process.env.BENTO_PI_PATH = previousOverride
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe("translatePiEvent", () => {
   it("翻译文本和思考增量", () => {
     expect(
