@@ -4,8 +4,11 @@ export type BinaryArtifact = {
   url: string
   sha256: string
   archive: "tar.gz" | "zip" | "binary"
+  /** 解包后的入口;bundle=true 时是目录,整目录入 installDir。 */
   archiveEntry: string
   executable: string
+  /** true = 目录型产物(如 PyInstaller onedir),整目录复制,不做单文件抽取。 */
+  bundle?: boolean
 }
 
 export type BinaryManifestEntry = {
@@ -49,12 +52,15 @@ export const BINARY_MANIFEST: Record<ManagedBinaryName, BinaryManifestEntry> = {
     version: "1.49.0",
     overrideEnv: "BENTO_KIMI_PATH",
     platforms: {
+      // onefile 每次启动都要重解压整个 Python 运行时(实测 10-30s);onedir 只在
+      // 首次 exec 慢一次(Gatekeeper),之后 initialize <1s。
       "darwin-arm64": {
-        url: "https://github.com/MoonshotAI/kimi-cli/releases/download/1.49.0/kimi-1.49.0-aarch64-apple-darwin.tar.gz",
-        sha256: "15018b20b203aee09658fdc64840c4846fc17c108d8dba1a19a95581d3ce2921",
+        url: "https://github.com/MoonshotAI/kimi-cli/releases/download/1.49.0/kimi-1.49.0-aarch64-apple-darwin-onedir.tar.gz",
+        sha256: "3533d7197a3cf807d7ba3b67d54637180544565f6277870f9bcf639ef21754fb",
         archive: "tar.gz",
         archiveEntry: "kimi",
-        executable: "kimi",
+        executable: "kimi/kimi",
+        bundle: true,
       },
     },
   },

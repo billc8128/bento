@@ -128,8 +128,20 @@ export class BinaryManager {
       }
       await fs.promises.access(source, fs.constants.R_OK)
 
+      // 产物 sha 变化(如换 onefile→onedir)时清掉旧布局,避免文件/目录路径冲突。
+      await fs.promises.rm(installDir, { recursive: true, force: true })
       await fs.promises.mkdir(installDir, { recursive: true })
-      await fs.promises.copyFile(source, executable)
+      if (artifact.bundle) {
+        // 目录型产物(onedir):整目录复制进 installDir,保持运行时依赖布局。
+        // verbatimSymlinks:默认模式会把相对 symlink 改写成指向解包临时目录的
+        // 绝对路径,临时目录一清就断链(PyInstaller 的 _internal/Python 实测踩中)。
+        await fs.promises.cp(source, path.join(installDir, artifact.archiveEntry), {
+          recursive: true,
+          verbatimSymlinks: true,
+        })
+      } else {
+        await fs.promises.copyFile(source, executable)
+      }
       await fs.promises.chmod(executable, 0o755)
       await fs.promises.writeFile(
         marker,
