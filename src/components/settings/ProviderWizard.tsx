@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { ArrowLeft, ArrowRight, ExternalLink, Search, TerminalSquare } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -94,6 +94,8 @@ export function ProviderWizard({
     setLastStartStep(startStep)
     setStep(startStep ?? "pick")
   }
+  /** detect 内部(详情/导入中)注册的逐级返回;返回 true 表示已内部处理。 */
+  const detectBackRef = useRef<(() => boolean) | null>(null)
   const editingPreset = editing?.presetId ? getProviderPreset(editing.presetId) : undefined
   const selected = editingPreset ?? (pick !== null && pick !== "custom" ? pick : undefined)
   const activeStep: Step = editing ? "form" : step
@@ -127,7 +129,17 @@ export function ProviderWizard({
         <DialogHeader className="border-b border-border px-5 py-4">
           <DialogTitle className="flex items-center gap-2">
             {(activeStep === "form" || activeStep === "detect") && !editing && (
-              <Button type="button" variant="ghost" size="icon-sm" onClick={backToPick} aria-label="返回供应商列表">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => {
+                  // detect 详情/导入中先回候选列表,再回 pick(逐级,不跳级)
+                  if (activeStep === "detect" && detectBackRef.current?.()) return
+                  backToPick()
+                }}
+                aria-label="返回供应商列表"
+              >
                 <ArrowLeft />
               </Button>
             )}
@@ -219,6 +231,7 @@ export function ProviderWizard({
           </>
         ) : activeStep === "detect" ? (
           <DetectLocalProviders
+            registerBack={(fn) => { detectBackRef.current = fn }}
             onBack={backToPick}
             onImported={(provider) => onSaved(provider.id)}
             onConfigure={(presetId) => {

@@ -28,7 +28,10 @@ export function DetectLocalProviders({
   onBack,
   onImported,
   onConfigure,
+  registerBack,
 }: {
+  /** 向向导标题栏注册逐级返回:详情/导入中回列表(返回 true),列表返回 false 交回 onBack。 */
+  registerBack?: (fn: () => boolean) => void
   onBack: () => void
   onImported: (provider: { id: string; name: string; modelCount: number }) => void
   /** 凭证不可复制时跳到对应预设的手动表单。 */
@@ -42,6 +45,16 @@ export function DetectLocalProviders({
   const [error, setError] = useState<string | null>(null)
   /** 防止组件卸载或重扫后迟到的 inspect 结果覆盖新状态。 */
   const inspectSeq = useRef(0)
+
+  useEffect(() => {
+    registerBack?.(() => {
+      if (phase.step === "detail" || phase.step === "importing") {
+        setPhase({ step: "list" })
+        return true
+      }
+      return false
+    })
+  }, [registerBack, phase.step])
 
   useEffect(() => {
     let alive = true
