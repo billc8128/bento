@@ -534,21 +534,37 @@ app.whenReady().then(async () => {
     const preset = getProviderPreset(candidate.presetId)
     const apiKey = localProviderScanner.credential(candidateId)
     if (!preset || !apiKey) return { error: "credential-missing", message: "没有可复用凭证" }
-    // 来源配置自带的模型清单(如 OMP models.json)优先于远端发现。
-    const localModels = localProviderScanner.localModels(candidateId)
-    if (localModels && localModels.length > 0) return { ok: true, models: localModels }
+    const localModels = localProviderScanner.localModels(candidateId) ?? []
+    // 有 key 且预设带列表端点时自动拉远端全量,与来源自带清单合并:
+    // 来源模型排前并默认勾选,远端多出来的排后、默认不勾(本地无清单时全部勾)。
+    // 远端失败且本地无清单时如实报错;有本地清单则静默回退。
+    if (preset.modelDiscovery.method === "http") {
+      const auth = preset.auth.method === "apiKey"
+        ? preset.auth.discovery ?? preset.auth.inference
+        : undefined
+      const discovered = await providerDiscovery.discoverHttpModels({
+        modelsUrl: preset.modelDiscovery.url,
+        apiKey,
+        auth,
+        parser: preset.modelDiscovery.parser,
+      })
+      if (discovered.ok) {
+        const localIds = new Set(localModels.map((model) => model.id))
+        const remoteOnly = discovered.models.filter((model) => !localIds.has(model.id))
+        return {
+          ok: true,
+          models: [
+            ...localModels,
+            ...remoteOnly.map((model) => ({ ...model, enabled: localModels.length === 0 })),
+          ],
+        }
+      }
+      if (localModels.length === 0) return discovered
+    }
+    if (localModels.length > 0) return { ok: true, models: localModels }
     if (preset.modelDiscovery.method === "manual")
       return { error: "manual-required", message: "该供应商没有可验证的模型列表，请手动添加模型 ID" }
-    if (preset.modelDiscovery.method !== "http") return { error: "adapter-required", message: "该供应商需要专用发现适配器" }
-    const auth = preset.auth.method === "apiKey"
-      ? preset.auth.discovery ?? preset.auth.inference
-      : undefined
-    return providerDiscovery.discoverHttpModels({
-      modelsUrl: preset.modelDiscovery.url,
-      apiKey,
-      auth,
-      parser: preset.modelDiscovery.parser,
-    })
+    return { error: "adapter-required", message: "该供应商需要专用发现适配器" }
   })
 
   ipcMain.handle("provider-import:save", (

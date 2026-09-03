@@ -74,7 +74,7 @@ export function DetectLocalProviders({
       setError(result && "message" in result ? result.message : "无法读取模型列表，可手动添加")
       return
     }
-    setModels(result.models.map((model) => ({ ...model, enabled: true })))
+    setModels(result.models.map((model) => ({ ...model, enabled: model.enabled !== false })))
   }
 
   function addManual() {
