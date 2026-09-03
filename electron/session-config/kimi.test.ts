@@ -146,6 +146,29 @@ describe("buildKimiSessionConfig", () => {
       'api_key = "bento-session-route"',
     ])
   })
+
+  it("v1 布局(kimi ≥1.x):type 改 openai_legacy,capabilities 不含 tool_use", () => {
+    const config = buildKimiSessionConfig(
+      [
+        {
+          alias: "bento-a",
+          name: "A",
+          baseUrl: "http://127.0.0.1:1/s/t-a",
+          wireProtocol: "openai-chat",
+          models: [
+            { id: "m-a1", name: "A1", reasoning: true },
+            { id: "m-a2", name: "A2", reasoning: false },
+          ],
+        },
+      ],
+      { providerId: "user-a", modelId: "m-a1", harnessModelId: "bento-a/m-a1" },
+      "v1",
+    )
+    expect(config).toContain('type = "openai_legacy"')
+    expect(config).not.toContain("tool_use")
+    expect(config.match(/capabilities = \[ "thinking" \]/g)).toHaveLength(1)
+    expect(config).not.toContain("bento-a/m-a2\"]\ncapabilities")
+  })
 })
 
 describe("KimiBentoConfigAdapter", () => {
@@ -166,6 +189,14 @@ describe("KimiBentoConfigAdapter", () => {
     const config = fs.readFileSync(path.join(home, "config.toml"), "utf8")
     expect(config).not.toContain("sk-real-alpha")
     expect(config).not.toContain("sk-real-beta")
+
+    // kimi 1.x 布局:share dir 有 v1 config 与占位 token(过 ACP 登录门槛的本地检查)
+    const share = lease.env.KIMI_SHARE_DIR!
+    expect(share).toContain("kimi-bento-sess-1")
+    expect(fs.readFileSync(path.join(share, "config.toml"), "utf8")).toContain('type = "openai_legacy"')
+    const token = JSON.parse(fs.readFileSync(path.join(share, "credentials", "kimi-code.json"), "utf8"))
+    expect(token).toMatchObject({ access_token: "bento-session-route" })
+    expect(token.expires_at).toBeGreaterThan(Date.now() / 1000)
 
     expect(lease.selections.size).toBe(3)
     expect(lease.selected.harnessModelId).toMatch(/^bento-\w+\/m-a1$/)
