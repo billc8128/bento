@@ -192,6 +192,27 @@ export class BinaryManager {
     target: string,
     onBytes?: (received: number, total: number | undefined) => void,
   ) {
+    // 断流重试:弱网下 fetch 可能半路 terminated,无重试会直接把会话
+    // 打进 PATH 兜底(用户无感地用上更慢的本机二进制)。
+    let lastError: unknown
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await this.downloadOnce(url, target, onBytes)
+        return
+      } catch (error) {
+        lastError = error
+        await fs.promises.rm(target, { force: true })
+        if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 1000 * attempt))
+      }
+    }
+    throw lastError
+  }
+
+  private async downloadOnce(
+    url: string,
+    target: string,
+    onBytes?: (received: number, total: number | undefined) => void,
+  ) {
     const response = await fetch(url, { redirect: "follow" })
     if (!response.ok || !response.body) {
       throw new Error(`下载失败 ${response.status}: ${url}`)
@@ -211,6 +232,12 @@ export class BinaryManager {
       })
     }
     await pipeline(body, fs.createWriteStream(target, { flags: "wx" }))
+    // 服务器正常关闭但字节数不够时 undici 不报错,截断文件会一路走到
+    // sha 校验才炸,报错文案误导;这里提前按 content-length 判。
+    if (total !== undefined) {
+      const { size } = await fs.promises.stat(target)
+      if (size !== total) throw new Error(`下载不完整: ${size}/${total} 字节`)
+    }
   }
 }
 
