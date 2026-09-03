@@ -34,6 +34,21 @@ describe("splitTokenPath / upstreamUrlOf", () => {
     expect(upstreamUrlOf(route, "/v1/messages", "")).toBe("https://up.example.com/custom/messages")
     expect(upstreamUrlOf(route, "/v1/models", "?limit=1")).toBe("https://up.example.com/v1/models?limit=1")
   })
+  it("ChatGPT codex 上游剥掉 /v1 前缀:images/generations 等非推理端点也适用", () => {
+    const route: ProxyRoute = {
+      providerId: "openai",
+      agent: "codex",
+      baseUrl: "https://chatgpt.com/backend-api/codex",
+      requestPath: "/responses",
+      wireProtocol: "openai-responses",
+      apiKey: "sk",
+    }
+    expect(upstreamUrlOf(route, "/v1/responses", "")).toBe("https://chatgpt.com/backend-api/codex/responses")
+    expect(upstreamUrlOf(route, "/v1/images/generations", "")).toBe("https://chatgpt.com/backend-api/codex/images/generations")
+    // 标准 OpenAI API 上游保留 /v1
+    const apiRoute: ProxyRoute = { ...route, providerId: "openai-api", baseUrl: "https://api.openai.com/v1" }
+    expect(upstreamUrlOf(apiRoute, "/v1/images/generations", "")).toBe("https://api.openai.com/v1/images/generations")
+  })
 })
 
 describe("buildProxyHeaders", () => {

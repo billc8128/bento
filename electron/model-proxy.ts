@@ -145,7 +145,13 @@ export function splitTokenPath(pathname: string): { token: string; suffix: strin
 export function upstreamUrlOf(route: ProxyRoute, suffix: string, search: string): string {
   const base = route.baseUrl.replace(/\/+$/, "")
   const inferenceLike = /\/(v1\/)?(messages|completions|responses)(\/)?$/.test(suffix)
-  const path = inferenceLike && route.requestPath ? route.requestPath : suffix
+  let path = inferenceLike && route.requestPath ? route.requestPath : suffix
+  // /v1 归一:base 已带 /v1(api.openai.com/v1 等)或 ChatGPT codex 后端
+  // (无 /v1 概念)时,剥掉 suffix 的 /v1 前缀——否则 images/generations 等
+  // 非推理端点会打成 .../v1/v1/... 或 .../codex/v1/...(后者实测 403)。
+  if (path.startsWith("/v1/") && (base.endsWith("/v1") || isChatGptCodexUpstream(route))) {
+    path = path.slice(3)
+  }
   return `${base}${path}${search}`
 }
 
