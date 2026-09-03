@@ -172,8 +172,9 @@ export class LocalProviderScanner {
     const piDir = this.env.PI_CODING_AGENT_DIR || path.join(this.homeDir, ".pi", "agent")
     const dataDir = this.env.XDG_DATA_HOME || path.join(this.homeDir, ".local", "share")
     const hermesDir = this.env.HERMES_HOME || path.join(this.homeDir, ".hermes")
-    const ompDir = this.env.OMP_HOME || path.join(this.homeDir, ".omp")
-    const ompAgentDir = this.env.PI_CODING_AGENT_DIR || path.join(ompDir, "agent")
+    // OMP 与 Pi 共用 PI_CODING_AGENT_DIR 作运行时覆盖;扫描时它属于 Pi 或某个
+    // 隔离会话目录,绝不能拿来定位 OMP 的真实数据目录。
+    const ompAgentDir = this.ompAgentDir()
     this.scanAuthFile("Pi", path.join(piDir, "auth.json"))
     this.scanAuthFile("OpenCode", path.join(dataDir, "opencode", "auth.json"))
     this.scanHermesValues({ ...this.env, ...parseEnv(path.join(hermesDir, ".env")) })
@@ -253,8 +254,7 @@ export class LocalProviderScanner {
         for (const id of Object.keys(provider)) keys.add(id)
       }
     } else if (source === "OMP") {
-      const ompDir = this.env.OMP_HOME || path.join(this.homeDir, ".omp")
-      const ompAgentDir = this.env.PI_CODING_AGENT_DIR || path.join(ompDir, "agent")
+      const ompAgentDir = this.ompAgentDir()
       const providers = readJson(path.join(ompAgentDir, "models.json")).providers
       if (providers && typeof providers === "object" && !Array.isArray(providers)) {
         for (const [id, value] of Object.entries(providers as Record<string, unknown>)) {
@@ -292,9 +292,7 @@ export class LocalProviderScanner {
       return credentialOf(readJson(path.join(dataDir, "opencode", "auth.json"))[providerId])?.kind === "oauth"
     }
     if (source === "OMP") {
-      const ompDir = this.env.OMP_HOME || path.join(this.homeDir, ".omp")
-      const agentDir = this.env.PI_CODING_AGENT_DIR || path.join(ompDir, "agent")
-      return ompOAuthProviders(path.join(agentDir, "agent.db")).includes(providerId)
+      return ompOAuthProviders(path.join(this.ompAgentDir(), "agent.db")).includes(providerId)
     }
     if (source === "Hermes") {
       const hermesDir = this.env.HERMES_HOME || path.join(this.homeDir, ".hermes")
@@ -317,6 +315,16 @@ export class LocalProviderScanner {
     if (!value) return undefined
     const { credential: _credential, models: _models, ...candidate } = value
     return candidate
+  }
+
+  /**
+   * OMP 数据目录:OMP_HOME(Bento 约定)或默认 ~/.omp/agent。
+   * 不读 PI_CODING_AGENT_DIR——它是 Pi 与 OMP 共用的运行时覆盖,
+   * 扫描场景下指向的是 Pi 或某个隔离会话目录,不是 OMP 的真实数据目录。
+   */
+  private ompAgentDir(): string {
+    const ompDir = this.env.OMP_HOME || path.join(this.homeDir, ".omp")
+    return path.join(ompDir, "agent")
   }
 
   private add(

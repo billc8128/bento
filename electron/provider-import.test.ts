@@ -126,6 +126,25 @@ describe("LocalProviderScanner", () => {
     expect(scanner.localModels("omp-c767a447-7cf3-4d4f-b996-51ca391ab93d")).toBeNull()
   })
 
+  it("OMP 目录定位不借 PI_CODING_AGENT_DIR(它与 Pi 共用,指向 Pi 或隔离会话目录)", () => {
+    const home = tempHome()
+    write(path.join(home, ".omp/agent/models.json"), JSON.stringify({
+      providers: {
+        "glm-coding-plan": {
+          baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4",
+          apiKey: "sk-glm",
+          models: [{ id: "glm-5.3" }],
+        },
+      },
+    }))
+    const foreign = path.join(home, "pi-session-dir")
+    const scanner = new LocalProviderScanner(home, { PI_CODING_AGENT_DIR: foreign })
+    expect(scanner.scan().map((item) => [item.source, item.presetId])).toEqual([
+      ["OMP", "zhipu-coding-plan-cn"],
+    ])
+    expect(scanner.configuredKeys("OMP")).toEqual(["glm-coding-plan"])
+  })
+
   it("识别 OMP agent.db 中仍启用的 OAuth Provider", () => {
     const home = tempHome()
     const databasePath = path.join(home, ".omp/agent/agent.db")
