@@ -72,6 +72,8 @@ export type LocalProviderCandidate = {
   id: string
   name: string
   source: "Pi" | "OpenCode" | "Hermes" | "OMP" | "Kimi Code"
+  /** 同一 preset 在其它来源也检出时,并列展示的来源名。 */
+  alsoFrom?: string[]
   sourceProviderId: string
   presetId: string
   credentialReusable: boolean

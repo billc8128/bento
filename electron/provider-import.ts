@@ -181,8 +181,46 @@ export class LocalProviderScanner {
     this.scanOmpModels(path.join(ompAgentDir, "models.json"))
     this.scanOmpOAuth(path.join(ompAgentDir, "agent.db"))
     this.scanKimiCode()
-    return [...this.candidates.values()].map(({ credential: _credential, models: _models, ...candidate }) => candidate)
+    const merged = this.mergeByPreset([...this.candidates.values()])
+    // 合并结果写回 map:credential()/localModels()/candidate() 按合并后的 id 取。
+    this.candidates.clear()
+    for (const item of merged) this.candidates.set(item.id, item)
+    return merged
+      .map(({ credential: _credential, models: _models, ...candidate }) => candidate)
       .sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  /**
+   * 同一 preset 在多个本机来源里出现时合并成一个候选(来源列表并列展示)。
+   * 凭证优先级与 Pi 官方 Resolution Order 一致(providers.md:auth.json >
+   * 环境变量 > models.json)——auth.json 是凭证库,models.json 的 apiKey 是
+   * 用户侧推理配置,两者独立维护,可能漂移;选优先级高的来源,导入的 key
+   * 才与本机 CLI 实际推理所用的一致。模型清单取各来源并集,按 id 去重。
+   */
+  private mergeByPreset(list: CandidateSecret[]): CandidateSecret[] {
+    const groups = new Map<string, CandidateSecret[]>()
+    for (const item of list) {
+      const group = groups.get(item.presetId) ?? []
+      group.push(item)
+      groups.set(item.presetId, group)
+    }
+    return [...groups.values()].map((group) => {
+      if (group.length === 1) return group[0]
+      const primary = group.find((item) => item.credentialReusable && item.source !== "OMP")
+        ?? group.find((item) => item.credentialReusable)
+        ?? group[0]
+      const seen = new Set<string>()
+      const models = group.flatMap((item) => item.models ?? []).filter((model) => {
+        if (seen.has(model.id)) return false
+        seen.add(model.id)
+        return true
+      })
+      return {
+        ...primary,
+        ...(models.length > 0 ? { models } : {}),
+        alsoFrom: [...new Set(group.filter((item) => item !== primary).map((item) => item.source))],
+      }
+    })
   }
 
   /**

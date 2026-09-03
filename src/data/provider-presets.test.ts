@@ -39,7 +39,7 @@ describe("provider catalog", () => {
     expect(new Set(PROVIDER_PRESETS.map((preset) => preset.modelDiscovery.method)))
       .toEqual(new Set(["http", "manual", "adapter"]))
     expect(PROVIDER_PRESETS.filter((preset) => preset.modelDiscovery.method === "manual"))
-      .toHaveLength(15)
+      .toHaveLength(11)
     expect(JSON.stringify(PROVIDER_PRESETS)).not.toContain('"staticModels"')
   })
 })

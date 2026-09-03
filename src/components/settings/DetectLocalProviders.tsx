@@ -144,7 +144,7 @@ export function DetectLocalProviders({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{item.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    来自 {item.source} · {item.credentialReusable ? "可直接导入" : "需要重新鉴权"}
+                    来自 {[item.source, ...(item.alsoFrom ?? [])].join(" / ")} · {item.credentialReusable ? "可直接导入" : "需要重新鉴权"}
                   </p>
                 </div>
               </button>
@@ -179,7 +179,7 @@ export function DetectLocalProviders({
           {candidate && <ProviderMark name={candidate.name} brandKey={candidate.presetId} />}
           <div>
             <p className="text-sm font-medium">{candidate?.name}</p>
-            <p className="text-xs text-muted-foreground">来自 {candidate?.source}</p>
+            <p className="text-xs text-muted-foreground">来自 {candidate && [candidate.source, ...(candidate.alsoFrom ?? [])].join(" / ")}</p>
           </div>
         </div>
 

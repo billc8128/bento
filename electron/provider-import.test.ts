@@ -206,6 +206,36 @@ max_context_size = 262144
     expect(JSON.stringify(keys)).not.toContain("ark-secret-not-returned")
   })
 
+  it("同一 preset 在多个来源检出时合并:凭证优先 auth.json 来源,模型清单取并集", () => {
+    const home = tempHome()
+    write(path.join(home, ".pi/agent/auth.json"), JSON.stringify({
+      "glm-coding-plan": { type: "api_key", key: "sk-pi-good" },
+    }))
+    write(path.join(home, ".omp/agent/models.json"), JSON.stringify({
+      providers: {
+        "glm-coding-plan": {
+          baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4",
+          apiKey: "sk-omp-stale",
+          models: [{ id: "glm-5.3", name: "GLM 5.3" }, { id: "glm-5-turbo" }],
+        },
+      },
+    }))
+    const scanner = new LocalProviderScanner(home, {})
+    const result = scanner.scan()
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({
+      source: "Pi",
+      presetId: "zhipu-coding-plan-cn",
+      alsoFrom: ["OMP"],
+      credentialReusable: true,
+    })
+    // 凭证取 Pi(auth.json 是凭证库,OMP models.json 的 key 可能漂移)
+    expect(scanner.credential(result[0]!.id)).toBe("sk-pi-good")
+    // 模型清单并集仍挂在合并后的候选上
+    expect(scanner.localModels(result[0]!.id)?.map((model) => model.id))
+      .toEqual(["glm-5.3", "glm-5-turbo"])
+  })
+
   it("config.toml 缺失或损坏时 Kimi configuredKeys 回落到 OAuth 登录基线", () => {
     const home = tempHome()
     write(path.join(home, ".kimi-code/config.toml"), "not [ valid toml {{{")

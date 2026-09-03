@@ -12,7 +12,7 @@ let inflight: Promise<string[]> | null = null
 function scanReusableSources(): Promise<string[]> {
   inflight ??= (window.bento?.scanLocalProviders() ?? Promise.resolve([]))
     .then((found) => {
-      cached = [...new Set(found.filter((item) => item.credentialReusable).map((item) => item.source))]
+      cached = [...new Set(found.filter((item) => item.credentialReusable).flatMap((item) => [item.source, ...(item.alsoFrom ?? [])]))]
       return cached
     })
     .catch(() => {

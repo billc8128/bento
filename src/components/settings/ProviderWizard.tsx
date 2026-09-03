@@ -126,7 +126,7 @@ export function ProviderWizard({
       <DialogContent className="flex h-[620px] max-h-[calc(100vh-2rem)] w-[720px] max-w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 transition-[height] sm:max-w-[min(720px,calc(100vw-2rem))]">
         <DialogHeader className="border-b border-border px-5 py-4">
           <DialogTitle className="flex items-center gap-2">
-            {activeStep === "form" && !editing && (
+            {(activeStep === "form" || activeStep === "detect") && !editing && (
               <Button type="button" variant="ghost" size="icon-sm" onClick={backToPick} aria-label="返回供应商列表">
                 <ArrowLeft />
               </Button>
