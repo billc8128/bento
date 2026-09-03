@@ -8,6 +8,10 @@ import type { PromptInput } from "../src/core/types"
 import type { MessageOrigin } from "../src/core/collaboration"
 import type { HarnessDriver, HarnessStartOptions } from "./drivers/types"
 import { SessionManager } from "./sessions"
+import { SessionConfigRegistry } from "./session-config/registry"
+import type { SessionConfigAdapter } from "./session-config/types"
+import { selectionKey } from "./session-config/types"
+import type { HarnessId } from "../src/core/harness"
 
 let tempDir = ""
 
@@ -15,6 +19,43 @@ afterEach(() => {
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true })
   tempDir = ""
 })
+
+/** 直通 session-config adapter:SessionManager 单测的装配缝隙,不涉各 Harness 配置细节。 */
+function passthroughAdapter(harnessId: HarnessId): SessionConfigAdapter {
+  return {
+    harnessId,
+    async prepare(request) {
+      const selected = {
+        providerId: request.selected.providerId,
+        modelId: request.selected.modelId,
+        harnessModelId: request.selected.modelId,
+      }
+      return {
+        sessionKey: request.sessionKey,
+        harnessId: request.harnessId,
+        env: {},
+        strip: [],
+        selections: new Map([[selectionKey(selected.providerId, selected.modelId), selected]]),
+        selected,
+        revision: 1,
+        dispose: async () => {},
+      }
+    },
+    async reconfigure(_lease, next) {
+      return {
+        mode: "live",
+        selection: { providerId: next.providerId, modelId: next.modelId, harnessModelId: next.modelId },
+      }
+    },
+  }
+}
+
+/** SessionManager 构造参数 6/7:直通 adapter registry + 空 runtimes resolver。 */
+function sessionConfigFor(...harnessIds: HarnessId[]) {
+  const registry = new SessionConfigRegistry()
+  for (const id of harnessIds) registry.register(passthroughAdapter(id))
+  return [registry, async () => []] as const
+}
 
 describe("SessionManager model selection", () => {
   it("同一 App lease 按 Harness 边界附着：Pi extension，其余 stdio relay", async () => {
@@ -42,8 +83,7 @@ describe("SessionManager model selection", () => {
         () => driver,
         null,
         null,
-        null,
-        null,
+        ...sessionConfigFor("pi", "codex"),
         async ({ sessionKey }) => ({
           sessionKey,
           endpoint: "http://127.0.0.1:3000/mcp/token",
@@ -56,7 +96,7 @@ describe("SessionManager model selection", () => {
       const { key } = await manager.createSession({
         harnessId,
         cwd: tempDir,
-        providerId: `native-${harnessId}`,
+        providerId: `provider-${harnessId}`,
         modelId: "model",
       })
       if (harnessId === "pi") {
@@ -96,11 +136,11 @@ describe("SessionManager model selection", () => {
         }
       },
     }
-    const manager = new SessionManager(tempDir, (_key, record) => emitted.push(record), () => driver)
+    const manager = new SessionManager(tempDir, (_key, record) => emitted.push(record), () => driver, null, null, ...sessionConfigFor("kimi"))
     const { key } = await manager.createSession({
       harnessId: "kimi",
       cwd: tempDir,
-      providerId: "native-kimi",
+      providerId: "user-kimi",
       modelId: "model",
     })
     await manager.prompt(key, {
@@ -147,12 +187,12 @@ describe("SessionManager model selection", () => {
 
   it("chat 会话使用独立私有工作目录，删会话时一并清理", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-chat-session-"))
-    const manager = new SessionManager(tempDir, () => {})
+    const manager = new SessionManager(tempDir, () => {}, undefined, null, null, ...sessionConfigFor("pi"))
     const { key, record } = manager.createPendingSession({
       scope: "chat",
       harnessId: "pi",
       cwd: "/ignored-for-chat",
-      providerId: "native-pi",
+      providerId: "user-pi",
       modelId: "model",
     })
 
@@ -172,13 +212,13 @@ describe("SessionManager model selection", () => {
       id: "pi",
       start: async () => { throw new Error("start failed") },
     }
-    const manager = new SessionManager(tempDir, () => {}, () => driver)
+    const manager = new SessionManager(tempDir, () => {}, () => driver, null, null, ...sessionConfigFor("pi"))
 
     await expect(manager.createSession({
       scope: "chat",
       harnessId: "pi",
       cwd: "",
-      providerId: "native-pi",
+      providerId: "user-pi",
       modelId: "model",
     })).rejects.toThrow("start failed")
     expect(fs.readdirSync(path.join(tempDir, "chat-workspaces"))).toEqual([])
@@ -203,7 +243,7 @@ describe("SessionManager model selection", () => {
         }
       },
     }
-    const manager = new SessionManager(tempDir, () => {}, () => driver)
+    const manager = new SessionManager(tempDir, () => {}, () => driver, null, null, ...sessionConfigFor("kimi"))
 
     const { key, record } = manager.createPendingSession({
       harnessId: "kimi",
@@ -245,7 +285,7 @@ describe("SessionManager model selection", () => {
         }
       },
     }
-    const manager = new SessionManager(tempDir, () => {}, () => driver)
+    const manager = new SessionManager(tempDir, () => {}, () => driver, null, null, ...sessionConfigFor("kimi"))
     const { key } = manager.createPendingSession({
       harnessId: "kimi",
       cwd: tempDir,
@@ -257,36 +297,6 @@ describe("SessionManager model selection", () => {
     expect(manager.listSessions().some((item) => item.key === key)).toBe(true)
     await expect(manager.prompt(key, "重试")).resolves.toMatchObject({ stopReason: "end_turn" })
     expect(starts).toBe(2)
-    manager.disposeAll()
-  })
-
-  it("native provider 不要求路由且不把默认占位模型传给 driver", async () => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-native-session-"))
-    let started: HarnessStartOptions | undefined
-    const driver: HarnessDriver = {
-      id: "pi",
-      async start(options) {
-        started = options
-        return {
-          nativeSessionId: "native-pi",
-          capabilities: { modelSwitch: "live", effortSwitch: "live" },
-          prompt: async () => ({ stopReason: "completed" }),
-          cancel: async () => {},
-          close: () => {},
-          onExit: () => () => {},
-        }
-      },
-    }
-    const manager = new SessionManager(tempDir, () => {}, () => driver)
-    await manager.createSession({
-      harnessId: "pi",
-      cwd: tempDir,
-      providerId: "native-pi",
-      modelId: "__native_default__",
-    })
-    expect(started).toMatchObject({ providerId: "native-pi" })
-    expect(started?.modelId).toBeUndefined()
-    expect(started?.proxyEnv).toBeUndefined()
     manager.disposeAll()
   })
 
@@ -310,7 +320,7 @@ describe("SessionManager model selection", () => {
     const received: Array<{ key: string; kind: string; at: string }> = []
     const manager = new SessionManager(tempDir, (key, record) => {
       received.push({ key, kind: record.kind, at: record.at })
-    }, () => driver)
+    }, () => driver, null, null, ...sessionConfigFor("kimi"))
 
     const { key } = await manager.createSession({
       harnessId: "kimi", cwd: tempDir, providerId: "moonshot", modelId: "kimi-k3",
@@ -360,7 +370,7 @@ describe("SessionManager model selection", () => {
     const manager = new SessionManager(tempDir, () => {}, (id) => {
       if (id !== "kimi") throw new Error(`fake 只认 kimi,收到 ${id}`)
       return fakeDriver
-    })
+    }, null, null, ...sessionConfigFor("kimi"))
     const { key } = await manager.createSession({
       harnessId: "kimi",
       cwd: tempDir,
@@ -370,7 +380,7 @@ describe("SessionManager model selection", () => {
     })
     expect(started).toMatchObject({ providerId: "moonshot", modelId: "kimi-k3", effort: "high" })
 
-    // Phase 0 契约:kimi Bento 会话跨 provider 需要新会话;同 provider 换模型 live。
+    // setModel 走 adapter reconfigure 的 live 路径;effort 由 driver 直切并持久化。
     await manager.setModel(key, "moonshot", "kimi-k2.5")
     await manager.setEffort(key, "max")
     expect({ currentModel, currentEffort }).toEqual({
@@ -413,7 +423,7 @@ describe("SessionManager model selection", () => {
         }
       },
     }
-    const manager = new SessionManager(tempDir, () => {}, () => driver)
+    const manager = new SessionManager(tempDir, () => {}, () => driver, null, null, ...sessionConfigFor("kimi"))
     const { record } = await manager.createSession({
       harnessId: "kimi",
       cwd: "",
@@ -447,6 +457,7 @@ describe("SessionManager model selection", () => {
       () => driver,
       null,
       async () => ({ providerId: "moonshot", modelId: "kimi-k3" }),
+      ...sessionConfigFor("kimi"),
     )
     fs.writeFileSync(path.join(tempDir, "sessions", "index.json"), JSON.stringify([{
       key: "legacy",
@@ -467,9 +478,11 @@ describe("SessionManager model selection", () => {
   })
 })
 
-import type { CustomProviderConfig } from "../src/core/provider"
 import { CustomProviderStore, type SecretStore } from "./custom-providers"
 import { ProviderRoutingService } from "./provider-routing"
+import { KimiBentoConfigAdapter } from "./session-config/kimi"
+import { RoutedBentoConfigAdapter } from "./session-config/routed"
+import type { SessionProviderRuntime } from "./session-config/types"
 
 function memorySecrets(): SecretStore {
   const map = new Map<string, string>()
@@ -480,12 +493,40 @@ function memorySecrets(): SecretStore {
   }
 }
 
-describe("SessionManager user provider 路由", () => {
-  it("user provider 会话:issueRoute 组装 proxyEnv 传入 driver;revive 重签发;关闭吊销", async () => {
+/** main 侧 resolveProviderRuntimes 镜像:store → SessionProviderRuntime[](含 credential handle)。 */
+function bentoRuntimes(harnessId: HarnessId, store: CustomProviderStore) {
+  return async () => store.list()
+    .filter((config) => {
+      const runtime = config.runtimes[harnessId]
+      return Boolean(runtime) &&
+        store.hasCredentialFor(config, harnessId) &&
+        runtime!.models.some((model) => model.enabled !== false)
+    })
+    .map((config): SessionProviderRuntime => {
+      const runtime = config.runtimes[harnessId]!
+      return {
+        providerId: config.id,
+        name: config.name,
+        baseUrl: runtime.baseUrl,
+        wireProtocol: runtime.wireProtocol,
+        models: runtime.models
+          .filter((model) => model.enabled !== false)
+          .map((model) => ({
+            id: model.id,
+            name: model.name,
+            reasoning: model.reasoning === true,
+            ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
+          })),
+        credential: { resolve: () => store.readKey(config.id, harnessId) },
+      }
+    })
+}
+
+describe("SessionManager session-config adapter 路由", () => {
+  it("claude-code 会话经 Routed adapter 组装 proxyEnv;revive 重签发;删除吊销", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-user-provider-"))
-    const secrets = memorySecrets()
-    const store = new CustomProviderStore(tempDir, secrets)
-    const config: CustomProviderConfig = {
+    const store = new CustomProviderStore(tempDir, memorySecrets())
+    store.upsert({
       id: "user-relay",
       name: "Relay",
       auth: { method: "apiKey" },
@@ -496,9 +537,10 @@ describe("SessionManager user provider 路由", () => {
           models: [{ id: "m1", name: "M1" }],
         },
       },
-    }
-    store.upsert(config, { "claude-code": "sk-relay" })
+    }, { "claude-code": "sk-relay" })
     const routing = new ProviderRoutingService(tempDir, () => store)
+    const registry = new SessionConfigRegistry()
+    registry.register(new RoutedBentoConfigAdapter("claude-code", routing, tempDir))
 
     const starts: HarnessStartOptions[] = []
     const fakeDriver: HarnessDriver = {
@@ -515,7 +557,15 @@ describe("SessionManager user provider 路由", () => {
         }
       },
     }
-    const manager = new SessionManager(tempDir, () => {}, () => fakeDriver, routing)
+    const manager = new SessionManager(
+      tempDir,
+      () => {},
+      () => fakeDriver,
+      null,
+      null,
+      registry,
+      bentoRuntimes("claude-code", store),
+    )
 
     const { key } = await manager.createSession({
       harnessId: "claude-code",
@@ -523,12 +573,12 @@ describe("SessionManager user provider 路由", () => {
       providerId: "user-relay",
       modelId: "m1",
     })
-    // 首次 start:拿到代理 env(隔离 config dir + 代理地址 + strip)
+    // 首次 start:Routed adapter 签发租约(隔离 config dir + 代理地址 + strip)
     expect(starts[0]!.proxyEnv).toMatchObject({
       env: {
         ANTHROPIC_BASE_URL: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/s\//),
         ANTHROPIC_AUTH_TOKEN: "bento-local-proxy",
-        CLAUDE_CONFIG_DIR: expect.stringContaining("cc-user-relay"),
+        CLAUDE_CONFIG_DIR: expect.stringContaining("claude-code-bento-"),
       },
       strip: ["ANTHROPIC_"],
     })
@@ -537,7 +587,7 @@ describe("SessionManager user provider 路由", () => {
     await manager.prompt(key, "第一轮")
 
     // revive(closeSession 杀进程 → prompt lazy 恢复):token 重签发,旧 token 失效
-    manager.closeSession(key)
+    await manager.closeSession(key)
     await manager.prompt(key, "续聊")
     expect(starts.length).toBe(2)
     const firstToken = starts[0]!.proxyEnv!.env.ANTHROPIC_BASE_URL
@@ -547,89 +597,12 @@ describe("SessionManager user provider 路由", () => {
 
     // 删除会话:token 吊销,占用计数归零
     expect(routing.sessionsUsing("user-relay")).toBe(1)
-    manager.removeSession(key)
+    await manager.removeSession(key)
     expect(routing.sessionsUsing("user-relay")).toBe(0)
     routing.dispose()
   })
 
-  it("runtime provider 会话不走代理:proxyEnv 不出现", async () => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-runtime-provider-"))
-    const store = new CustomProviderStore(tempDir, memorySecrets())
-    const routing = new ProviderRoutingService(tempDir, () => store)
-    const starts: HarnessStartOptions[] = []
-    const fakeDriver: HarnessDriver = {
-      id: "kimi",
-      async start(options) {
-        starts.push(options)
-        return {
-          nativeSessionId: "n",
-          capabilities: { modelSwitch: "none", effortSwitch: "none" },
-          prompt: async () => ({ stopReason: "end_turn" }),
-          cancel: async () => {},
-          close: () => {},
-          onExit: () => () => {},
-        }
-      },
-    }
-    const manager = new SessionManager(tempDir, () => {}, () => fakeDriver, routing)
-    await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "moonshot", modelId: "kimi-k3" })
-    expect(starts[0]!.proxyEnv).toBeUndefined()
-    manager.disposeAll()
-    routing.dispose()
-  })
-
-  it("Pi user provider 注入隔离配置，会话内只允许同 Provider 切模型", async () => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-pi-provider-"))
-    const store = new CustomProviderStore(tempDir, memorySecrets())
-    store.upsert({
-      id: "user-deepseek",
-      name: "DeepSeek",
-      auth: { method: "apiKey" },
-      runtimes: {
-        pi: {
-          baseUrl: "https://api.deepseek.com",
-          wireProtocol: "openai-chat",
-          models: [{ id: "m1", name: "M1" }, { id: "m2", name: "M2" }],
-        },
-      },
-    }, { "*": "sk-pi" })
-    const routing = new ProviderRoutingService(tempDir, () => store)
-    const starts: HarnessStartOptions[] = []
-    let currentModel = ""
-    const fakeDriver: HarnessDriver = {
-      id: "pi",
-      async start(options) {
-        starts.push(options)
-        return {
-          nativeSessionId: "pi-native",
-          capabilities: { modelSwitch: "live", effortSwitch: "live" },
-          prompt: async () => ({ stopReason: "end_turn" }),
-          cancel: async () => {},
-          close: () => {},
-          onExit: () => () => {},
-          setModel: async (modelId) => { currentModel = modelId },
-        }
-      },
-    }
-    const manager = new SessionManager(tempDir, () => {}, () => fakeDriver, routing)
-    const { key } = await manager.createSession({
-      harnessId: "pi",
-      cwd: tempDir,
-      providerId: "user-deepseek",
-      modelId: "bento/m1",
-    })
-    expect(starts[0]?.proxyEnv?.env).toMatchObject({
-      BENTO_PROVIDER_KEY: "sk-pi",
-      PI_CODING_AGENT_DIR: expect.stringContaining("pi-user-deepseek"),
-    })
-    await manager.setModel(key, "user-deepseek", "bento/m2")
-    expect(currentModel).toBe("bento/m2")
-    await expect(manager.setModel(key, "user-other", "bento/m2"))
-      .rejects.toThrow(/需要新会话/)
-    manager.disposeAll()
-  })
-
-  it("Bento 会话 kimi/opencode/omp 跨 Provider 在底层 setModel 前被拒绝,不留假切换", async () => {
+  it("Bento 注册表外的选择在底层 setModel 前被拒绝,不留假切换", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-unsafe-switch-"))
     const store = new CustomProviderStore(tempDir, memorySecrets())
     store.upsert({
@@ -638,13 +611,9 @@ describe("SessionManager user provider 路由", () => {
       auth: { method: "apiKey" },
       runtimes: { kimi: { baseUrl: "https://a.example.com/v1", wireProtocol: "openai-chat", models: [{ id: "m1", name: "M1" }] } },
     }, { "*": "sk-a" })
-    store.upsert({
-      id: "user-relay-b",
-      name: "Relay B",
-      auth: { method: "apiKey" },
-      runtimes: { kimi: { baseUrl: "https://b.example.com/v1", wireProtocol: "openai-chat", models: [{ id: "m1", name: "M1" }] } },
-    }, { "*": "sk-b" })
     const routing = new ProviderRoutingService(tempDir, () => store)
+    const registry = new SessionConfigRegistry()
+    registry.register(new KimiBentoConfigAdapter("kimi", routing, tempDir))
     let setModelCalls = 0
     const driver: HarnessDriver = {
       id: "kimi",
@@ -660,23 +629,24 @@ describe("SessionManager user provider 路由", () => {
         }
       },
     }
-    const manager = new SessionManager(tempDir, () => {}, () => driver, routing)
+    const manager = new SessionManager(tempDir, () => {}, () => driver, null, null, registry, bentoRuntimes("kimi", store))
     const { key } = await manager.createSession({
       harnessId: "kimi",
       cwd: tempDir,
       providerId: "user-relay-a",
       modelId: "m1",
     })
-    // 底层 setModel 从未被调,SessionRecord 不变:不存在「UI 已切、请求仍走旧 Provider」
-    await expect(manager.setModel(key, "user-relay-b", "m1"))
-      .rejects.toThrow(/切换供应商需要新会话/)
+    // 注册表外 Provider:adapter 判 new-session;底层 setModel 从未被调,
+    // SessionRecord 不变——不存在「UI 已切、请求仍走旧 Provider」的假切换
+    await expect(manager.setModel(key, "user-ghost", "m1"))
+      .rejects.toThrow(/需要新会话/)
     expect(setModelCalls).toBe(0)
     expect(manager.listSessions()[0]).toMatchObject({ providerId: "user-relay-a", modelId: "m1" })
-    manager.disposeAll()
+    await manager.disposeAll()
     routing.dispose()
   })
 
-  it("builtin OpenAI 会话同样走隔离代理,不继承宿主 Codex 登录态", async () => {
+  it("builtin OpenAI OAuth 会话经 codex Routed adapter 隔离代理,不继承宿主 Codex 登录态", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-builtin-provider-"))
     const store = new CustomProviderStore(tempDir, memorySecrets())
     store.writeOAuthTokens("openai", {
@@ -686,6 +656,8 @@ describe("SessionManager user provider 路由", () => {
       accountId: "account-1",
     })
     const routing = new ProviderRoutingService(tempDir, () => store)
+    const registry = new SessionConfigRegistry()
+    registry.register(new RoutedBentoConfigAdapter("codex", routing, tempDir))
     const starts: HarnessStartOptions[] = []
     const driver: HarnessDriver = {
       id: "codex",
@@ -701,7 +673,21 @@ describe("SessionManager user provider 路由", () => {
         }
       },
     }
-    const manager = new SessionManager(tempDir, () => {}, () => driver, routing)
+    // main 侧 resolveProviderRuntimes 镜像(builtin 部分):OAuth provider 进注册表
+    const openaiRuntime = async () => {
+      const config = store.getProviderConfig("openai")
+      const runtime = config?.runtimes.codex
+      if (!config || !runtime) throw new Error("builtin openai codex runtime 缺失")
+      return [{
+        providerId: config.id,
+        name: config.name,
+        baseUrl: runtime.baseUrl,
+        wireProtocol: runtime.wireProtocol,
+        models: [{ id: "gpt-5.4", name: "GPT-5.4", reasoning: false }],
+        credential: { resolve: () => store.readOAuthTokens(config.id)?.accessToken ?? null },
+      }]
+    }
+    const manager = new SessionManager(tempDir, () => {}, () => driver, null, null, registry, openaiRuntime)
     await manager.createSession({
       harnessId: "codex",
       cwd: tempDir,
@@ -712,7 +698,7 @@ describe("SessionManager user provider 路由", () => {
       CODEX_HOME: expect.stringContaining("codex-home-"),
       OPENAI_API_KEY: "bento-local-proxy",
     })
-    manager.disposeAll()
+    await manager.disposeAll()
     routing.dispose()
   })
 })
@@ -760,7 +746,7 @@ describe("SessionManager 错误/中断路径(TRACE_DATA_PLAN §3.4 P0-1)", () =>
       },
     }
     const received: LogRecord[] = []
-    const manager = new SessionManager(tempDir, (_key, record) => received.push(record), () => driver)
+    const manager = new SessionManager(tempDir, (_key, record) => received.push(record), () => driver, null, null, ...sessionConfigFor("kimi"))
     const { key } = await manager.createSession({
       harnessId: "kimi", cwd: tempDir, providerId: "moonshot", modelId: "kimi-k3",
     })
@@ -828,9 +814,9 @@ describe("SessionManager 错误/中断路径(TRACE_DATA_PLAN §3.4 P0-1)", () =>
         }
       },
     }
-    const manager = new SessionManager(tempDir, () => {}, () => driver)
+    const manager = new SessionManager(tempDir, () => {}, () => driver, null, null, ...sessionConfigFor("pi"))
     const { key } = await manager.createSession({
-      harnessId: "pi", cwd: tempDir, providerId: "native-pi", modelId: "__native_default__",
+      harnessId: "pi", cwd: tempDir, providerId: "provider-pi", modelId: "pi-default",
     })
 
     // 真实 UI 只在回合运行中展示取消:等 prompt 真正进入飞行状态再 cancel
@@ -880,7 +866,7 @@ function deferredDriver(options: { steer?: boolean } = {}) {
 
 function collabManager(dir: string, driver: HarnessDriver) {
   const emitted: LogRecord[] = []
-  const manager = new SessionManager(dir, (_key, record) => emitted.push(record), () => driver)
+  const manager = new SessionManager(dir, (_key, record) => emitted.push(record), () => driver, null, null, ...sessionConfigFor("kimi"))
   return { manager, emitted }
 }
 
@@ -890,7 +876,7 @@ describe("SessionManager 协作切片(active turn / origin / wait)", () => {
     const { driver, received, deferreds } = deferredDriver()
     const { manager } = collabManager(tempDir, driver)
     const { key } = await manager.createSession({
-      harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "model",
+      harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "model",
     })
     const first = await manager.startPrompt(key, "第一条")
     await expect(manager.queuePrompt(key, "下一条", "client-next")).resolves.toEqual({
@@ -909,7 +895,7 @@ describe("SessionManager 协作切片(active turn / origin / wait)", () => {
     const { driver, steered, deferreds } = deferredDriver({ steer: true })
     const { manager, emitted } = collabManager(tempDir, driver)
     const { key } = await manager.createSession({
-      harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "model",
+      harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "model",
     })
     const first = await manager.startPrompt(key, "第一条")
     await expect(manager.queuePrompt(key, "改变方向", "client-steer")).resolves.toEqual({
@@ -931,7 +917,7 @@ describe("SessionManager 协作切片(active turn / origin / wait)", () => {
     const { key } = await manager.createSession({
       harnessId: "kimi",
       cwd: tempDir,
-      providerId: "native-kimi",
+      providerId: "user-kimi",
       modelId: "model",
     })
 
@@ -977,7 +963,7 @@ describe("SessionManager 协作切片(active turn / origin / wait)", () => {
     const { driver, deferreds } = deferredDriver()
     const { manager } = collabManager(tempDir, driver)
     const { key } = await manager.createSession({
-      harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "model",
+      harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "model",
     })
 
     const first = await manager.startPrompt(key, "第一笔")
@@ -997,7 +983,7 @@ describe("SessionManager 协作切片(active turn / origin / wait)", () => {
     const { driver, deferreds } = deferredDriver()
     const { manager, emitted } = collabManager(tempDir, driver)
     const { key } = await manager.createSession({
-      harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "model",
+      harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "model",
     })
 
     const { acceptedSeq, completion } = await manager.startPrompt(key, "后台任务")
@@ -1022,14 +1008,14 @@ describe("SessionManager 协作切片(active turn / origin / wait)", () => {
     const { driver, deferreds } = deferredDriver()
     const { manager } = collabManager(tempDir, driver)
     const { key } = await manager.createSession({
-      harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "model", title: "peer",
+      harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "model", title: "peer",
     })
     expect(manager.collaborationSession(key)).toMatchObject({
       id: key,
       title: "peer",
       workspace: { scope: "project", cwd: tempDir },
       harnessId: "kimi",
-      providerId: "native-kimi",
+      providerId: "user-kimi",
       runtime: "idle",
     })
     const turn = await manager.startPrompt(key, "hi")
@@ -1049,10 +1035,10 @@ describe("SessionManager waitForTurn 精确匹配", () => {
     const { driver, deferreds } = deferredDriver()
     const { manager } = collabManager(tempDir, driver)
     const createdA = await manager.createSession({
-      harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "model", title: "A",
+      harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "model", title: "A",
     })
     const createdB = await manager.createSession({
-      harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "model", title: "B",
+      harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "model", title: "B",
     })
     const turnA = await manager.startPrompt(createdA.key, "A 的回合")
     const turnB = await manager.startPrompt(createdB.key, "B 的回合")
@@ -1079,7 +1065,7 @@ describe("SessionManager waitForTurn 精确匹配", () => {
     const { driver, deferreds } = deferredDriver()
     const { manager } = collabManager(tempDir, driver)
     const { key } = await manager.createSession({
-      harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "model",
+      harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "model",
     })
 
     const first = await manager.startPrompt(key, "第一回合")

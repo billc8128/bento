@@ -72,7 +72,7 @@ function defaultCreateRpc(
   cwd: string,
   handlers: RpcHandlers,
   env?: NodeJS.ProcessEnv,
-  runtimePreference: HarnessRuntimePreference = "local",
+  runtimePreference: HarnessRuntimePreference = "managed",
 ): Promise<CodexRpc> {
   return resolveHarnessRuntime(
     "codex",
@@ -166,7 +166,7 @@ export const codexDriver: HarnessDriver = {
       options.cwd,
       handlers,
       options.proxyEnv?.env,
-      options.runtimePreference ?? (options.proxyEnv ? "managed" : "local"),
+      "managed",
     )
     rpc.onExit(() => {
       for (const waiter of turnWaiters.values()) waiter("process_exit")

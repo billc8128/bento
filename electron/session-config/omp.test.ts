@@ -135,7 +135,6 @@ describe("OmpBentoConfigAdapter", () => {
     sessionKey: string
     harnessId: "omp"
     cwd: string
-    mode: "bento"
     selected: { providerId: string; modelId: string }
     providers: SessionProviderRuntime[]
   } {
@@ -143,7 +142,6 @@ describe("OmpBentoConfigAdapter", () => {
       sessionKey,
       harnessId: "omp",
       cwd: os.tmpdir(),
-      mode: "bento",
       selected: { providerId: "user-alpha", modelId: "bento/m-a1" },
       providers: [
         {
@@ -228,7 +226,7 @@ describe("OmpBentoConfigAdapter", () => {
     const unknown = await adapter.reconfigure(lease, { providerId: "user-beta", modelId: "ghost" })
     expect(unknown).toMatchObject({ mode: "new-session" })
     const nativeSel = await adapter.reconfigure(lease, { providerId: "native-omp", modelId: "x" })
-    expect(nativeSel).toMatchObject({ mode: "new-session", reason: expect.stringContaining("native↔Bento") })
+    expect(nativeSel).toMatchObject({ mode: "new-session" })
     await lease.dispose()
   })
 

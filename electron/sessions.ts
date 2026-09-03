@@ -11,7 +11,6 @@ import path from "node:path"
 import type { HarnessEvent, HarnessUsage, LogRecord } from "../src/core/events"
 import type { CollaborationSession, MessageOrigin, SessionRuntimeStatus } from "../src/core/collaboration"
 import { CollaborationError } from "../src/core/collaboration"
-import { isNativeProviderId, NATIVE_MODEL_ID } from "../src/core/provider"
 import type { Effort, PromptAttachment, PromptInput, SessionScope } from "../src/core/types"
 import { getDriver } from "./drivers/registry"
 import { assertHarnessCwd } from "./harness-runtime"
@@ -24,7 +23,6 @@ import type {
   SessionConfigLease,
   SessionConfigRequest,
 } from "./session-config/types"
-import { modeOfSelection } from "./session-config/types"
 import type { SessionConfigRegistry } from "./session-config/registry"
 import type {
   DriverId,
@@ -52,8 +50,8 @@ export type SessionRecord = {
 type LiveSession = {
   record: SessionRecord
   connection: HarnessConnection
-  /** SessionConfigAdapter 签发的配置租约;legacy 路径没有。 */
-  configLease?: SessionConfigLease
+  /** SessionConfigAdapter 签发的配置租约(所有会话必有)。 */
+  configLease: SessionConfigLease
   appLease?: AppSessionLease
   seq: number
   logStream: fs.WriteStream
@@ -94,7 +92,6 @@ type ProviderSelectionResolver = (record: Pick<SessionRecord,
 export type SessionProviderRuntimeResolver = (request: {
   harnessId: DriverId
   cwd: string
-  mode: "native" | "bento"
 }) => Promise<SessionConfigRequest["providers"]>
 
 type SessionAppsResolver = (request: {
@@ -144,7 +141,7 @@ export class SessionManager {
     /** Claude/Codex provider 会话的统一路由服务。 */
     private readonly routing: ProviderRoutingService | null = null,
     private readonly resolveProviderSelection: ProviderSelectionResolver | null = null,
-    /** session-config registry;缺省 legacy 路径(全部走旧 routing/env 组装)。 */
+    /** session-config registry;缺省时 adapterFor 抛错(装配错误)。 */
     private readonly configAdapters: SessionConfigRegistry | null = null,
     private readonly resolveProviderRuntimes: SessionProviderRuntimeResolver | null = null,
     private readonly resolveApps: SessionAppsResolver | null = null,
@@ -257,68 +254,27 @@ export class SessionManager {
       else pending.push(event)
     }
 
-    // ---- session-config adapter 路径(native adapters + Kimi bento;其余 legacy)----
-    let configLease: SessionConfigLease | undefined
+    // ---- session-config adapter 路径:全部 Harness 必须有 Bento adapter ----
     const selected: BentoModelSelection = { providerId: record.providerId, modelId: record.modelId }
-    const adapter = this.adapterFor(record.harnessId, selected)
-    if (adapter) {
-      const mode = modeOfSelection(selected)
-      const providers = await this.resolveProviderRuntimes?.({
-        harnessId: record.harnessId,
-        cwd: record.cwd,
-        mode,
-      })
-      configLease = await adapter.prepare({
-        sessionKey: record.key,
-        harnessId: record.harnessId,
-        cwd: record.cwd,
-        mode,
-        selected,
-        providers: providers ?? [],
-      })
-    }
+    const adapter = this.adapterFor(record.harnessId)
+    const providers = await this.resolveProviderRuntimes?.({
+      harnessId: record.harnessId,
+      cwd: record.cwd,
+    })
+    const configLease = await adapter.prepare({
+      sessionKey: record.key,
+      harnessId: record.harnessId as HarnessId,
+      cwd: record.cwd,
+      selected,
+      providers: providers ?? [],
+    })
+    // 租约 env 为空 = 该 Harness 只需隔离目录不需要 env 注入(routed 形态总会有 env)。
+    const proxyEnv = Object.keys(configLease.env).length > 0 || configLease.strip.length > 0
+      ? { env: configLease.env, strip: configLease.strip }
+      : undefined
 
-    const nativeConfig = isNativeProviderId(record.providerId)
-    // Bento provider 经隔离路由；本机配置模式让 CLI 自己读取原生凭证与模型。
-    let proxyEnv: { env: Record<string, string>; strip?: string[] } | undefined
-    const routedHarness = record.harnessId === "claude-code" || record.harnessId === "codex"
-    if (configLease && (Object.keys(configLease.env).length > 0 || configLease.strip.length > 0)) {
-      proxyEnv = { env: configLease.env, strip: configLease.strip }
-    } else if (configLease) {
-      proxyEnv = undefined // native 租约:无注入,CLI 直读本机配置
-    } else if (!nativeConfig && record.harnessId === "pi") {
-      if (!this.routing) throw new Error("路由服务不可用,无法启动 Pi 供应商会话")
-      proxyEnv = this.routing.piProviderEnv(record.providerId)
-    } else if (!nativeConfig && routedHarness) {
-      if (!this.routing) throw new Error("路由服务不可用,无法启动供应商会话")
-      const route = await this.routing.issueRoute(record.key, record.providerId, record.harnessId)
-      if (record.harnessId === "claude-code") {
-        const isolated = this.routing.claudeCodeEnv(route)
-        proxyEnv = {
-          env: { ...isolated.env, CLAUDE_CONFIG_DIR: this.routing.claudeCodeConfigDir(record.providerId) },
-          strip: isolated.strip,
-        }
-      } else if (record.harnessId === "codex") {
-        proxyEnv = this.routing.codexHomeEnv(record.key, route, record.providerId)
-      }
-    } else if (
-      !nativeConfig &&
-      record.providerId.startsWith("user-") &&
-      ["kimi", "opencode", "omp", "hermes"].includes(record.harnessId)
-    ) {
-      if (!this.routing) throw new Error("路由服务不可用,无法启动供应商会话")
-      proxyEnv = this.routing.configuredHarnessEnv(
-        record.key,
-        record.providerId,
-        record.harnessId as "kimi" | "opencode" | "omp" | "hermes",
-        record.modelId,
-      )
-    }
-
-    // adapter 模式下 wire id 用 lease 的 harnessModelId(native=原始 id,Kimi=alias/id)
-    const wireModelId = configLease
-      ? configLease.selected.harnessModelId
-      : record.modelId !== NATIVE_MODEL_ID ? record.modelId : undefined
+    // wire id 用 lease 的 harnessModelId(Kimi=alias/id 等)。
+    const wireModelId = configLease.selected.harnessModelId
     let appLease: AppSessionLease | undefined
     try {
       appLease = await this.resolveApps?.({
@@ -334,7 +290,6 @@ export class SessionManager {
       connection = await this.resolveDriver(record.harnessId).start(
         {
           cwd: record.cwd,
-          runtimePreference: configLease?.mode === "bento" ? "managed" : "local",
           ...(record.nativeSessionId ? { nativeSessionId: record.nativeSessionId } : {}),
           ...(record.providerId ? { providerId: record.providerId } : {}),
           ...(wireModelId ? { modelId: wireModelId } : {}),
@@ -359,14 +314,14 @@ export class SessionManager {
     session = {
       record,
       connection,
-      /** SessionConfigAdapter 签发的配置租约;legacy 路径没有。 */
+      /** SessionConfigAdapter 签发的配置租约。 */
       configLease,
       appLease,
       seq: prior.at(-1)?.seq ?? 0,
       logStream: fs.createWriteStream(logPath, { fd: fs.openSync(logPath, "a") }),
       hasUserMessage: prior.some(
         (item) =>
-          (item.kind === "event" && item.payload.type === "user_message") ||
+          (item.kind === "event" && (item.payload as HarnessEvent).type === "user_message") ||
           item.kind === "user_message",
       ),
       disposeExit: () => {},
@@ -393,12 +348,14 @@ export class SessionManager {
     return connected
   }
 
-  /** (harness, mode) 有 adapter 才走 session-config 路径;其余 legacy。 */
-  private adapterFor(harnessId: DriverId, selection: BentoModelSelection): SessionConfigAdapter | null {
-    if (!this.configAdapters) return null
+  /** harness 必须有 Bento adapter;缺失是装配错误,直接抛出不静默降级。 */
+  private adapterFor(harnessId: DriverId): SessionConfigAdapter {
+    if (!this.configAdapters) throw new Error("会话配置服务不可用")
     const normalized = harnessId === "glm" ? "claude-code" : harnessId
-    if (!this.configAdapters.has(normalized, modeOfSelection(selection))) return null
-    return this.configAdapters.get(normalized, modeOfSelection(selection))
+    if (!this.configAdapters.has(normalized)) {
+      throw new Error(`harness ${normalized} 缺少 Bento session-config adapter`)
+    }
+    return this.configAdapters.get(normalized)
   }
 
   private newRecord(opts: {
@@ -713,7 +670,7 @@ export class SessionManager {
 
   /** 当前 active turn 的 acceptedSeq;无运行中 turn 返回 null。 */
   activeTurnSeq(key: string): number | null {
-    return this.live.get(key)?.activeTurn.acceptedSeq ?? null
+    return this.live.get(key)?.activeTurn?.acceptedSeq ?? null
   }
 
   /** 协作 runtime 投影:sleeping/idle/working。 */
@@ -765,58 +722,22 @@ export class SessionManager {
       : { providerId, modelId }
     if (!resolved || resolved.providerId !== providerId || resolved.modelId !== modelId)
       throw new Error("目标供应商或模型当前不可用")
-    const previousProviderId = session.record.providerId
-    if (isNativeProviderId(providerId) !== isNativeProviderId(previousProviderId)) {
-      throw new Error("本机配置与 Bento 模型之间切换需要新会话")
+    const adapter = this.adapterFor(session.record.harnessId)
+    const result = await adapter.reconfigure(session.configLease, { providerId, modelId })
+    if (result.mode === "new-session") throw new Error(result.reason)
+    if (result.mode === "restart") {
+      // restart 需要安全 resume 语义,当前未实现:明示需要新会话,不假切换。
+      throw new Error("切换需要重启会话进程,当前请新建会话")
     }
-
-    // ---- adapter lease 路径:native adapters + Kimi bento ----
-    if (session.configLease) {
-      const adapter = this.adapterFor(session.record.harnessId, { providerId, modelId })
-      if (!adapter) throw new Error("会话配置服务不可用,无法切换")
-      const result = await adapter.reconfigure(session.configLease, { providerId, modelId })
-      if (result.mode === "new-session") throw new Error(result.reason)
-      if (result.mode === "restart") {
-        // restart 需要安全 resume 语义,当前未实现:明示需要新会话,不假切换。
-        throw new Error("切换需要重启会话进程,当前请新建会话")
-      }
-      const previousSelection = session.configLease.selected
-      try {
-        await session.connection.setModel(result.selection.harnessModelId)
-      } catch (error) {
-        // routed adapter 已原子换过 proxy 指向；底层模型切换失败时恢复旧 route。
-        await adapter.reconfigure(session.configLease, previousSelection).catch(() => {})
-        throw error
-      }
-      session.configLease.selected = result.selection
-      session.record.providerId = providerId
-      session.record.modelId = modelId
-      this.upsertRecord(session.record)
-      return session.record
-    }
-
-    // ---- legacy 路径(无租约) ----
-    // Phase 0 正确性封口:kimi/opencode/omp/hermes/pi 的 Bento 隔离配置只含启动时
-    // 单个 Provider,进程内切 Provider 会造成 UI 与实际路由不一致,必须在调用
-    // connection.setModel 前拒绝。native 模式内跨 native provider 由 CLI 原生
-    // 切换承载(spike 已证),允许;claude-code/codex 走代理 switchRoute live。
-    const routedHarness = session.record.harnessId === "claude-code" || session.record.harnessId === "codex"
-    const isolatedHarness = ["kimi", "opencode", "omp", "hermes", "pi"].includes(session.record.harnessId)
-    if (isolatedHarness && !routedHarness && providerId !== previousProviderId) {
-      throw new Error("切换供应商需要新会话")
-    }
-    if (routedHarness && providerId !== previousProviderId) {
-      if (!this.routing) throw new Error("路由服务不可用,无法切换供应商")
-      await this.routing.switchRoute(key, providerId, session.record.harnessId)
-    }
+    const previousSelection = session.configLease.selected
     try {
-      await session.connection.setModel(modelId)
+      await session.connection.setModel(result.selection.harnessModelId)
     } catch (error) {
-      if (routedHarness && providerId !== previousProviderId && previousProviderId) {
-        await this.routing?.switchRoute(key, previousProviderId, session.record.harnessId)
-      }
+      // routed adapter 已原子换过 proxy 指向；底层模型切换失败时恢复旧 route。
+      await adapter.reconfigure(session.configLease, previousSelection).catch(() => {})
       throw error
     }
+    session.configLease.selected = result.selection
     session.record.providerId = providerId
     session.record.modelId = modelId
     this.upsertRecord(session.record)
@@ -851,22 +772,11 @@ export class SessionManager {
     const session = this.live.get(key)
     if (!session) return
     this.live.delete(key)
-    // 有租约的会话:dispose 只释放活跃资源(routes),保留可恢复的隔离目录;
-    // legacy 会话继续走旧 routing 清理。两者互不重复吊销。
-    if (session.configLease) {
-      session.disposeExit()
-      session.connection.close()
-      session.logStream.end()
-      await session.configLease.dispose()
-      await session.appLease?.dispose()
-      return
-    }
-    this.routing?.revokeRoute(key)
-    this.routing?.disposeCodexHome(key)
-    this.routing?.disposeConfiguredHarnessHome(key)
+    // dispose 只释放活跃资源(routes),保留可恢复的隔离目录。
     session.disposeExit()
     session.connection.close()
     session.logStream.end()
+    await session.configLease.dispose()
     await session.appLease?.dispose()
   }
 
@@ -874,11 +784,9 @@ export class SessionManager {
   private async removeAdapterState(key: string) {
     const record = this.listSessions().find((item) => item.key === key)
     if (!record?.providerId || !record.modelId) return
-    const adapter = this.adapterFor(record.harnessId, {
-      providerId: record.providerId,
-      modelId: record.modelId,
-    })
-    await adapter?.removeSessionState?.(key)
+    const normalized = record.harnessId === "glm" ? "claude-code" : record.harnessId
+    if (!this.configAdapters?.has(normalized)) return
+    await this.configAdapters.get(normalized).removeSessionState?.(key)
   }
 
   private removeChatWorkspace(record: SessionRecord | undefined) {
@@ -910,7 +818,7 @@ export class SessionManager {
       ? !session.hasUserMessage
       : !this.readEvents(key).some(
           (item) =>
-            (item.kind === "event" && item.payload.type === "user_message") ||
+            (item.kind === "event" && (item.payload as HarnessEvent).type === "user_message") ||
             (item.kind === "user_message"),
         )
     // 普通关闭:仅 dispose(routes),保留隔离目录供 revive 复用;

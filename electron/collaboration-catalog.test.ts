@@ -37,20 +37,20 @@ describe("AgentSelectionCatalog", () => {
       usable: true,
       source: "managed",
       version: "1.2.3",
-      efforts: ["off", "auto"],
+      efforts: ["off", "auto", "low", "high", "max"],
       defaultEffort: "auto",
     })
     expect(harnesses.find((item) => item.id === "codex")).toMatchObject({ usable: false })
   })
 
-  it("model_list 只发布可执行 picker 选项，并沿用 native 优先的默认规则", async () => {
+  it("model_list 只发布可执行 picker 选项(builtin/user),默认取目录第一项", async () => {
     const list = vi.fn(async () => [
       provider({
-        id: "native-omp/runtime-omp-openai",
-        source: "native",
-        name: "OpenAI 本机",
-        defaultModelIds: { omp: "native-model" },
-        models: { omp: [{ id: "native-model", name: "Native Model", reasoning: true, efforts: ["auto"], defaultEffort: "auto" }] },
+        id: "user-openai",
+        source: "user",
+        name: "OpenAI",
+        defaultModelIds: { omp: "bento/gpt" },
+        models: { omp: [{ id: "bento/gpt", name: "GPT", reasoning: true, efforts: ["auto"], defaultEffort: "auto" }] },
       }),
       provider({
         id: "user-zhipu",
@@ -69,7 +69,7 @@ describe("AgentSelectionCatalog", () => {
     const models = await catalog.listModels({ callerSessionId: "caller", harnessId: "omp" })
     expect(list).toHaveBeenCalledWith({ harnessId: "omp", cwd: "/caller-workspace", discover: true })
     expect(models.map((model) => [model.providerId, model.modelId])).toEqual([
-      ["native-omp/runtime-omp-openai", "native-model"],
+      ["user-openai", "bento/gpt"],
       ["user-zhipu", "bento/glm"],
     ])
     expect(models[0]).toMatchObject({ default: true, providerDefault: true, defaultEffort: "auto" })

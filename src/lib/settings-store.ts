@@ -10,8 +10,8 @@ export type SettingsSection = "providers" | "harnesses" | "appearance" | "layout
 type SettingsState = {
   open: boolean
   section: SettingsSection
-  /** 打开供应商区后直接进添加向导(RuntimePicker 空态「添加供应商…」)。 */
-  addProvider: boolean
+  /** 打开供应商区后直接进添加向导;importLocal 时直达「从本机配置导入」检测步骤。 */
+  addProvider: false | "form" | "detect"
   version: number
 }
 
@@ -23,8 +23,15 @@ function patch(next: Partial<Omit<SettingsState, "version">>) {
   for (const listener of listeners) listener()
 }
 
-export function openSettings(section: SettingsSection = "providers", opts?: { addProvider?: boolean }) {
-  patch({ open: true, section, addProvider: opts?.addProvider === true })
+export function openSettings(
+  section: SettingsSection = "providers",
+  opts?: { addProvider?: boolean | "detect" },
+) {
+  patch({
+    open: true,
+    section,
+    addProvider: opts?.addProvider === "detect" ? "detect" : opts?.addProvider === true ? "form" : false,
+  })
 }
 
 export function closeSettings() {

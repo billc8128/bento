@@ -148,7 +148,6 @@ describe("OpenCodeBentoConfigAdapter", () => {
     sessionKey: string
     harnessId: "opencode"
     cwd: string
-    mode: "bento"
     selected: { providerId: string; modelId: string }
     providers: SessionProviderRuntime[]
   } {
@@ -156,7 +155,6 @@ describe("OpenCodeBentoConfigAdapter", () => {
       sessionKey,
       harnessId: "opencode",
       cwd: os.tmpdir(),
-      mode: "bento",
       selected: { providerId: "user-alpha", modelId: "bento/m-a1" },
       providers: [
         {
@@ -246,7 +244,7 @@ describe("OpenCodeBentoConfigAdapter", () => {
     const unknown = await adapter.reconfigure(lease, { providerId: "user-beta", modelId: "ghost" })
     expect(unknown).toMatchObject({ mode: "new-session" })
     const native = await adapter.reconfigure(lease, { providerId: "native-opencode", modelId: "x" })
-    expect(native).toMatchObject({ mode: "new-session", reason: expect.stringContaining("native↔Bento") })
+    expect(native).toMatchObject({ mode: "new-session" })
     await lease.dispose()
   })
 

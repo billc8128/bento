@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { HARNESSES, getHarness, type HarnessId } from "@/core/harness"
 import {
   compactModelName,
+  dedupeProviderModels,
   findProviderModel,
   modelsForProvider,
   providersForModelPicker,
@@ -16,8 +17,8 @@ import {
   type ProviderView,
 } from "@/core/provider"
 import { EFFORTS, type Effort } from "@/core/types"
-import { providersForActiveSession } from "@/lib/session-provider-filter"
 import { openSettings } from "@/lib/settings-store"
+import { useLocalImportSources } from "@/lib/local-import"
 import { cn } from "@/lib/utils"
 
 export type RuntimeSelection = {
@@ -38,10 +39,10 @@ type RuntimePickerProps = {
   modelLocked?: boolean
 }
 
+const HARNESS_ORDER: HarnessId[] = ["pi", "codex", "claude-code", "kimi", "opencode", "omp", "hermes"]
+
 type UnifiedRow = { provider: ProviderView; model: ProviderModel }
 type PickerView = "root" | "harness" | "model" | "effort"
-
-const HARNESS_ORDER: HarnessId[] = ["pi", "codex", "claude-code", "kimi", "opencode", "omp", "hermes"]
 
 export function RuntimePicker({
   selection,
@@ -62,12 +63,11 @@ export function RuntimePicker({
   const harness = getHarness(selection.harnessId)
   const harnessOptions = HARNESS_ORDER.map((id) => HARNESSES.find((item) => item.id === id)!)
   const selectableProviders = useMemo(() => {
-    const available = providersForModelPicker(providers, session ? undefined : selection.harnessId)
-    if (!session) return available
-    return providersForActiveSession(available, {
-      harnessId: selection.harnessId,
-      providerId: selection.providerId,
-    })
+    const available = providersForModelPicker(providers, selection.harnessId)
+    // 活跃会话把当前 provider 置顶去重(其模型无条件保留),其余按 canonical 去重。
+    return session && selection.providerId
+      ? dedupeProviderModels(available, selection.harnessId, { pinnedProviderId: selection.providerId })
+      : available
   }, [providers, selection.harnessId, selection.providerId, session])
   const selectedModel = findProviderModel(
     selectableProviders,
@@ -275,14 +275,7 @@ export function RuntimePicker({
                   )
                 })}
                 {items.length === 0 && (
-                  <div className="space-y-2 px-3 py-6 text-center text-sm text-muted-foreground">
-                    <p>{needle ? "没有匹配的模型" : "没有已连接供应商提供可选模型。"}</p>
-                    {typeof window !== "undefined" && window.bento && (
-                      <button type="button" className="text-foreground underline underline-offset-4" onClick={() => { setOpen(false); openSettings("providers", { addProvider: Boolean(needle) }) }}>
-                        {needle ? "添加供应商…" : "前往供应商设置…"}
-                      </button>
-                    )}
-                  </div>
+                  <EmptyModelList needle={needle} onOpenSettings={openSettings} closePopover={closePopover} />
                 )}
               </div>
             </div>
@@ -307,5 +300,44 @@ export function RuntimePicker({
         )}
       </PopoverContent>
     </Popover>
+  )
+}
+
+
+function EmptyModelList({
+  needle,
+  onOpenSettings,
+  closePopover,
+}: {
+  needle: string
+  onOpenSettings: typeof openSettings
+  closePopover: () => void
+}) {
+  const importSources = useLocalImportSources()
+  const canImport = !needle && importSources !== null && importSources.length > 0
+  return (
+    <div className="space-y-2 px-3 py-6 text-center text-sm text-muted-foreground">
+      <p>{needle ? "没有匹配的模型" : "没有已连接供应商提供可选模型。"}</p>
+      {typeof window !== "undefined" && window.bento && (
+        <div className="flex flex-col items-center gap-1.5">
+          {canImport && (
+            <button
+              type="button"
+              className="text-foreground underline underline-offset-4"
+              onClick={() => { closePopover(); onOpenSettings("providers", { addProvider: "detect" }) }}
+            >
+              从本机配置导入({importSources!.join(" / ")})…
+            </button>
+          )}
+          <button
+            type="button"
+            className="text-foreground underline underline-offset-4"
+            onClick={() => { closePopover(); onOpenSettings("providers", { addProvider: Boolean(needle) }) }}
+          >
+            {needle ? "添加供应商…" : "前往供应商设置…"}
+          </button>
+        </div>
+      )}
+    </div>
   )
 }

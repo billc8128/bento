@@ -1,5 +1,5 @@
 /**
- * Pi Bento Adapter(SESSION_CONFIG_ADAPTER_PLAN §6.4,mode=bento)。
+ * Pi Bento Adapter(SESSION_CONFIG_ADAPTER_PLAN §6.4)。
  *
  * capability spike 结论(.spike-kimi/spike-pi.mjs,pi 0.84.3 本机版):
  *   - PI_CODING_AGENT_DIR 指向会话目录,模型文件是该目录根下的 models.json;
@@ -13,6 +13,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
+import type { HarnessId } from "../../src/core/harness"
 import type { WireProtocol } from "../../src/core/provider"
 import type { ProviderRoutingService } from "../provider-routing"
 import { normalizeBentoModelId, stableProviderAlias } from "./alias"
@@ -26,9 +27,9 @@ import type {
   SessionConfigLease,
   SessionConfigRequest,
 } from "./types"
-import { modeOfSelection, selectionKey } from "./types"
+import { selectionKey } from "./types"
 
-/** wireProtocol → models.json 的 api 字段(沿用 piProviderEnv 的映射)。 */
+/** wireProtocol → models.json 的 api 字段。 */
 function piApi(wireProtocol: WireProtocol): string {
   return wireProtocol === "openai-chat" ? "openai-completions" : wireProtocol
 }
@@ -62,18 +63,14 @@ export function buildPiModelsJson(
 }
 
 export class PiBentoConfigAdapter implements SessionConfigAdapter {
-  readonly mode = "bento" as const
 
   constructor(
-    readonly harnessId: PiBentoConfigAdapter["harnessId"],
+    readonly harnessId: HarnessId,
     private readonly routing: ProviderRoutingService,
     private readonly userDataDir: string,
   ) {}
 
   async prepare(request: SessionConfigRequest): Promise<SessionConfigLease> {
-    if (request.mode !== "bento") {
-      throw new Error("PiBentoConfigAdapter 只处理 bento 模式")
-    }
     if (request.providers.length === 0) {
       throw new Error("没有可用的 Bento Provider,无法准备 Pi 会话配置")
     }
@@ -123,7 +120,6 @@ export class PiBentoConfigAdapter implements SessionConfigAdapter {
     return {
       sessionKey,
       harnessId: request.harnessId,
-      mode: "bento",
       env: { PI_CODING_AGENT_DIR: configDir },
       strip: ["PI_CODING_AGENT_DIR"],
       configDir,
@@ -146,9 +142,7 @@ export class PiBentoConfigAdapter implements SessionConfigAdapter {
       normalizeBentoModelId(next.modelId),
     ))
     if (ref) return { mode: "live", selection: ref }
-    const reason = modeOfSelection(next) !== lease.mode
-      ? "native↔Bento 模式之间切换需要新会话"
-      : "该模型不在当前 Bento 注册表中,需要新会话"
+    const reason = "该模型不在当前 Bento 注册表中,需要新会话"
     return { mode: "new-session", reason }
   }
 

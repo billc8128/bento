@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest"
 
-import { compactModelName, findProviderModel, type ProviderView } from "./provider"
+import type { HarnessId } from "./harness"
+
+import {
+  compactModelName,
+  defaultModelSelection,
+  dedupeProviderModels,
+  findProviderModel,
+  providersForModelPicker,
+  type ProviderView,
+} from "./provider"
 
 const providers: ProviderView[] = [{
   id: "openai",
@@ -111,5 +120,127 @@ describe("buildUserProvider", () => {
       .toBe("同名也串不了")
     expect(findProviderModel(mixed, "openai", "codex", "runtime-model")?.name)
       .toBe("Runtime Model")
+  })
+})
+
+describe("dedupeProviderModels / providersForModelPicker", () => {
+  const omp = "omp" as HarnessId
+
+  function view(overrides: Partial<ProviderView> & Pick<ProviderView, "id" | "source">): ProviderView {
+    return {
+      name: overrides.id,
+      harnessIds: [omp],
+      connected: true,
+      modelDiscovery: "ready",
+      models: {},
+      ...overrides,
+    }
+  }
+
+  /** OMP 新会话场景:Bento user 与另一 user provider 各有同 canonical 的 GLM。 */
+  function ompProviders(): ProviderView[] {
+    return [
+      view({
+        id: "user-zhipu-coding-plan-cn",
+        source: "user",
+        canonicalId: "zhipu-coding-plan-cn",
+        models: { omp: [{ id: "bento/glm-5.3", name: "GLM-5.3", reasoning: true }] },
+      }),
+      view({
+        id: "user-zhipu-coding-plan-cn-alt",
+        source: "user",
+        canonicalId: "zhipu-coding-plan-cn",
+        models: { omp: [
+          { id: "bento/glm-5.3", name: "GLM-5.3", reasoning: true },
+          { id: "bento/glm-5.4", name: "GLM-5.4", reasoning: true },
+        ] },
+      }),
+      view({
+        id: "user-moonshot",
+        source: "user",
+        canonicalId: "moonshot-global",
+        models: { omp: [{ id: "bento/kimi-k3", name: "Kimi K3", reasoning: true }] },
+      }),
+      view({ id: "omp-runtime", source: "runtime", connected: false }),
+    ]
+  }
+
+  it("新会话同 canonical GLM 先到先得,后到的同名模型去掉、独有模型保留", () => {
+    const result = providersForModelPicker(ompProviders(), omp)
+    expect(result.map((provider) => provider.id)).toEqual([
+      "user-zhipu-coding-plan-cn",
+      "user-zhipu-coding-plan-cn-alt",
+      "user-moonshot",
+    ])
+    const glm = result.flatMap((provider) => provider.models.omp ?? [])
+      .filter((model) => model.id.includes("glm"))
+    expect(glm.map((model) => model.id)).toEqual(["bento/glm-5.3", "bento/glm-5.4"])
+  })
+
+  it("dedupeProviderModels 先到先得,pinned provider 无条件提到最前", () => {
+    const [zhipu, altZhipu] = ompProviders()
+    const altFirst = dedupeProviderModels([altZhipu, zhipu], omp)
+    expect(altFirst.flatMap((provider) => provider.models.omp ?? []).map((model) => model.id))
+      .toEqual(["bento/glm-5.3", "bento/glm-5.4"])
+    const pinned = dedupeProviderModels([altZhipu, zhipu], omp, {
+      pinnedProviderId: "user-zhipu-coding-plan-cn",
+    })
+    expect(pinned.map((provider) => provider.id)).toEqual(["user-zhipu-coding-plan-cn", "user-zhipu-coding-plan-cn-alt"])
+    expect(pinned.flatMap((provider) => provider.models.omp ?? []).map((model) => model.id))
+      .toEqual(["bento/glm-5.3", "bento/glm-5.4"])
+  })
+
+  it("runtime 来源不进入新会话选择器", () => {
+    expect(providersForModelPicker(ompProviders(), omp).some((provider) => provider.source === "runtime"))
+      .toBe(false)
+  })
+})
+
+describe("defaultModelSelection", () => {
+  const omp = "omp" as HarnessId
+
+  function view(overrides: Partial<ProviderView> & Pick<ProviderView, "id" | "source">): ProviderView {
+    return {
+      name: overrides.id,
+      harnessIds: [omp],
+      connected: true,
+      modelDiscovery: "ready",
+      models: {},
+      ...overrides,
+    }
+  }
+
+  const userGlm: ProviderView = view({
+    id: "user-zhipu-coding-plan-cn",
+    source: "user",
+    canonicalId: "zhipu-coding-plan-cn",
+    models: { omp: [{ id: "bento/glm-5.3", name: "GLM-5.3", reasoning: true }] },
+  })
+  const userMoonshot: ProviderView = view({
+    id: "user-moonshot",
+    source: "user",
+    canonicalId: "moonshot-global",
+    models: { omp: [
+      { id: "bento/kimi-k3", name: "Kimi K3", reasoning: true },
+      { id: "bento/kimi-k3-256k", name: "Kimi K3 256k", reasoning: true },
+    ] },
+  })
+
+  it("目录第一项即默认", () => {
+    expect(defaultModelSelection([userMoonshot, userGlm], omp)).toEqual({
+      providerId: "user-moonshot",
+      modelId: "bento/kimi-k3",
+    })
+  })
+
+  it("第一项 Provider 上报的 defaultModelIds 优先于模型顺序", () => {
+    const withDefault: ProviderView = {
+      ...userMoonshot,
+      defaultModelIds: { omp: "bento/kimi-k3-256k" },
+    }
+    expect(defaultModelSelection([withDefault, userGlm], omp)).toEqual({
+      providerId: "user-moonshot",
+      modelId: "bento/kimi-k3-256k",
+    })
   })
 })

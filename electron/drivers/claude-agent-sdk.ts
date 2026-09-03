@@ -13,7 +13,6 @@ import {
 import { ClaudeAgentTranslator } from "./claude-agent-translator"
 import { harnessUsage } from "./usage"
 import { assertHarnessCwd, resolveHarnessRuntime, type HarnessRuntimePreference } from "../harness-runtime"
-import { isNativeProviderId } from "../../src/core/provider"
 import { normalizePromptInput } from "../../src/core/types"
 import type { HarnessConnection, HarnessDriver, HarnessStartOptions } from "./types"
 import type { ProviderDiscoveryResult } from "../provider-discovery"
@@ -55,7 +54,7 @@ export function parseClaudeModels(models: ModelInfo[]): ProviderDiscoveryResult 
 export async function discoverClaudeModels(
   cwd: string,
   proxyEnv?: HarnessStartOptions["proxyEnv"],
-  preference: HarnessRuntimePreference = "local",
+  preference: HarnessRuntimePreference = "managed",
   deps: { query?: ClaudeQueryFactory } = {},
 ): Promise<ProviderDiscoveryResult> {
   assertHarnessCwd(cwd)
@@ -108,13 +107,11 @@ export const claudeAgentSdkDriver: HarnessDriver = {
     emit,
     deps: { query?: ClaudeQueryFactory } = {},
   ): Promise<HarnessConnection> {
-    if (!options.proxyEnv && !isNativeProviderId(options.providerId)) {
+    if (!options.proxyEnv) {
       throw new Error("Claude Agent SDK 缺少 Bento provider 路由环境")
     }
     const queryFactory = deps.query ?? createSdkQuery
-    const localExecutable = await claudeExecutable(
-      options.runtimePreference ?? (options.proxyEnv ? "managed" : "local"),
-    )
+    const localExecutable = await claudeExecutable("managed")
     const nativeSessionId = options.nativeSessionId ?? randomUUID()
     let resume = options.nativeSessionId
     let modelId = options.modelId

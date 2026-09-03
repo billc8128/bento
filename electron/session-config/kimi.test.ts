@@ -96,7 +96,6 @@ function bentoRequest(sessionKey: string, providers: AdapterProvider[], override
     sessionKey,
     harnessId: "kimi",
     cwd: os.tmpdir(),
-    mode: "bento",
     selected: { providerId: providers[0]!.providerId, modelId: providers[0]!.models[0]!.id },
     providers,
     ...overrides,
@@ -204,7 +203,7 @@ describe("KimiBentoConfigAdapter", () => {
     const unknown = await adapter.reconfigure(lease, { providerId: "user-beta", modelId: "ghost" })
     expect(unknown).toMatchObject({ mode: "new-session" })
     const native = await adapter.reconfigure(lease, { providerId: "native-kimi", modelId: "kimi-code/k3" })
-    expect(native).toMatchObject({ mode: "new-session", reason: expect.stringContaining("native↔Bento") })
+    expect(native).toMatchObject({ mode: "new-session" })
     await lease.dispose()
   })
 

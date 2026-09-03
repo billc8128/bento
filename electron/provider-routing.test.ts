@@ -125,33 +125,6 @@ describe("ProviderRoutingService OAuth", () => {
     routing.dispose()
   })
 
-  it("Pi 生成隔离 models.json，密钥只进进程环境", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-pi-"))
-    dirs.push(dir)
-    const store = new CustomProviderStore(dir, memorySecrets())
-    const config: CustomProviderConfig = {
-      id: "user-deepseek",
-      presetId: "deepseek",
-      name: "DeepSeek",
-      auth: { method: "apiKey" },
-      runtimes: {
-        pi: {
-          baseUrl: "https://api.deepseek.com",
-          wireProtocol: "openai-chat",
-          models: [{ id: "deepseek-chat", name: "DeepSeek Chat", contextWindow: 128000 }],
-        },
-      },
-    }
-    store.upsert(config, { "*": "sk-secret" })
-    const routing = new ProviderRoutingService(dir, () => store)
-    const result = routing.piProviderEnv(config.id)
-    const models = fs.readFileSync(path.join(result.env.PI_CODING_AGENT_DIR, "models.json"), "utf8")
-    expect(result.env.BENTO_PROVIDER_KEY).toBe("sk-secret")
-    expect(result.strip).toContain("PI_CODING_AGENT_DIR")
-    expect(models).toContain('"api": "openai-completions"')
-    expect(models).toContain('"id": "deepseek-chat"')
-    expect(models).not.toContain("sk-secret")
-  })
 
   it("Codex config 把 model_provider 写在顶层并关闭 WebSocket", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-codex-"))
@@ -171,46 +144,6 @@ describe("ProviderRoutingService OAuth", () => {
     routing.disposeCodexHome("session-codex")
   })
 
-  it("为 ACP harness 生成隔离配置，密钥仅通过环境变量注入", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-acp-"))
-    dirs.push(dir)
-    const store = new CustomProviderStore(dir, memorySecrets())
-    const runtime = {
-      baseUrl: "https://api.example.com/v1",
-      wireProtocol: "openai-chat" as const,
-      models: [{ id: "model-x", name: "Model X" }],
-    }
-    const config: CustomProviderConfig = {
-      id: "user-acp",
-      name: "ACP Provider",
-      auth: { method: "apiKey" },
-      runtimes: { kimi: runtime, opencode: runtime, omp: runtime, hermes: runtime },
-    }
-    store.upsert(config, { "*": "sk-acp-secret" })
-    const routing = new ProviderRoutingService(dir, () => store)
-
-    const kimi = routing.configuredHarnessEnv("s1", config.id, "kimi", "model-x")
-    expect(kimi.env).toMatchObject({
-      KIMI_MODEL_NAME: "model-x",
-      KIMI_MODEL_API_KEY: "sk-acp-secret",
-    })
-
-    const openCode = routing.configuredHarnessEnv("s2", config.id, "opencode", "bento/model-x")
-    const openCodeFile = fs.readFileSync(openCode.env.OPENCODE_CONFIG, "utf8")
-    expect(openCodeFile).toContain("bento/model-x")
-    expect(openCodeFile).not.toContain("sk-acp-secret")
-
-    const omp = routing.configuredHarnessEnv("s3", config.id, "omp", "bento/model-x")
-    const ompFile = fs.readFileSync(path.join(omp.env.OMP_HOME, "agent", "models.json"), "utf8")
-    expect(ompFile).toContain('"id": "model-x"')
-    expect(ompFile).not.toContain("sk-acp-secret")
-
-    const hermes = routing.configuredHarnessEnv("s4", config.id, "hermes", "model-x")
-    const hermesFile = fs.readFileSync(path.join(hermes.env.HERMES_HOME, "config.yaml"), "utf8")
-    expect(hermesFile).toContain("${BENTO_PROVIDER_KEY}")
-    expect(hermesFile).toContain('"api_mode": "chat_completions"')
-    expect(hermesFile).not.toContain("sk-acp-secret")
-  })
 
   it("临期读取后台单飞刷新,并更新活跃路由的 token 与 Anthropic OAuth 头", async () => {
     let seenAuth = ""

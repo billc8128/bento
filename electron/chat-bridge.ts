@@ -31,7 +31,7 @@ function textOf(content: unknown): string {
   if (Array.isArray(content)) {
     return content
       .map((block) =>
-        block && typeof block === "object" && (block as { text?: unknown }).type === "text"
+        block && typeof block === "object" && (block as { type?: unknown; text?: unknown }).type === "text"
           ? String((block as { text: unknown }).text ?? "")
           : "",
       )
@@ -202,8 +202,9 @@ export class ChatToAnthropicStream {
         }
       }
     }
-    if (choice.finish_reason) {
-      events.push(...this.finish(choice.finish_reason))
+    const finishReason = typeof choice.finish_reason === "string" ? choice.finish_reason : undefined
+    if (finishReason) {
+      events.push(...this.finish(finishReason))
     }
     return events
   }

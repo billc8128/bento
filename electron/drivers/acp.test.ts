@@ -36,6 +36,55 @@ describe("Hermes ACP model switch", () => {
   })
 })
 
+describe("ACP Driver effort passthrough", () => {
+  function fakeOpenWithConfigOptions() {
+    const child = Object.assign(new EventEmitter(), { kill: vi.fn() })
+    const setSessionConfigOption = vi.fn(async () => ({}))
+    const conn = {
+      newSession: vi.fn(async () => ({
+        sessionId: "effort-session",
+        configOptions: [
+          { id: "model_id", type: "select", category: "model" },
+          { id: "effort", type: "select", category: "thought_level" },
+        ],
+      })),
+      resumeSession: vi.fn(),
+      prompt: vi.fn(),
+      cancel: vi.fn(),
+      setSessionConfigOption,
+    }
+    const open = vi.fn(async () => ({
+      child,
+      conn,
+      init: { agentCapabilities: {} },
+    }))
+    return { conn, open, setSessionConfigOption }
+  }
+
+  it("OMP 的 thought_level 值原样透传,low/high/max 不再折叠成 auto", async () => {
+    for (const effort of ["off", "auto", "low", "high", "max"] as const) {
+      const fake = fakeOpenWithConfigOptions()
+      const connection = await createAcpDriver("omp").start(
+        { cwd: "/workspace", effort },
+        vi.fn(),
+        { open: fake.open },
+      )
+      expect(fake.setSessionConfigOption).toHaveBeenCalledWith({
+        sessionId: "effort-session",
+        configId: "effort",
+        value: effort,
+      })
+      await connection.setEffort?.(effort)
+      expect(fake.setSessionConfigOption).toHaveBeenLastCalledWith({
+        sessionId: "effort-session",
+        configId: "effort",
+        value: effort,
+      })
+      connection.close()
+    }
+  })
+})
+
 describe("ACP Driver session lifecycle", () => {
   function fakeOpen(options: { resume?: boolean } = {}) {
     const child = Object.assign(new EventEmitter(), { kill: vi.fn() })

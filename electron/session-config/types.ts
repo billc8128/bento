@@ -1,15 +1,11 @@
 /**
  * SessionConfigAdapter 契约(SESSION_CONFIG_ADAPTER_PLAN §4)。
- *
- * 二进制来源与配置来源相互独立；配置模式只决定默认偏好：native 是 PATH-first，
- * Bento 是 managed/bundled-first。Adapter 只负责配置，输出租约不输出永久副本。
+ * 会话配置只有 Bento 隔离配置一种模式;Adapter 把 Provider 注册表翻译成
+ * 各 Harness 自己的配置面并签发租约(NATIVE_REMOVAL_PLAN)。
  */
 
 import type { HarnessId } from "../../src/core/harness"
 import type { ProviderModel, WireProtocol } from "../../src/core/provider"
-
-/** 会话配置模式:native = CLI 直读用户本机配置;bento = Bento 生成的隔离配置。 */
-export type SessionConfigMode = "native" | "bento"
 
 /** Bento 侧的一次模型选择(结构化身份,不靠字符串截断)。 */
 export type BentoModelSelection = {
@@ -29,7 +25,7 @@ export type SessionProviderRuntime = {
   requestPath?: string
   headers?: Record<string, string>
   models: ProviderModel[]
-  /** env 注入用密钥句柄;native 模式与 none 鉴权时缺省。 */
+  /** env 注入用密钥句柄;none 鉴权时缺省。 */
   credential?: CredentialHandle
 }
 
@@ -43,12 +39,10 @@ export type SessionConfigRequest = {
   sessionKey: string
   harnessId: HarnessId
   cwd: string
-  mode: SessionConfigMode
   selected: BentoModelSelection
   /**
-   * bento 模式:全部对目标 Harness 兼容且已连接的 Bento Provider;
-   * native 模式:该 Harness 本机发现结果构成的完整 native 目录。
-   * 两种模式都携带完整注册表,不是只有当前选择。
+   * 全部对目标 Harness 兼容且已连接的 Bento Provider。
+   * 携带完整注册表,不是只有当前选择。
    */
   providers: SessionProviderRuntime[]
 }
@@ -91,7 +85,6 @@ export function parseSelectionKey(key: string): BentoModelSelection | null {
 export type SessionConfigLease = {
   sessionKey: string
   harnessId: HarnessId
-  mode: SessionConfigMode
   /** 注入子进程的 env(密钥只在这里,配置文件只引用变量名)。 */
   env: Record<string, string>
   /** spawn 前需要剥离的宿主 env 前缀。 */
@@ -99,7 +92,7 @@ export type SessionConfigLease = {
   args?: string[]
   /** 隔离临时目录;dispose 不删除,removeSessionState 才删除。 */
   configDir?: string
-  /** 本租约生成的全部可选模型(native 模式 = 本机目录;bento = 全注册表)。 */
+  /** 本租约生成的全部可选模型(Bento 全注册表)。 */
   selections: Map<string, PreparedModelRef>
   selected: PreparedModelRef
   /** 单调递增;restart 换新租约时 +1。 */
@@ -115,8 +108,6 @@ export type ReconfigureResult =
 
 export interface SessionConfigAdapter {
   harnessId: HarnessId
-  /** 该 Adapter 服务的配置模式;native 与 bento Adapter 按模式共存。 */
-  mode: SessionConfigMode
   prepare(request: SessionConfigRequest): Promise<SessionConfigLease>
   reconfigure(lease: SessionConfigLease, next: BentoModelSelection): Promise<ReconfigureResult>
   /**
@@ -126,7 +117,3 @@ export interface SessionConfigAdapter {
   removeSessionState?(sessionKey: string): Promise<void>
 }
 
-/** 模式归属:providerId 形如 native-… 即 native,其余(builtin/user)为 bento。 */
-export function modeOfSelection(selection: BentoModelSelection): SessionConfigMode {
-  return selection.providerId.startsWith("native-") ? "native" : "bento"
-}

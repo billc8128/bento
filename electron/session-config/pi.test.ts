@@ -140,7 +140,6 @@ describe("PiBentoConfigAdapter", () => {
     sessionKey: string
     harnessId: "pi"
     cwd: string
-    mode: "bento"
     selected: { providerId: string; modelId: string }
     providers: SessionProviderRuntime[]
   } {
@@ -148,7 +147,6 @@ describe("PiBentoConfigAdapter", () => {
       sessionKey,
       harnessId: "pi",
       cwd: os.tmpdir(),
-      mode: "bento",
       selected: { providerId: "user-alpha", modelId: "bento/m-a1" },
       providers: [
         {
@@ -218,7 +216,7 @@ describe("PiBentoConfigAdapter", () => {
     expect(fs.existsSync(home)).toBe(false)
   })
 
-  it("跨 Provider/换模型 reconfigure live;未知与 native new-session;harnessModelId 为 alias/model", async () => {
+  it("跨 Provider/换模型 reconfigure live;未知选择 new-session;harnessModelId 为 alias/model", async () => {
     const { routing } = await fixture()
     const adapter = new PiBentoConfigAdapter(
       "pi", routing,
@@ -235,8 +233,6 @@ describe("PiBentoConfigAdapter", () => {
 
     const unknown = await adapter.reconfigure(lease, { providerId: "user-beta", modelId: "ghost" })
     expect(unknown).toMatchObject({ mode: "new-session" })
-    const nativeSel = await adapter.reconfigure(lease, { providerId: "native-pi", modelId: "x" })
-    expect(nativeSel).toMatchObject({ mode: "new-session", reason: expect.stringContaining("native↔Bento") })
     await lease.dispose()
   })
 

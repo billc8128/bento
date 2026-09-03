@@ -27,7 +27,7 @@ describe("Harness runtime resolution", () => {
       .toThrow(/项目目录不存在或不可访问/)
   })
 
-  it("优先识别 PATH 中的本机 CLI 并读取版本", async () => {
+  it("PATH 有本机 CLI 时上报 managed 首选来源,本机安装转 localInstall 附注", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-runtime-test-"))
     const hermes = path.join(tempDir, "hermes")
     fs.writeFileSync(hermes, "#!/bin/sh\necho 'Hermes 9.9.9'\n")
@@ -35,20 +35,32 @@ describe("Harness runtime resolution", () => {
     process.env.PATH = tempDir
 
     expect(localHarnessExecutable("hermes")).toEqual({ path: hermes, source: "local" })
-    await expect(harnessRuntimeStatus("hermes")).resolves.toMatchObject({
-      source: "local",
-      version: "Hermes 9.9.9",
-      usable: true,
-    })
-  })
-
-  it("Hermes 缺失时标记为按需受管 fallback", async () => {
-    process.env.PATH = ""
+    // 上报的是首选执行来源(managed),PATH 安装只是附注,会话不使用它
     await expect(harnessRuntimeStatus("hermes")).resolves.toMatchObject({
       source: "managed",
       usable: true,
       fallbackAvailable: true,
+      localInstall: { path: hermes, version: "Hermes 9.9.9" },
     })
+  })
+
+  it("Hermes 缺失时标记为按需受管 fallback,无可退 PATH 安装", async () => {
+    process.env.PATH = ""
+    const status = await harnessRuntimeStatus("hermes")
+    expect(status).toMatchObject({ source: "managed", usable: true, fallbackAvailable: false })
+    expect(status.localInstall).toBeUndefined()
+  })
+
+  it("claude-code 无 PATH 回退:本机安装只作 localInstall 附注", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-runtime-cc-"))
+    const claude = path.join(tempDir, "claude")
+    fs.writeFileSync(claude, "#!/bin/sh\n")
+    fs.chmodSync(claude, 0o755)
+    process.env.PATH = tempDir
+
+    const status = await harnessRuntimeStatus("claude-code")
+    expect(status).toMatchObject({ source: "bundled", usable: true, fallbackAvailable: false })
+    expect(status.localInstall?.path).toBe(claude)
   })
 
   it("把 PATH 中的相对目录解析成绝对可执行路径", () => {
@@ -73,7 +85,7 @@ describe("Harness runtime resolution", () => {
     expect(localHarnessExecutable("pi")).toEqual({ path: pi, source: "local" })
   })
 
-  it("native 偏好 PATH，Bento 偏好 managed，显式覆盖始终最高", async () => {
+  it("local 偏好 PATH，managed 偏好受管，显式覆盖始终最高", async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-runtime-test-"))
     const local = path.join(tempDir, "pi")
     const override = path.join(tempDir, "pi-override")

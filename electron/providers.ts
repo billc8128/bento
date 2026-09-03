@@ -4,18 +4,13 @@ import os from "node:os"
 
 import {
   buildConfiguredProvider,
-  isNativeProviderId,
   modelsForProvider,
-  NATIVE_MODEL_ID,
-  nativeProviderId,
   providerFamilyId,
   type CustomProviderConfig,
   type ProviderView,
 } from "../src/core/provider"
-import { type HarnessId, type HarnessRuntimeStatus } from "../src/core/harness"
+import type { HarnessId } from "../src/core/harness"
 import { builtinProvidersForHarness } from "./builtin-providers"
-import { discoverCodexModels } from "./drivers/codex"
-import { discoverClaudeModels } from "./drivers/claude-agent-sdk"
 import type { ProviderModelCache } from "./provider-model-cache"
 import {
   ProviderDiscoveryService,
@@ -35,11 +30,6 @@ type BuiltinDiscoverer = (
   cwd: string,
 ) => Promise<ProviderDiscoveryResult | null>
 
-type RuntimeStatusReader = (harnessId: HarnessId) => Promise<HarnessRuntimeStatus>
-type NativeDiscoverer = (
-  harnessId: HarnessId,
-  cwd: string,
-) => Promise<ProviderDiscoveryResult | null>
 type ModelEnabledReader = (providerId: string, modelId: string) => boolean
 
 function discoveredModelKey(modelId: string): string {
@@ -117,40 +107,16 @@ export function mergeDiscoveredModelsIntoConfigured(
   })
 }
 
-/** native 伪供应商显示名:该 harness 本机 CLI 对应的供应商;配置自由的 CLI 用中性名。 */
-const NATIVE_PROVIDER_NAMES: Record<HarnessId, string> = {
-  "claude-code": "Anthropic",
-  codex: "OpenAI",
-  kimi: "Kimi",
-  pi: "本机配置",
-  omp: "本机配置",
-  opencode: "本机配置",
-  hermes: "本机配置",
-}
-
 export class ProviderRegistry {
   private userProviders: CustomProviderConfig[] = []
   private readonly builtinCache = new Map<string, ProviderDiscoveryResult>()
   private readonly builtinAccountCache = new Map<string, ProviderDiscoveryResult>()
-  private readonly nativeCache = new Map<string, ProviderDiscoveryResult>()
 
   constructor(
     private readonly discovery: ProviderDiscoveryService = new ProviderDiscoveryService(),
     private readonly isConnected: (config: CustomProviderConfig, harnessId: HarnessId) => boolean =
       () => false,
     private readonly discoverBuiltin: BuiltinDiscoverer = async () => null,
-    private readonly runtimeStatus: RuntimeStatusReader = async (harnessId) => ({
-      harnessId,
-      source: "missing",
-      usable: false,
-      fallbackAvailable: false,
-    }),
-    private readonly discoverNative: NativeDiscoverer = async (harnessId, cwd) =>
-      harnessId === "codex"
-        ? discoverCodexModels(cwd, undefined, { runtimePreference: "local" })
-        : harnessId === "claude-code"
-          ? discoverClaudeModels(cwd, undefined, "local")
-          : null,
     private readonly modelEnabled: ModelEnabledReader = () => true,
     private readonly persistentCache?: ProviderModelCache,
   ) {}
@@ -190,7 +156,6 @@ export class ProviderRegistry {
 
   async list(options: ListProviderOptions): Promise<ProviderView[]> {
     const cwd = options.cwd?.trim() || os.homedir()
-    const runtime = await this.runtimeStatus(options.harnessId)
     const builtinConfigs = builtinProvidersForHarness(options.harnessId)
     const runtimeProviderViews = options.harnessId === "codex" || options.harnessId === "claude-code"
       ? []
@@ -212,7 +177,6 @@ export class ProviderRegistry {
         ]),
       ) as ProviderView["models"],
     }))
-    const native = await this.nativeProvider(options, cwd, runtime, runtimeProviders)
     const builtins = await Promise.all(builtinConfigs.map(async (provider) => {
       const view = this.configuredView(provider, "builtin", options.harnessId)
       if (!view.connected) return view
@@ -269,121 +233,12 @@ export class ProviderRegistry {
       }
     }))
     const users = this.userProvidersFor(options.harnessId)
-    const configured = mergeDiscoveredModelsIntoConfigured(
-      [...builtins, ...users],
-      [...native, ...runtimeProviders],
-      options.harnessId,
-    )
-    if (options.harnessId === "codex" || options.harnessId === "claude-code") {
-      return [...native, ...configured]
-    }
-
     return [
-      ...native,
       ...runtimeProviders,
-      ...configured,
+      ...mergeDiscoveredModelsIntoConfigured([...builtins, ...users], runtimeProviders, options.harnessId),
     ]
   }
 
-  private async nativeProvider(
-    options: ListProviderOptions,
-    cwd: string,
-    runtime: HarnessRuntimeStatus,
-    runtimeProviders: ProviderView[],
-  ): Promise<ProviderView[]> {
-    const nativeConfigRuntime =
-      runtime.source === "local" ||
-      runtime.source === "override" ||
-      (options.harnessId === "pi" && runtime.source === "bundled") ||
-      (["omp", "hermes"].includes(options.harnessId) && runtime.source === "managed")
-    if (!nativeConfigRuntime) return []
-
-    // Claude Code / Codex 的本机 CLI 只有一家供应商,直接发现模型清单。
-    if (options.harnessId === "codex" || options.harnessId === "claude-code") {
-      const key = `${options.harnessId}\0${cwd}`
-      const persistentKey = `native\0${key}`
-      if (options.refresh) this.nativeCache.delete(key)
-      let discovered = this.nativeCache.get(key) ?? (options.refresh
-        ? undefined
-        : this.persistentCache?.get<ProviderDiscoveryResult>(persistentKey))
-      if (discovered && !this.nativeCache.has(key)) this.nativeCache.set(key, discovered)
-      let discoveryState: ProviderView["modelDiscovery"] = discovered ? "ready" : "unsupported"
-      let discoveryError: string | undefined
-      if (!discovered && options.discover) {
-        try {
-          discovered = await this.discoverNative(options.harnessId, cwd) ?? undefined
-          if (discovered) {
-            this.nativeCache.set(key, discovered)
-            this.persistentCache?.set(persistentKey, discovered)
-            discoveryState = "ready"
-          }
-        } catch (error) {
-          discoveryState = "failed"
-          discoveryError = error instanceof Error ? error.message : String(error)
-        }
-      } else if (!discovered) {
-        discoveryState = "idle"
-      }
-      const discoveredModels = discovered?.models ?? []
-      const currentModelId = discovered?.currentModelId
-      const currentIsListed = Boolean(
-        currentModelId && discoveredModels.some((model) => model.id === currentModelId),
-      )
-      const models = discoveredModels.filter((model) => model.id !== NATIVE_MODEL_ID)
-      const defaultModelId = currentIsListed ? currentModelId! : models[0]?.id
-      return [{
-        id: nativeProviderId(options.harnessId),
-        canonicalId: options.harnessId === "codex" ? "openai" : "anthropic",
-        name: NATIVE_PROVIDER_NAMES[options.harnessId],
-        source: "native",
-        authMethod: "native",
-        harnessIds: [options.harnessId],
-        connected: true,
-        modelDiscovery: discoveryState,
-        ...(discoveryError ? { discoveryError } : {}),
-        models: {
-          [options.harnessId]: models.map((model) => ({
-            ...model,
-            enabled: this.modelEnabled(nativeProviderId(options.harnessId), model.id),
-          })),
-        },
-        ...(defaultModelId ? { defaultModelIds: { [options.harnessId]: defaultModelId } } : {}),
-      }]
-    }
-
-    // 其它 CLI(pi/omp/…)的发现结果已按真实供应商分组;逐组透传成 native 视图,
-    // 保留供应商名,同一模型配在两个 plan 下会各自成行。
-    const views = runtimeProviders
-      .filter((provider) => (provider.models[options.harnessId] ?? []).length > 0)
-      .map((provider): ProviderView => {
-        const id = `native-${options.harnessId}/${provider.id}`
-        const models = (provider.models[options.harnessId] ?? []).map((model) => ({
-          ...model,
-          enabled: this.modelEnabled(id, model.id),
-        }))
-        const configuredDefault = provider.defaultModelIds?.[options.harnessId]
-        const defaultModelId = configuredDefault && models.some((model) => model.id === configuredDefault)
-          ? configuredDefault
-          : models.find((model) => model.enabled !== false)?.id
-        return {
-          id,
-          canonicalId: provider.canonicalId ?? providerFamilyId(
-            provider.id.replace(new RegExp(`^runtime-${options.harnessId}-`), ""),
-          ),
-          name: provider.name,
-          source: "native",
-          authMethod: "native",
-          harnessIds: [options.harnessId],
-          connected: true,
-          modelDiscovery: provider.modelDiscovery,
-          ...(provider.discoveryError ? { discoveryError: provider.discoveryError } : {}),
-          models: { [options.harnessId]: models },
-          ...(defaultModelId ? { defaultModelIds: { [options.harnessId]: defaultModelId } } : {}),
-        }
-      })
-
-    return views
-  }
 
   async resolveSelection(options: {
     harnessId: HarnessId
@@ -392,8 +247,8 @@ export class ProviderRegistry {
     modelId?: string
   }): Promise<{ providerId: string; modelId: string } | null> {
     // 显式 Bento 选择已经由设置页目录确定，无需为校验它再启动一遍本机 CLI。
-    // native/runtime 来源仍走下方 discovery，确保实际本机配置可执行。
-    if (options.providerId && !isNativeProviderId(options.providerId)) {
+    // 历史 native- 前缀 id 不在 builtin/user 注册表内 → 无候选 → null(阻止恢复)。
+    if (options.providerId) {
       const config = [
         ...builtinProvidersForHarness(options.harnessId),
         ...this.userProviders,
@@ -432,42 +287,23 @@ export class ProviderRegistry {
         }
       }
     }
-    const exactNativeProvider = options.providerId === nativeProviderId(options.harnessId) &&
-      isNativeProviderId(options.providerId)
-    if (exactNativeProvider && options.modelId) {
-      const runtime = await this.runtimeStatus(options.harnessId)
-      if (options.modelId !== NATIVE_MODEL_ID && (runtime.usable || runtime.fallbackAvailable)) {
-        return { providerId: options.providerId, modelId: options.modelId }
-      }
-      // 历史哨兵会话在本机 CLI 已删除时仍可交给 managed runtime 按默认模型恢复。
-      if (options.modelId === NATIVE_MODEL_ID && runtime.source !== "local" && runtime.fallbackAvailable) {
-        return { providerId: options.providerId, modelId: options.modelId }
-      }
-    }
     const providers = await this.list({
       harnessId: options.harnessId,
       cwd: options.cwd,
       discover: true,
     })
-    if (exactNativeProvider && options.modelId === NATIVE_MODEL_ID) {
-      const provider = providers.find((item) => item.source === "native" &&
-        (item.models[options.harnessId] ?? []).some((model) => model.enabled !== false))
-      const models = provider ? modelsForProvider(provider, options.harnessId) : []
-      const model = models.find((item) => item.id === provider?.defaultModelIds?.[options.harnessId]) ?? models[0]
-      return provider && model ? { providerId: provider.id, modelId: model.id } : null
-    }
-    const requestedModelId = options.modelId === NATIVE_MODEL_ID ? undefined : options.modelId
     const candidates = providers.filter((provider) => {
       if (!provider.connected) return false
+      if (provider.source === "runtime") return false
       if (options.providerId && provider.id !== options.providerId) return false
       const models = provider.models[options.harnessId] ?? []
-      return requestedModelId
-        ? models.some((model) => model.id === requestedModelId)
+      return options.modelId
+        ? models.some((model) => model.id === options.modelId)
         : models.length > 0
     })
     if (candidates.length !== 1) return null
     const provider = candidates[0]
-    const modelId = requestedModelId ?? provider.defaultModelIds?.[options.harnessId] ??
+    const modelId = options.modelId ?? provider.defaultModelIds?.[options.harnessId] ??
       provider.models[options.harnessId]?.[0]?.id
     return modelId ? { providerId: provider.id, modelId } : null
   }

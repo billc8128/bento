@@ -27,11 +27,15 @@ export type Harness = {
 
 export type HarnessRuntimeStatus = {
   harnessId: HarnessId
+  /** 首选执行来源(override → managed/bundled 解析优先级);非"实际执行"。 */
   source: "override" | "local" | "managed" | "bundled" | "missing"
   command?: string
   version?: string
   usable: boolean
+  /** managed/bundled 解析抛错时是否可退 PATH 本机二进制。 */
   fallbackAvailable: boolean
+  /** 附注:检测到本机 PATH 安装但未使用(仅信息展示)。 */
+  localInstall?: { path: string; version?: string }
 }
 
 export const HARNESSES: Harness[] = [
@@ -86,7 +90,7 @@ export const HARNESSES: Harness[] = [
     short: "OMP",
     live: true,
     effortSelection: true,
-    efforts: ["off", "auto"],
+    efforts: ["off", "auto", "low", "high", "max"],
     defaultEffort: "auto",
   },
   {

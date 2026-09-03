@@ -196,7 +196,7 @@ export type CollaborationModelOption = {
   harnessId: HarnessId
   providerId: string
   providerName: string
-  providerSource: "builtin" | "user" | "native"
+  providerSource: "builtin" | "user"
   modelId: string
   modelName: string
   reasoning: boolean

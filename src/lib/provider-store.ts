@@ -8,6 +8,8 @@ type ProviderSnapshot = {
   loaded: boolean
   loading: boolean
   discovering: boolean
+  /** 本 harness 的一次性发现是否已执行完(含失败);与 provider 列表内容无关。 */
+  discovered: boolean
   version: number
 }
 
@@ -22,7 +24,7 @@ function keyOf(harnessId: HarnessId, cwd: string) {
 function stateOf(key: string): ProviderSnapshot {
   let state = snapshots.get(key)
   if (!state) {
-    state = { providers: [], loaded: false, loading: false, discovering: false, version: 0 }
+    state = { providers: [], loaded: false, loading: false, discovering: false, discovered: false, version: 0 }
     snapshots.set(key, state)
   }
   return state
@@ -94,9 +96,28 @@ async function fetchProviders(
     if (requestSeq.get(key) === seq) patch(key, { providers: [], loaded: true })
   } finally {
     if (requestSeq.get(key) === seq) {
-      patch(key, { discovering: false, loading: false })
+      // 一次性发现纪律:发现请求结束(成功或失败)即视为已执行,之后不再重复
+      // spawn 本机 CLI,除非显式 refresh。
+      patch(key, discover
+        ? { discovering: false, loading: false, discovered: true }
+        : { discovering: false, loading: false })
     }
   }
+}
+
+/** 只读拉取 provider 列表,不触发本机发现(spawn CLI)。 */
+export async function loadProviderCatalog(harnessId: HarnessId, cwd: string) {
+  await fetchProviders(harnessId, cwd, false)
+}
+
+/**
+ * 单 harness 一次性发现守卫:进行中跳过;已发现过(含失败)且非 refresh 跳过;
+ * refresh 允许重跑。current 与错峰后台的 rest 走同一纪律。
+ */
+async function discoverOnce(harnessId: HarnessId, cwd: string, refresh: boolean) {
+  const state = stateOf(keyOf(harnessId, cwd))
+  if (state.discovering || (state.discovered && !refresh)) return
+  await fetchProviders(harnessId, cwd, true, refresh)
 }
 
 export function useProviderCatalog(harnessId: HarnessId, cwd: string) {
@@ -111,7 +132,7 @@ export function useProviderCatalog(harnessId: HarnessId, cwd: string) {
 
   useEffect(() => {
     if (!snapshot.loaded && !snapshot.loading) {
-      void fetchProviders(harnessId, cwd, false)
+      void loadProviderCatalog(harnessId, cwd)
     }
   }, [cwd, harnessId, snapshot.loaded, snapshot.loading])
 
@@ -192,40 +213,44 @@ export function useAllProviderCatalogs(cwd: string) {
     for (const harness of HARNESSES) {
       const state = stateOf(keyOf(harness.id, cwd))
       if (!state.loaded && !state.loading) {
-        void fetchProviders(harness.id, cwd, false)
+        void loadProviderCatalog(harness.id, cwd)
       }
     }
   }, [cwd, snapshot])
 
   const discover = useCallback(
-    (harnessId: HarnessId, refresh = false) =>
-      fetchProviders(harnessId, cwd, true, refresh),
+    (harnessId: HarnessId, refresh = false) => discoverOnce(harnessId, cwd, refresh),
     [cwd],
   )
 
-  // 当前 harness 立即发现;其余错峰后台发,避免同时 spawn 5 个 ACP 进程打满机器。
-  // 结果按 (harnessId, cwd) 缓存,重复打开弹层不会重复发现。
   const discoverAll = useCallback(
-    async (currentHarnessId: HarnessId, refresh = false) => {
-      const tasks: Promise<void>[] = [fetchProviders(currentHarnessId, cwd, true, refresh)]
-      const rest = HARNESSES.map((harness) => harness.id).filter((id) => id !== currentHarnessId)
-      rest.forEach((id, index) => {
-        tasks.push((async () => {
-          await new Promise((resolve) => setTimeout(resolve, 400 * (index + 1)))
-          const state = stateOf(keyOf(id, cwd))
-          // 进行中的发现不被重复请求覆盖(refresh 除外),纪律同 fetchProviders 的只读守卫
-          if (state.discovering) return
-          const settled = state.providers.some(
-            (p) => p.modelDiscovery === "ready" || p.modelDiscovery === "unsupported" || p.modelDiscovery === "failed",
-          )
-          if (settled && !refresh) return
-          await fetchProviders(id, cwd, true, refresh)
-        })())
-      })
-      await Promise.all(tasks)
-    },
+    (currentHarnessId: HarnessId, refresh = false) =>
+      discoverAllProviderCatalogs(currentHarnessId, cwd, refresh),
     [cwd],
   )
 
   return { ...snapshot, discover, discoverAll }
+}
+
+/**
+ * 全 harness 一次性发现:当前 harness 立即发现,其余错峰后台发,
+ * 避免同时 spawn 多个 ACP 进程打满机器。
+ * settled 判定只认本 store 的 discovered 标记——provider 列表里 builtin/user
+ * 条目的 modelDiscovery 与本机 runtime/native 发现是否执行过无关,拿它当
+ * settled 证据会漏掉 native 分组(如 OMP 下配置的 Cursor)。
+ */
+export async function discoverAllProviderCatalogs(
+  currentHarnessId: HarnessId,
+  cwd: string,
+  refresh = false,
+) {
+  const tasks: Promise<void>[] = [discoverOnce(currentHarnessId, cwd, refresh)]
+  const rest = HARNESSES.map((harness) => harness.id).filter((id) => id !== currentHarnessId)
+  rest.forEach((id, index) => {
+    tasks.push((async () => {
+      await new Promise((resolve) => setTimeout(resolve, 400 * (index + 1)))
+      await discoverOnce(id, cwd, refresh)
+    })())
+  })
+  await Promise.all(tasks)
 }

@@ -1,70 +1,11 @@
 import { describe, expect, it, vi } from "vitest"
 
-import { modelsForProvider, type ProviderView } from "../src/core/provider"
+import { modelsForProvider, type CustomProviderConfig, type ProviderView } from "../src/core/provider"
 import { ProviderDiscoveryService } from "./provider-discovery"
 import type { ProviderModelCache } from "./provider-model-cache"
 import { mergeDiscoveredModelsIntoConfigured, ProviderRegistry } from "./providers"
 
 describe("ProviderRegistry", () => {
-  it("native OAuth 目录按凭证类型显示 Claude Pro/Max 与 xAI SuperGrok", async () => {
-    const discovery = new ProviderDiscoveryService([{
-      id: "pi-runtime",
-      name: "Pi config",
-      harnessId: "pi",
-      discover: async () => ({
-        models: [
-          { id: "anthropic/claude-opus-4-8", name: "Claude Opus 4.8", reasoning: true },
-          { id: "xai/grok-code-fast-1", name: "Grok Code Fast", reasoning: true },
-        ],
-      }),
-    }], undefined, () => ["anthropic", "xai"], (_harnessId, providerId) =>
-      providerId === "anthropic" || providerId === "xai")
-    const registry = new ProviderRegistry(
-      discovery,
-      () => false,
-      undefined,
-      async () => ({ harnessId: "pi", source: "bundled", usable: true, fallbackAvailable: true }),
-    )
-    const providers = await registry.list({ harnessId: "pi", cwd: "/tmp", discover: true })
-    expect(providers.filter((provider) => provider.source === "native").map((provider) => [
-      provider.name,
-      provider.canonicalId,
-    ])).toEqual([
-      ["Claude Pro/Max", "anthropic"],
-      ["xAI SuperGrok", "xai"],
-    ])
-  })
-
-  it("bundled Pi 与 managed OMP/Hermes 可发布各自的 native OAuth Provider", async () => {
-    for (const [harnessId, source] of [
-      ["pi", "bundled"],
-      ["omp", "managed"],
-      ["hermes", "managed"],
-    ] as const) {
-      const discovery = new ProviderDiscoveryService([{
-        id: `${harnessId}-runtime`,
-        name: `${harnessId} config`,
-        harnessId,
-        discover: async () => ({
-          currentModelId: "openai-codex/gpt-5.4",
-          models: [{ id: "openai-codex/gpt-5.4", name: "GPT-5.4", reasoning: true }],
-        }),
-      }], undefined, () => ["openai-codex"])
-      const registry = new ProviderRegistry(
-        discovery,
-        () => false,
-        undefined,
-        async () => ({ harnessId, source, usable: true, fallbackAvailable: true }),
-      )
-      const providers = await registry.list({ harnessId, cwd: "/tmp", discover: true })
-      expect(providers.find((provider) => provider.source === "native")).toMatchObject({
-        canonicalId: "openai",
-        connected: true,
-        models: { [harnessId]: [{ id: "openai-codex/gpt-5.4", name: "GPT-5.4" }] },
-      })
-    }
-  })
-
   it("OpenAI OAuth 未完成账户发现前不发布静态模型", async () => {
     const registry = new ProviderRegistry(undefined, (config) => config.id === "openai")
     for (const harnessId of ["codex", "pi", "omp", "hermes", "kimi", "opencode"] as const) {
@@ -130,8 +71,6 @@ describe("ProviderRegistry", () => {
       (config) => config.id === "openai",
       undefined,
       undefined,
-      undefined,
-      undefined,
       persistentCache,
     )
 
@@ -157,10 +96,10 @@ describe("ProviderRegistry", () => {
       models: { pi: [{ id: "bento/glm-5.3", name: "GLM 5.3", reasoning: false }] },
     }
     const discovered: ProviderView = {
-      id: "native-pi/runtime-pi-zhipu-coding-plan-cn",
+      id: "runtime-pi-zhipu-coding-plan-cn",
       canonicalId: "zhipu-coding-plan-cn",
       name: "智谱 GLM Coding Plan",
-      source: "native",
+      source: "runtime",
       harnessIds: ["pi"],
       connected: true,
       modelDiscovery: "ready",
@@ -190,39 +129,19 @@ describe("ProviderRegistry", () => {
       modelDiscovery: "idle",
       models: { "claude-code": [] },
     }
-    const native: ProviderView = {
+    const runtime: ProviderView = {
       ...builtin,
-      id: "native-claude-code",
-      source: "native",
-      authMethod: "native",
+      id: "runtime-claude-code",
+      source: "runtime",
       modelDiscovery: "ready",
-      models: { "claude-code": [{ id: "native-only", name: "Native", reasoning: true }] },
+      models: { "claude-code": [{ id: "runtime-only", name: "Runtime", reasoning: true }] },
     }
 
-    expect(mergeDiscoveredModelsIntoConfigured([builtin], [native], "claude-code"))
+    expect(mergeDiscoveredModelsIntoConfigured([builtin], [runtime], "claude-code"))
       .toEqual([builtin])
   })
 
-  it("本机 CLI 尚未发现真实模型时不发布默认哨兵", async () => {
-    const registry = new ProviderRegistry(
-      undefined,
-      undefined,
-      undefined,
-      async (harnessId) => ({
-        harnessId,
-        source: "local",
-        command: `/usr/local/bin/${harnessId}`,
-        version: "1.0.0",
-        usable: true,
-        fallbackAvailable: true,
-      }),
-    )
-    const providers = await registry.list({ harnessId: "pi" })
-    expect(providers.some((provider) => provider.source === "native")).toBe(false)
-    expect(JSON.stringify(providers)).not.toContain("__native_default__")
-  })
-
-  it("本机 ACP CLI 的发现结果按真实供应商分组透传,保留各自默认模型", async () => {
+  it("本机 ACP CLI 的发现结果按真实供应商分组透传为 runtime 候选,保留各自默认模型", async () => {
     const discovery = new ProviderDiscoveryService([{
       id: "opencode-runtime",
       name: "OpenCode 配置",
@@ -235,27 +154,17 @@ describe("ProviderRegistry", () => {
         ],
       }),
     }])
-    const registry = new ProviderRegistry(
-      discovery,
-      undefined,
-      undefined,
-      async (harnessId) => ({
-        harnessId,
-        source: "local",
-        usable: true,
-        fallbackAvailable: true,
-      }),
-    )
+    const registry = new ProviderRegistry(discovery)
 
     const providers = await registry.list({ harnessId: "opencode", cwd: "/tmp", discover: true })
-    const native = providers.filter((provider) => provider.source === "native")
-    expect(native.map((provider) => provider.name)).toEqual(["Anthropic API", "OpenAI API"])
-    expect(native[0]?.models.opencode?.map((model) => model.id)).toEqual(["anthropic/claude-sonnet"])
-    expect(native[0]?.defaultModelIds?.opencode).toBe("anthropic/claude-sonnet")
-    expect(native[1]?.models.opencode?.map((model) => model.id)).toEqual(["openai/gpt-5.4"])
+    const runtime = providers.filter((provider) => provider.source === "runtime")
+    expect(runtime.map((provider) => provider.name)).toEqual(["Anthropic API", "OpenAI API"])
+    expect(runtime[0]?.models.opencode?.map((model) => model.id)).toEqual(["anthropic/claude-sonnet"])
+    expect(runtime[0]?.defaultModelIds?.opencode).toBe("anthropic/claude-sonnet")
+    expect(runtime[1]?.models.opencode?.map((model) => model.id)).toEqual(["openai/gpt-5.4"])
   })
 
-  it("同一模型配在两个 plan 下时各自成行", async () => {
+  it("同一模型配在两个 plan 下时 runtime 候选各自成行", async () => {
     const discovery = new ProviderDiscoveryService([{
       id: "omp-runtime",
       name: "OMP 配置",
@@ -268,141 +177,34 @@ describe("ProviderRegistry", () => {
         ],
       }),
     }])
-    const registry = new ProviderRegistry(
-      discovery,
-      undefined,
-      undefined,
-      async (harnessId) => ({
-        harnessId,
-        source: "local",
-        usable: true,
-        fallbackAvailable: true,
-      }),
-    )
+    const registry = new ProviderRegistry(discovery)
 
     const providers = await registry.list({ harnessId: "omp", cwd: "/tmp", discover: true })
-    const native = providers.filter((provider) => provider.source === "native")
-    expect(native.map((provider) => provider.name)).toEqual([
+    const runtime = providers.filter((provider) => provider.source === "runtime")
+    expect(runtime.map((provider) => provider.name)).toEqual([
       "智谱 GLM Coding Plan",
       "火山方舟 Agent Plan",
     ])
-    expect(native.map((provider) => provider.models.omp?.[0]?.id)).toEqual([
+    expect(runtime.map((provider) => provider.models.omp?.[0]?.id)).toEqual([
       "zhipu-coding-plan/glm-5.3",
       "ark-coding-plan/glm-5.3",
     ])
   })
 
-  it("当前项未上报时选择分组中的第一个真实模型", async () => {
-    const discovery = new ProviderDiscoveryService([{
-      id: "pi-runtime",
-      name: "Pi 配置",
-      harnessId: "pi",
-      discover: async () => ({
-        models: [{ id: "openai/gpt-5.4", name: "GPT-5.4", reasoning: true }],
-      }),
-    }])
-    const registry = new ProviderRegistry(
-      discovery,
-      undefined,
-      undefined,
-      async (harnessId) => ({
-        harnessId,
-        source: "local",
-        usable: true,
-        fallbackAvailable: true,
-      }),
-    )
-
-    const providers = await registry.list({ harnessId: "pi", cwd: "/tmp", discover: true })
-    const group = providers.find((provider) => provider.name === "OpenAI API")
-    expect(group?.models.pi?.map((model) => model.id)).toEqual(["openai/gpt-5.4"])
-    expect(group?.defaultModelIds?.pi).toBe("openai/gpt-5.4")
-    expect(JSON.stringify(providers)).not.toContain("__native_default__")
-    await expect(registry.resolveSelection({
-      harnessId: "pi",
-      cwd: "/tmp",
-      providerId: "native-pi",
-      modelId: "__native_default__",
-    })).resolves.toEqual({
-      providerId: group!.id,
-      modelId: "openai/gpt-5.4",
-    })
-  })
-
-  it("本机 Codex 使用 app-server model/list 发布实际模型", async () => {
+  it("历史 native provider id 不再可解析,阻止旧会话恢复", async () => {
     const registry = new ProviderRegistry(
       undefined,
-      undefined,
-      undefined,
-      async (harnessId) => ({
-        harnessId,
-        source: "local",
-        usable: true,
-        fallbackAvailable: true,
-      }),
-      async () => ({
-        currentModelId: "gpt-5.4",
-        models: [{ id: "gpt-5.4", name: "GPT-5.4", reasoning: true }],
-      }),
-    )
-
-    const providers = await registry.list({ harnessId: "codex", cwd: "/tmp", discover: true })
-    const native = providers.find((provider) => provider.id === "native-codex")
-    expect(native?.models.codex?.map((model) => model.id)).toEqual(["gpt-5.4"])
-    expect(native?.defaultModelIds?.codex).toBe("gpt-5.4")
-  })
-
-  it("本机 Claude Code 只发布 SDK 实际发现的模型", async () => {
-    const registry = new ProviderRegistry(
-      undefined,
-      undefined,
-      undefined,
-      async (harnessId) => ({
-        harnessId,
-        source: "local",
-        usable: true,
-        fallbackAvailable: true,
-      }),
-      async () => ({
-        models: [
-          { id: "actual-opus", name: "Actual Opus", reasoning: true },
-          { id: "actual-sonnet", name: "Actual Sonnet", reasoning: true },
-        ],
-      }),
-    )
-
-    const providers = await registry.list({ harnessId: "claude-code", cwd: "/tmp", discover: true })
-    const native = providers.find((provider) => provider.id === "native-claude-code")
-    expect(native?.models["claude-code"]?.map((model) => model.id)).toEqual([
-      "actual-opus",
-      "actual-sonnet",
-    ])
-    expect(native?.defaultModelIds?.["claude-code"]).toBe("actual-opus")
-  })
-
-  it("本机 CLI 删除后，旧 native 会话允许受管 fallback 恢复", async () => {
-    const registry = new ProviderRegistry(
-      undefined,
-      undefined,
-      undefined,
-      async (harnessId) => ({
-        harnessId,
-        source: "managed",
-        usable: true,
-        fallbackAvailable: true,
-      }),
+      (config) => config.id === "openai",
+      async () => ({ models: [{ id: "gpt-5.4", name: "GPT-5.4", reasoning: true }] }),
     )
     await expect(registry.resolveSelection({
       harnessId: "codex",
       cwd: "/tmp",
       providerId: "native-codex",
       modelId: "gpt-5.4",
-    })).resolves.toEqual({
-      providerId: "native-codex",
-      modelId: "gpt-5.4",
-    })
-    expect((await registry.list({ harnessId: "codex" })).some(
-      (provider) => provider.id === "native-codex",
+    })).resolves.toBeNull()
+    expect((await registry.list({ harnessId: "codex", discover: true })).some(
+      (provider) => provider.id.startsWith("native-"),
     )).toBe(false)
   })
 
@@ -425,41 +227,11 @@ describe("ProviderRegistry", () => {
       async () => ({
         models: [{ id: "gpt-5.4", name: "GPT-5.4", reasoning: true }],
       }),
-      undefined,
-      undefined,
       (_providerId, modelId) => modelId !== "gpt-5.4",
     )
     const [provider] = await registry.list({ harnessId: "codex", discover: true })
     expect(provider.models.codex?.[0]?.enabled).toBe(false)
     expect(modelsForProvider(provider, "codex")).toEqual([])
-  })
-
-  it("同一模型在 OAuth 与本机 CLI 来源之间共享可见性", async () => {
-    const registry = new ProviderRegistry(
-      undefined,
-      () => true,
-      async () => ({
-        currentModelId: "gpt-5.5",
-        models: [{ id: "gpt-5.5", name: "GPT-5.5", reasoning: true }],
-      }),
-      async (harnessId) => ({
-        harnessId,
-        source: "local",
-        usable: true,
-        fallbackAvailable: true,
-      }),
-      async () => ({
-        currentModelId: "gpt-5.5",
-        models: [{ id: "gpt-5.5", name: "GPT-5.5", reasoning: true }],
-      }),
-      (_providerId, modelId) => modelId !== "gpt-5.5",
-    )
-    const providers = await registry.list({ harnessId: "codex", cwd: "/tmp", discover: true })
-    const native = providers.find((provider) => provider.source === "native")!
-    const oauth = providers.find((provider) => provider.id === "openai")!
-    expect(native.models.codex?.[0]?.enabled).toBe(false)
-    expect(oauth.models.codex?.[0]?.enabled).toBe(false)
-    expect(modelsForProvider(native, "codex")).toEqual([])
   })
 
   it("已连接 builtin OpenAI 用 Codex model/list 替换静态身份卡并缓存", async () => {
@@ -618,19 +390,14 @@ describe("ProviderRegistry", () => {
     })).resolves.toEqual({ providerId: "openai", modelId: "gpt-5.4" })
   })
 
-  it("显式 Bento provider 校验不启动本机 runtime 发现", async () => {
-    let runtimeReads = 0
+  it("显式 Bento provider 校验直接走注册表与缓存,不做任何本机发现", async () => {
     const discovery = {
+      currentModelId: "gpt-5.4",
       models: [{ id: "gpt-5.4", name: "GPT-5.4", reasoning: true }],
     }
     const registry = new ProviderRegistry(
       undefined,
       (config) => config.id === "openai",
-      undefined,
-      async () => {
-        runtimeReads += 1
-        throw new Error("不应读取本机 runtime")
-      },
       undefined,
       undefined,
       {
@@ -645,11 +412,8 @@ describe("ProviderRegistry", () => {
       providerId: "openai",
       modelId: "gpt-5.4",
     })).resolves.toEqual({ providerId: "openai", modelId: "gpt-5.4" })
-    expect(runtimeReads).toBe(0)
   })
 })
-
-import type { CustomProviderConfig } from "../src/core/provider"
 
 const userConfig: CustomProviderConfig = {
   id: "user-relay",
@@ -698,9 +462,7 @@ describe("ProviderRegistry user providers", () => {
   it("未配置该 harness 的 user provider 不出现在别的 harness 列表里", async () => {
     const registry = new ProviderRegistry()
     registry.setUserProviders([userConfig])
-    const codexRegistry = new ProviderRegistry()
-    codexRegistry.setUserProviders([userConfig])
-    const providers = await codexRegistry.list({ harnessId: "codex" })
+    const providers = await registry.list({ harnessId: "codex" })
     expect(providers.map((p) => p.id)).toEqual(["openai"])
   })
 

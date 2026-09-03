@@ -1,5 +1,5 @@
 /**
- * Kimi Bento Adapter(SESSION_CONFIG_ADAPTER_PLAN §6.1,mode=bento)。
+ * Kimi Bento Adapter(SESSION_CONFIG_ADAPTER_PLAN §6.1)。
  *
  * capability spike 结论(.spike-kimi/,kimi 0.38.0 本机版):
  *   - KIMI_CODE_HOME 隔离生效,完整多 Provider [providers]/[models] 注册表
@@ -19,6 +19,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
+import type { HarnessId } from "../../src/core/harness"
 import type { WireProtocol } from "../../src/core/provider"
 import type { ProviderRoutingService } from "../provider-routing"
 import { stableProviderAlias } from "./alias"
@@ -31,7 +32,7 @@ import type {
   SessionConfigRequest,
   SessionProviderRuntime,
 } from "./types"
-import { modeOfSelection, selectionKey } from "./types"
+import { selectionKey } from "./types"
 
 /** 占位凭证:满足 Kimi 的 Bearer 头要求,但对任何真实上游无权限。 */
 const PLACEHOLDER_CREDENTIAL = "bento-session-route"
@@ -87,18 +88,14 @@ export function buildKimiSessionConfig(
 
 
 export class KimiBentoConfigAdapter implements SessionConfigAdapter {
-  readonly mode = "bento" as const
 
   constructor(
-    readonly harnessId: KimiBentoConfigAdapter["harnessId"],
+    readonly harnessId: HarnessId,
     private readonly routing: ProviderRoutingService,
     private readonly userDataDir: string,
   ) {}
 
   async prepare(request: SessionConfigRequest): Promise<SessionConfigLease> {
-    if (request.mode !== "bento") {
-      throw new Error("KimiBentoConfigAdapter 只处理 bento 模式")
-    }
     if (request.providers.length === 0) {
       throw new Error("没有可用的 Bento Provider,无法准备 Kimi 会话配置")
     }
@@ -155,7 +152,6 @@ export class KimiBentoConfigAdapter implements SessionConfigAdapter {
     return {
       sessionKey,
       harnessId: request.harnessId,
-      mode: "bento",
       env: { KIMI_CODE_HOME: configDir },
       strip: ["KIMI_MODEL_", "KIMI_API_KEY", "KIMI_BASE_URL"],
       configDir,
@@ -181,10 +177,8 @@ export class KimiBentoConfigAdapter implements SessionConfigAdapter {
     // 注册表内任意 Provider/模型 → ACP setSessionConfigOption live(spike2 实证)。
     const ref = lease.selections.get(selectionKey(next.providerId, next.modelId))
     if (ref) return { mode: "live", selection: ref }
-    // 未知选择或跨模式(native)→ 不假切换。
-    const reason = modeOfSelection(next) !== lease.mode
-      ? "native↔Bento 模式之间切换需要新会话"
-      : "该模型不在当前 Bento 注册表中,需要新会话"
+    // 未登记选择 → 不假切换。
+    const reason = "该模型不在当前 Bento 注册表中,需要新会话"
     return { mode: "new-session", reason }
   }
 }

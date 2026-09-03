@@ -8,7 +8,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { getDriver } from "./drivers/registry"
-import { SessionManager, type HarnessId } from "./sessions"
+import { SessionManager } from "./sessions"
 import type { Effort, SessionScope } from "../src/core/types"
 import type { PromptInput } from "../src/core/types"
 import type { BentoAppId, UserAppInput } from "../src/core/apps"
@@ -24,10 +24,10 @@ import { ProviderRoutingService } from "./provider-routing"
 import { builtinProvidersForHarness } from "./builtin-providers"
 import { runOAuthLogin } from "./oauth-runner"
 import { LocalProviderScanner } from "./provider-import"
-import { harnessRuntimeStatus, listHarnessRuntimeStatuses } from "./harness-runtime"
+import type { LocalProviderCandidate } from "../src/core/provider-preset"
+import { listHarnessRuntimeStatuses } from "./harness-runtime"
 import { ModelVisibilityStore } from "./model-visibility"
 import { ProviderModelCache } from "./provider-model-cache"
-import { NativeConfigAdapter } from "./session-config/native"
 import { KimiBentoConfigAdapter } from "./session-config/kimi"
 import { OpenCodeBentoConfigAdapter } from "./session-config/opencode"
 import { OmpBentoConfigAdapter } from "./session-config/omp"
@@ -36,7 +36,7 @@ import { HermesBentoConfigAdapter } from "./session-config/hermes"
 import { RoutedBentoConfigAdapter } from "./session-config/routed"
 import { SessionConfigRegistry } from "./session-config/registry"
 import type { SessionProviderRuntime } from "./session-config/types"
-import type { HarnessId as CoreHarnessId } from "../src/core/harness"
+import type { HarnessId } from "../src/core/harness"
 import { TerminalManager } from "./workspace/terminal-manager"
 import { WorkspaceFileService } from "./workspace/file-service"
 import { WorkspaceBrowserManager } from "./workspace/browser-manager"
@@ -139,13 +139,13 @@ const customProviders = new CustomProviderStore(
 const providerModelCache = new ProviderModelCache(app.getPath("userData"))
 const localProviderScanner = new LocalProviderScanner(os.homedir())
 /** discovery 的目录噪声过滤:harness → 本机扫描来源。 */
-const HARNESS_SCANNER_SOURCE = {
+const HARNESS_SCANNER_SOURCE: Partial<Record<HarnessId, LocalProviderCandidate["source"]>> = {
   pi: "Pi",
   opencode: "OpenCode",
   omp: "OMP",
   hermes: "Hermes",
   kimi: "Kimi Code",
-} as const
+}
 const providerDiscovery = new ProviderDiscoveryService(undefined, providerModelCache, (harnessId) => {
   const source = HARNESS_SCANNER_SOURCE[harnessId]
   return source ? localProviderScanner.configuredKeys(source) : []
@@ -159,8 +159,6 @@ providers = new ProviderRegistry(
   (config, harnessId) => customProviders.hasCredentialFor(config, harnessId),
   (providerId, harnessId, cwd) => routing?.discoverProviderModels(providerId, harnessId, cwd) ??
     Promise.resolve(null),
-  harnessRuntimeStatus,
-  undefined,
   (providerId, modelId) => modelVisibility.isEnabled(providerId, modelId),
   providerModelCache,
 )
@@ -290,33 +288,15 @@ app.whenReady().then(async () => {
   const activeRouting = new ProviderRoutingService(app.getPath("userData"), () => customProviders)
   routing = activeRouting
 
-  // session-config adapters:全部 Harness 的 native passthrough；Bento adapters 在下方注册。
+  // session-config adapters:全部 Harness 的 Bento adapter(单键注册)。
   const configAdapters = new SessionConfigRegistry()
-  for (const harnessId of ["claude-code", "codex", "kimi", "opencode", "omp", "hermes", "pi"] as CoreHarnessId[]) {
-    configAdapters.register(new NativeConfigAdapter(harnessId))
-  }
   configAdapters.register(new KimiBentoConfigAdapter("kimi", activeRouting, app.getPath("userData")))
-
-  /** main-only:按 (harness, mode) 解析 SessionConfigRequest.providers。 */
+  /** main-only:按 harness 解析 SessionConfigRequest.providers(Bento 完整注册表)。 */
   const resolveProviderRuntimes = async (request: {
-    harnessId: CoreHarnessId | "glm"
+    harnessId: HarnessId | "glm"
     cwd: string
-    mode: "native" | "bento"
   }): Promise<SessionProviderRuntime[]> => {
     const harnessId = request.harnessId === "glm" ? "claude-code" : request.harnessId
-    if (request.mode === "native") {
-      // 完整 native 目录:ProviderRegistry 的 source=native views(含哨兵默认模型)
-      const views = await providers.list({ harnessId, cwd: request.cwd, discover: true })
-      return views
-        .filter((view) => view.source === "native")
-        .map((view) => ({
-          providerId: view.id,
-          name: view.name,
-          baseUrl: "",
-          wireProtocol: "openai-chat" as const,
-          models: view.models[harnessId] ?? [],
-        }))
-    }
     // Bento 完整注册表：所有含目标 runtime、凭证可用、enabled 模型非空的配置。
     // 内置 OAuth Provider 与 user Provider 一起进入目标 Harness 的完整注册表。
     // credential handle 闭包只在 main 解析 safeStorage,绝不回 renderer。

@@ -351,9 +351,7 @@ export function piModelRef(value: string): { provider: string; modelId: string }
 export const piDriver: HarnessDriver = {
   id: "pi",
   async start(options, emit): Promise<HarnessConnection> {
-    const command = await resolvePiCommand(
-      options.runtimePreference ?? (options.proxyEnv ? "managed" : "local"),
-    )
+    const command = await resolvePiCommand("managed")
     const rpc = new PiRpcProcess(command, options.cwd, options.nativeSessionId, emit, options.proxyEnv, {
       args: options.appArgs,
       env: options.appEnv,

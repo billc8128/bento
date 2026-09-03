@@ -1,6 +1,5 @@
 import type { HarnessEvent, HarnessUsage } from "../../src/core/events"
 import type { Effort, PromptInput } from "../../src/core/types"
-import type { HarnessRuntimePreference } from "../harness-runtime"
 
 export type HarnessId = "claude-code" | "kimi" | "codex" | "opencode" | "pi" | "omp" | "hermes"
 
@@ -27,8 +26,6 @@ export type HarnessMcpServer = {
 
 export type HarnessStartOptions = {
   cwd: string
-  /** native 配置偏好 PATH；Bento 隔离配置偏好固定 managed/bundled。 */
-  runtimePreference?: HarnessRuntimePreference
   nativeSessionId?: string
   providerId?: string
   modelId?: string

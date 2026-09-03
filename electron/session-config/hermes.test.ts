@@ -148,7 +148,6 @@ describe("HermesBentoConfigAdapter", () => {
     sessionKey: string
     harnessId: "hermes"
     cwd: string
-    mode: "bento"
     selected: { providerId: string; modelId: string }
     providers: SessionProviderRuntime[]
   } {
@@ -156,7 +155,6 @@ describe("HermesBentoConfigAdapter", () => {
       sessionKey,
       harnessId: "hermes",
       cwd: os.tmpdir(),
-      mode: "bento",
       selected: { providerId: "user-alpha", modelId: "bento/m-a1" },
       providers: [
         {
@@ -246,7 +244,7 @@ describe("HermesBentoConfigAdapter", () => {
     const unknown = await adapter.reconfigure(lease, { providerId: "user-beta", modelId: "ghost" })
     expect(unknown).toMatchObject({ mode: "new-session" })
     const nativeSel = await adapter.reconfigure(lease, { providerId: "native-hermes", modelId: "x" })
-    expect(nativeSel).toMatchObject({ mode: "new-session", reason: expect.stringContaining("native↔Bento") })
+    expect(nativeSel).toMatchObject({ mode: "new-session" })
     await lease.dispose()
   })
 

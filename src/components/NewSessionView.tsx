@@ -42,7 +42,9 @@ export function NewSessionView({
   const [harnessId, setHarnessId] = useState<HarnessId>(initialHarnessId)
   const [providerId, setProviderId] = useState<string | null>(null)
   const [modelId, setModelId] = useState<string | null>(null)
-  const [effort, setEffort] = useState<Effort>(() => getHarness(initialHarnessId).defaultEffort)
+  const [effort, setEffort] = useState<Effort>(
+    () => getHarness(initialHarnessId).defaultEffort,
+  )
   const [task, setTask] = useState("")
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)

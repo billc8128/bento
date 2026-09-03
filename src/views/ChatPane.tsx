@@ -141,6 +141,8 @@ export function ChatPane() {
   // 运行态唯一状态标题的数据源；在消息流末端展开，落定后同一批
   // activity 由对应 assistant message 的折叠 trace 承接。
   const turn = liveTurnState(messages, running)
+  // 历史 native 会话:依赖本机 CLI 配置,已不再支持;历史仍可回放,不可续聊。
+  const legacyNative = live.providerId?.startsWith("native-") ?? false
   return (
     <main className="relative flex h-full min-h-0 min-w-0 flex-col">
       <PaneHeader
@@ -168,31 +170,48 @@ export function ChatPane() {
           onCancel: () => void cancelQueuedPrompt(sessionId),
         } : undefined}
       />
-      <Composer
-        running={running}
-        scope={live.scope}
-        harnessId={live.harnessId as HarnessId}
-        cwd={live.cwd}
-        providerId={live.providerId}
-        modelId={live.modelId}
-        effort={live.effort}
-        onToggleRun={() => void cancelPrompt(sessionId)}
-        onSend={(input) => void (running
-          ? queueLivePrompt(sessionId, input)
-          : sendPrompt(sessionId, input))}
-        queueFull={Boolean(queued)}
-        onHarnessChange={setNextHarnessId}
-        onModelChange={
-          !running && live.capabilities?.modelSwitch === "live"
-            ? (providerId, modelId) => void setLiveModel(sessionId, providerId, modelId)
-            : undefined
-        }
-        onEffortChange={
-          !running && live.capabilities?.effortSwitch === "live"
-            ? (effort) => void setLiveEffort(sessionId, effort)
-            : undefined
-        }
-      />
+      {legacyNative ? (
+        <div className="flex min-h-14 items-center justify-between gap-3 border-t px-4 py-3 text-sm text-muted-foreground">
+          <span>该会话依赖本机 CLI 配置,已不再支持;历史消息仍可查看。</span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => requestNewSession({
+              harnessId: live.harnessId as HarnessId,
+              scope: live.scope,
+              ...(live.scope === "project" ? { cwd: live.cwd } : {}),
+            })}
+          >
+            新建会话
+          </Button>
+        </div>
+      ) : (
+        <Composer
+          running={running}
+          scope={live.scope}
+          harnessId={live.harnessId as HarnessId}
+          cwd={live.cwd}
+          providerId={live.providerId}
+          modelId={live.modelId}
+          effort={live.effort}
+          onToggleRun={() => void cancelPrompt(sessionId)}
+          onSend={(input) => void (running
+            ? queueLivePrompt(sessionId, input)
+            : sendPrompt(sessionId, input))}
+          queueFull={Boolean(queued)}
+          onHarnessChange={setNextHarnessId}
+          onModelChange={
+            !running && live.capabilities?.modelSwitch === "live"
+              ? (providerId, modelId) => void setLiveModel(sessionId, providerId, modelId)
+              : undefined
+          }
+          onEffortChange={
+            !running && live.capabilities?.effortSwitch === "live"
+              ? (effort) => void setLiveEffort(sessionId, effort)
+              : undefined
+          }
+        />
+      )}
       <AlertDialog
         open={nextHarnessId !== null}
         onOpenChange={(open) => !open && setNextHarnessId(null)}

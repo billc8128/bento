@@ -1,5 +1,5 @@
 /**
- * Hermes Bento Adapter(SESSION_CONFIG_ADAPTER_PLAN §6.5,mode=bento)。
+ * Hermes Bento Adapter(SESSION_CONFIG_ADAPTER_PLAN §6.5)。
  *
  * capability spike 结论(.spike-kimi/hermes-spike.mjs,managed hermes-agent 0.19.0):
  *   - HERMES_HOME 指向会话目录,根 config.yaml 的 v12 `providers.<key>` 多 provider
@@ -17,6 +17,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
+import type { HarnessId } from "../../src/core/harness"
 import type { WireProtocol } from "../../src/core/provider"
 import type { ProviderRoutingService } from "../provider-routing"
 import { normalizeBentoModelId, stableProviderAlias } from "./alias"
@@ -30,7 +31,7 @@ import type {
   SessionConfigLease,
   SessionConfigRequest,
 } from "./types"
-import { modeOfSelection, selectionKey } from "./types"
+import { selectionKey } from "./types"
 
 export type HermesProviderInput = Pick<SessionConfigRequest["providers"][number],
   "providerId" | "name" | "wireProtocol" | "models">
@@ -81,18 +82,14 @@ export function buildHermesSessionConfig(
 }
 
 export class HermesBentoConfigAdapter implements SessionConfigAdapter {
-  readonly mode = "bento" as const
 
   constructor(
-    readonly harnessId: HermesBentoConfigAdapter["harnessId"],
+    readonly harnessId: HarnessId,
     private readonly routing: ProviderRoutingService,
     private readonly userDataDir: string,
   ) {}
 
   async prepare(request: SessionConfigRequest): Promise<SessionConfigLease> {
-    if (request.mode !== "bento") {
-      throw new Error("HermesBentoConfigAdapter 只处理 bento 模式")
-    }
     if (request.providers.length === 0) {
       throw new Error("没有可用的 Bento Provider,无法准备 Hermes 会话配置")
     }
@@ -141,7 +138,6 @@ export class HermesBentoConfigAdapter implements SessionConfigAdapter {
     return {
       sessionKey,
       harnessId: request.harnessId,
-      mode: "bento",
       env: { HERMES_HOME: configDir },
       strip: ["HERMES_HOME", "HERMES_INFERENCE_MODEL"],
       configDir,
@@ -164,9 +160,7 @@ export class HermesBentoConfigAdapter implements SessionConfigAdapter {
       normalizeBentoModelId(next.modelId),
     ))
     if (ref) return { mode: "live", selection: ref }
-    const reason = modeOfSelection(next) !== lease.mode
-      ? "native↔Bento 模式之间切换需要新会话"
-      : "该模型不在当前 Bento 注册表中,需要新会话"
+    const reason = "该模型不在当前 Bento 注册表中,需要新会话"
     return { mode: "new-session", reason }
   }
 

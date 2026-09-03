@@ -61,7 +61,8 @@ export class AgentSelectionCatalog implements CollaborationCatalog {
     const providers = providersForModelPicker(
       await this.providers.list({ harnessId: input.harnessId, cwd, discover: true }),
       input.harnessId,
-    ).filter((provider) => provider.connected)
+    ).filter((provider): provider is ProviderView & { source: "builtin" | "user" } =>
+      provider.connected && (provider.source === "builtin" || provider.source === "user"))
     const defaultSelection = defaultModelSelection(providers, input.harnessId)
     const harness = getHarness(input.harnessId)
 
@@ -79,7 +80,7 @@ export class AgentSelectionCatalog implements CollaborationCatalog {
           harnessId: input.harnessId,
           providerId: provider.id,
           providerName: provider.name,
-          providerSource: provider.source as CollaborationModelOption["providerSource"],
+          providerSource: provider.source,
           modelId: model.id,
           modelName: model.name,
           reasoning: model.reasoning,

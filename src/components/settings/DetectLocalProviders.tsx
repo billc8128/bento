@@ -47,7 +47,8 @@ export function DetectLocalProviders({
     let alive = true
     void window.bento?.scanLocalProviders().then((found) => {
       if (!alive) return
-      setCandidates(found)
+      // 只列可直接导入的候选;OAuth/account 型登录态留在本机 CLI,不进导入流程。
+      setCandidates(found.filter((item) => item.credentialReusable))
       setPhase({ step: "list" })
     })
     return () => {

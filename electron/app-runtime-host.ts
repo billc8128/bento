@@ -162,7 +162,9 @@ export class AppRuntimeHost {
       : new StreamableHTTPClientTransport(new URL(app.transport.url), {
           requestInit: { headers: app.headers },
         })
-    if (transport instanceof StdioClientTransport) transport.stderr?.resume()
+    if (transport instanceof StdioClientTransport) {
+      (transport.stderr as NodeJS.ReadableStream | null)?.resume()
+    }
     try {
       await client.connect(transport, { timeout: 10_000 })
       lease.clients.push(client)
@@ -293,14 +295,14 @@ export class AppRuntimeHost {
       async (args: Record<string, unknown>) => {
         try {
           return {
-            content: [{ type: "text", text: JSON.stringify(await handler(args)) }],
+            content: [{ type: "text" as const, text: JSON.stringify(await handler(args)) }],
           }
         } catch (error) {
           if (error instanceof CollaborationError) {
             // 只保留稳定 code/message,不泄露堆栈与内部细节。
             return {
               content: [{
-                type: "text",
+                type: "text" as const,
                 text: JSON.stringify({ error: { code: error.code, message: error.message } }),
               }],
             }

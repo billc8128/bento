@@ -1,5 +1,5 @@
 /**
- * OMP Bento Adapter(SESSION_CONFIG_ADAPTER_PLAN §6.3,mode=bento)。
+ * OMP Bento Adapter(SESSION_CONFIG_ADAPTER_PLAN §6.3)。
  *
  * capability spike 结论(.spike-kimi/,omp 本机版):
  *   - 隔离用 PI_CODING_AGENT_DIR 指向会话目录,模型文件是该目录根下的
@@ -13,6 +13,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
+import type { HarnessId } from "../../src/core/harness"
 import type { WireProtocol } from "../../src/core/provider"
 import type { ProviderRoutingService } from "../provider-routing"
 import { normalizeBentoModelId, stableProviderAlias } from "./alias"
@@ -24,7 +25,7 @@ import type {
   SessionConfigLease,
   SessionConfigRequest,
 } from "./types"
-import { modeOfSelection, selectionKey } from "./types"
+import { selectionKey } from "./types"
 
 // 供既有调用方继续从此模块取该工具。
 export { normalizeBentoModelId }
@@ -65,18 +66,14 @@ export function buildOmpModelsYml(
 }
 
 export class OmpBentoConfigAdapter implements SessionConfigAdapter {
-  readonly mode = "bento" as const
 
   constructor(
-    readonly harnessId: OmpBentoConfigAdapter["harnessId"],
+    readonly harnessId: HarnessId,
     private readonly routing: ProviderRoutingService,
     private readonly userDataDir: string,
   ) {}
 
   async prepare(request: SessionConfigRequest): Promise<SessionConfigLease> {
-    if (request.mode !== "bento") {
-      throw new Error("OmpBentoConfigAdapter 只处理 bento 模式")
-    }
     if (request.providers.length === 0) {
       throw new Error("没有可用的 Bento Provider,无法准备 OMP 会话配置")
     }
@@ -126,7 +123,6 @@ export class OmpBentoConfigAdapter implements SessionConfigAdapter {
     return {
       sessionKey,
       harnessId: request.harnessId,
-      mode: "bento",
       env: { PI_CODING_AGENT_DIR: configDir },
       strip: ["PI_CODING_AGENT_DIR"],
       configDir,
@@ -149,9 +145,7 @@ export class OmpBentoConfigAdapter implements SessionConfigAdapter {
       normalizeBentoModelId(next.modelId),
     ))
     if (ref) return { mode: "live", selection: ref }
-    const reason = modeOfSelection(next) !== lease.mode
-      ? "native↔Bento 模式之间切换需要新会话"
-      : "该模型不在当前 Bento 注册表中,需要新会话"
+    const reason = "该模型不在当前 Bento 注册表中,需要新会话"
     return { mode: "new-session", reason }
   }
 

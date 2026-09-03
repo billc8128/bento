@@ -1,5 +1,5 @@
 /**
- * OpenCode Bento Adapter(SESSION_CONFIG_ADAPTER_PLAN §6.2,mode=bento)。
+ * OpenCode Bento Adapter(SESSION_CONFIG_ADAPTER_PLAN §6.2)。
  *
  * capability spike 结论(.spike-kimi/spike-oc-omp.mjs,opencode 1.18.18 本机版):
  *   - OPENCODE_CONFIG 指向的 JSON 配置中多 provider/model 全量加载;
@@ -15,6 +15,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
+import type { HarnessId } from "../../src/core/harness"
 import type { WireProtocol } from "../../src/core/provider"
 import type { ProviderRoutingService } from "../provider-routing"
 import type {
@@ -25,7 +26,7 @@ import type {
   SessionConfigLease,
   SessionConfigRequest,
 } from "./types"
-import { modeOfSelection, selectionKey } from "./types"
+import { selectionKey } from "./types"
 import { normalizeBentoModelId, providerKeyEnvName, stableProviderAlias } from "./alias"
 
 // 供既有调用方(pi 集成测试等)继续从此模块取该工具。
@@ -67,18 +68,14 @@ export function buildOpenCodeSessionConfig(
 }
 
 export class OpenCodeBentoConfigAdapter implements SessionConfigAdapter {
-  readonly mode = "bento" as const
 
   constructor(
-    readonly harnessId: OpenCodeBentoConfigAdapter["harnessId"],
+    readonly harnessId: HarnessId,
     private readonly routing: ProviderRoutingService,
     private readonly userDataDir: string,
   ) {}
 
   async prepare(request: SessionConfigRequest): Promise<SessionConfigLease> {
-    if (request.mode !== "bento") {
-      throw new Error("OpenCodeBentoConfigAdapter 只处理 bento 模式")
-    }
     if (request.providers.length === 0) {
       throw new Error("没有可用的 Bento Provider,无法准备 OpenCode 会话配置")
     }
@@ -136,7 +133,6 @@ export class OpenCodeBentoConfigAdapter implements SessionConfigAdapter {
     return {
       sessionKey,
       harnessId: request.harnessId,
-      mode: "bento",
       env,
       strip: ["OPENCODE_CONFIG", "BENTO_PROVIDER_KEY_"],
       configDir,
@@ -158,9 +154,7 @@ export class OpenCodeBentoConfigAdapter implements SessionConfigAdapter {
       normalizeBentoModelId(next.modelId),
     ))
     if (ref) return { mode: "live", selection: ref }
-    const reason = modeOfSelection(next) !== lease.mode
-      ? "native↔Bento 模式之间切换需要新会话"
-      : "该模型不在当前 Bento 注册表中,需要新会话"
+    const reason = "该模型不在当前 Bento 注册表中,需要新会话"
     return { mode: "new-session", reason }
   }
 

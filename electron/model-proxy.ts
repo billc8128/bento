@@ -278,7 +278,7 @@ async function handleRequest(
     const upstreamRes = await fetch(target, {
       method: req.method,
       headers,
-      body,
+      ...(body !== undefined ? { body: new Uint8Array(body) } : {}),
     })
 
     res.writeHead(upstreamRes.status, sanitizeResponseHeaders(upstreamRes.headers))

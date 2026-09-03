@@ -11,6 +11,12 @@ type RuntimeDefinition = {
   command: string
   overrideEnv: string
   fallback: "managed" | "bundled" | "missing"
+  /**
+   * managed/bundled 解析器抛错时是否可退回 PATH 本机二进制。
+   * codex/kimi/opencode/omp(托管下载)与 pi/hermes(bundled/uvx 解析抛错)可退;
+   * claude-code 的 managed 分支返回空不抛错(SDK 内部再用嵌入 CLI),无 PATH 回退。
+   */
+  pathFallback: boolean
 }
 
 export type HarnessRuntimePreference = "local" | "managed"
@@ -25,13 +31,13 @@ export function assertHarnessCwd(cwd: string): void {
 }
 
 const DEFINITIONS: Record<HarnessId, RuntimeDefinition> = {
-  codex: { command: "codex", overrideEnv: "BENTO_CODEX_PATH", fallback: "managed" },
-  "claude-code": { command: "claude", overrideEnv: "BENTO_CLAUDE_CODE_PATH", fallback: "bundled" },
-  kimi: { command: "kimi", overrideEnv: "BENTO_KIMI_PATH", fallback: "managed" },
-  opencode: { command: "opencode", overrideEnv: "BENTO_OPENCODE_PATH", fallback: "managed" },
-  omp: { command: "omp", overrideEnv: "BENTO_OMP_PATH", fallback: "managed" },
-  pi: { command: "pi", overrideEnv: "BENTO_PI_PATH", fallback: "bundled" },
-  hermes: { command: "hermes", overrideEnv: "BENTO_HERMES_PATH", fallback: "managed" },
+  codex: { command: "codex", overrideEnv: "BENTO_CODEX_PATH", fallback: "managed", pathFallback: true },
+  "claude-code": { command: "claude", overrideEnv: "BENTO_CLAUDE_CODE_PATH", fallback: "bundled", pathFallback: false },
+  kimi: { command: "kimi", overrideEnv: "BENTO_KIMI_PATH", fallback: "managed", pathFallback: true },
+  opencode: { command: "opencode", overrideEnv: "BENTO_OPENCODE_PATH", fallback: "managed", pathFallback: true },
+  omp: { command: "omp", overrideEnv: "BENTO_OMP_PATH", fallback: "managed", pathFallback: true },
+  pi: { command: "pi", overrideEnv: "BENTO_PI_PATH", fallback: "bundled", pathFallback: true },
+  hermes: { command: "hermes", overrideEnv: "BENTO_HERMES_PATH", fallback: "managed", pathFallback: true },
 }
 
 function executableOnPath(command: string, env: NodeJS.ProcessEnv = process.env): string | null {
@@ -78,8 +84,8 @@ export function localHarnessExecutable(harnessId: HarnessId): {
 }
 
 /**
- * 显式覆盖始终最高；native 偏好本机 CLI，Bento 偏好固定 managed/bundled。
- * 首选 managed 安装失败时才退回 PATH，避免 Bento 会话被本机版本漂移影响。
+ * 显式覆盖始终最高；其余一律 managed/bundled 优先。
+ * 声明了 pathFallback 的 harness 在 managed 解析抛错时才退回 PATH(见 DEFINITIONS)。
  */
 export async function resolveHarnessRuntime<T>(
   harnessId: HarnessId,
@@ -94,7 +100,8 @@ export async function resolveHarnessRuntime<T>(
   try {
     return await managed()
   } catch (error) {
-    if (local) return fromExecutable(local.path)
+    // PATH 兜底只在声明了 pathFallback 的 harness 生效(claude-code 无回退)。
+    if (local && DEFINITIONS[harnessId].pathFallback) return fromExecutable(local.path)
     throw error
   }
 }
@@ -114,24 +121,31 @@ async function executableVersion(executable: string): Promise<string | undefined
   }
 }
 
+/**
+ * 上报**首选执行来源**(override → managed/bundled 的解析优先级),不是"实际执行":
+ * managed 后续解析失败仍可能退 PATH。PATH 本机安装只是 localInstall 附注,
+ * 会话不使用它(除 managed 解析抛错时的应急兜底,见 DEFINITIONS.pathFallback)。
+ */
 export async function harnessRuntimeStatus(harnessId: HarnessId): Promise<HarnessRuntimeStatus> {
-  const local = localHarnessExecutable(harnessId)
-  if (local) {
+  const definition = DEFINITIONS[harnessId]
+  const override = overrideHarnessExecutable(harnessId)
+  if (override) {
     return {
       harnessId,
-      source: local.source,
-      command: local.path,
-      version: await executableVersion(local.path),
+      source: "override",
+      command: override.path,
+      version: await executableVersion(override.path),
       usable: true,
-      fallbackAvailable: DEFINITIONS[harnessId].fallback !== "missing",
+      fallbackAvailable: definition.pathFallback && pathHarnessExecutable(harnessId) !== null,
     }
   }
-  const fallback = DEFINITIONS[harnessId].fallback
+  const local = pathHarnessExecutable(harnessId)
   return {
     harnessId,
-    source: fallback,
-    usable: fallback !== "missing",
-    fallbackAvailable: fallback !== "missing",
+    source: definition.fallback,
+    usable: definition.fallback !== "missing",
+    fallbackAvailable: definition.pathFallback && local !== null,
+    ...(local ? { localInstall: { path: local.path, version: await executableVersion(local.path) } } : {}),
   }
 }
 

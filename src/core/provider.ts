@@ -21,11 +21,11 @@ export type ProviderModel = {
 
 export type ProviderView = {
   id: string
-  /** 跨 Harness/native/Bento 来源归并时使用的稳定供应商身份。 */
+  /** 跨 Harness 来源归并时使用的稳定供应商身份。 */
   canonicalId?: string
   name: string
-  source: "builtin" | "runtime" | "user" | "native"
-  authMethod?: "none" | "apiKey" | "oauth" | "native"
+  source: "builtin" | "runtime" | "user"
+  authMethod?: "none" | "apiKey" | "oauth"
   harnessIds: HarnessId[]
   connected: boolean
   /** 未发现不等于没有模型；unsupported/failed 时必须让 Harness 自己选默认。 */
@@ -33,16 +33,6 @@ export type ProviderView = {
   discoveryError?: string
   models: Partial<Record<HarnessId, ProviderModel[]>>
   defaultModelIds?: Partial<Record<HarnessId, string>>
-}
-
-export const NATIVE_MODEL_ID = "__native_default__"
-
-export function nativeProviderId(harnessId: HarnessId): string {
-  return `native-${harnessId}`
-}
-
-export function isNativeProviderId(providerId: string | undefined): boolean {
-  return Boolean(providerId?.startsWith("native-"))
 }
 
 export function providerFamilyId(canonicalId: string): string {
@@ -198,36 +188,34 @@ export function compactModelName(model: Pick<ProviderModel, "id" | "name">): str
   return separator >= 0 && separator < name.length - 1 ? name.slice(separator + 1).trim() : name
 }
 
-function fallbackCanonicalProviderId(provider: ProviderView, harnessId: HarnessId): string {
-  if (provider.id === `native-${harnessId}`) {
-    if (harnessId === "codex") return "openai"
-    if (harnessId === "claude-code") return "anthropic"
-  }
-  if (provider.id.startsWith("user-")) return providerFamilyId(provider.id.slice("user-".length))
-  const runtimePrefix = `native-${harnessId}/runtime-${harnessId}-`
-  if (provider.id.startsWith(runtimePrefix)) return providerFamilyId(provider.id.slice(runtimePrefix.length))
-  return providerFamilyId(provider.id)
+function canonicalProviderKey(provider: ProviderView): string {
+  if (provider.canonicalId) return provider.canonicalId
+  return providerFamilyId(provider.id.replace(/^user-/, ""))
 }
 
-function canonicalModelId(provider: ProviderView, modelId: string): string {
-  let normalized = modelId.replace(/^bento\//, "")
-  if (provider.source === "native") {
-    const separator = normalized.indexOf("/")
-    if (separator > 0) normalized = normalized.slice(separator + 1)
-  }
-  return normalized.toLowerCase()
+export type DedupeOptions = {
+  /** 该 provider 的模型无条件保留并优先占位(活跃会话当前路由)。 */
+  pinnedProviderId?: string
 }
 
-/** 新会话按 canonical Provider + upstream model 去重，优先保留排序靠前的 native 路由。 */
+/**
+ * 新会话按 canonical Provider + upstream model 去重,先到先得:输入顺序即
+ * 优先级(pinned provider 无条件提到最前)。
+ */
 export function dedupeProviderModels(
   providers: ProviderView[],
   harnessId: HarnessId,
+  options: DedupeOptions = {},
 ): ProviderView[] {
+  const ordered = options.pinnedProviderId
+    ? [...providers].sort((a, b) =>
+        Number(b.id === options.pinnedProviderId) - Number(a.id === options.pinnedProviderId))
+    : providers
   const seen = new Set<string>()
-  return providers.flatMap((provider) => {
-    const canonicalProvider = provider.canonicalId ?? fallbackCanonicalProviderId(provider, harnessId)
+  return ordered.flatMap((provider) => {
+    const canonicalProvider = canonicalProviderKey(provider)
     const models = modelsForProvider(provider, harnessId).filter((model) => {
-      const key = `${canonicalProvider}\0${canonicalModelId(provider, model.id)}`
+      const key = `${canonicalProvider}\0${model.id.replace(/^bento\//, "").toLowerCase()}`
       if (seen.has(key)) return false
       seen.add(key)
       return true
@@ -242,20 +230,18 @@ export function providersForModelPicker(
   providers: ProviderView[],
   harnessId?: HarnessId,
 ): ProviderView[] {
-  const available = providers
-    .filter((provider) => provider.source !== "runtime")
-    .sort((a, b) => Number(b.source === "native") - Number(a.source === "native"))
+  const available = providers.filter((provider) => provider.source !== "runtime")
   return harnessId ? dedupeProviderModels(available, harnessId) : available
 }
 
-/** 默认选择真实模型：优先 native Provider，再用 Harness 默认，缺省取第一项。 */
+/** 新会话默认选择:取目录第一项;Provider 上报的 defaultModelIds 优先于目录顺序。 */
 export function defaultModelSelection(
   providers: ProviderView[],
   harnessId: HarnessId,
 ): { providerId: string; modelId: string } | null {
   const available = providersForModelPicker(providers, harnessId)
     .filter((provider) => provider.connected && modelsForProvider(provider, harnessId).length > 0)
-  const provider = available.find((item) => item.source === "native") ?? available[0]
+  const provider = available[0]
   if (!provider) return null
   const models = modelsForProvider(provider, harnessId)
   const configuredDefault = provider.defaultModelIds?.[harnessId]

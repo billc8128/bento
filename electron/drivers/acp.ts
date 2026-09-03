@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url"
 import * as acp from "@agentclientprotocol/sdk"
 
 import { managedBinary, managedUvxBinary } from "../binaries/manager"
-import { resolveHarnessRuntime, type HarnessRuntimePreference } from "../harness-runtime"
+import { resolveHarnessRuntime } from "../harness-runtime"
 import { harnessUsage } from "./usage"
 import { translateAcpUpdate } from "./acp-translator"
 import type { HarnessUsage } from "../../src/core/events"
@@ -63,16 +63,12 @@ type AcpOpen = (
   isLoading: () => boolean,
   proxyEnv?: HarnessStartOptions["proxyEnv"],
   usage?: { current: HarnessUsage | undefined },
-  runtimePreference?: HarnessRuntimePreference,
 ) => Promise<AcpOpenResult>
 
-async function harnessCommand(
-  id: AcpDriverId,
-  preference: HarnessRuntimePreference,
-): Promise<SpawnSpec> {
+async function harnessCommand(id: AcpDriverId): Promise<SpawnSpec> {
   return resolveHarnessRuntime(
     id,
-    preference,
+    "managed",
     (cmd) => ({ cmd, args: ["acp"] }),
     async () => id === "hermes"
       ? {
@@ -105,9 +101,8 @@ class AcpDriver implements HarnessDriver {
     isLoading: () => boolean,
     proxyEnv?: { env: Record<string, string>; strip?: string[] },
     usage?: { current: HarnessUsage | undefined },
-    runtimePreference: HarnessRuntimePreference = "local",
   ) {
-    const spec = await harnessCommand(this.id, runtimePreference)
+    const spec = await harnessCommand(this.id)
     // provider 会话若有 host 路由 env,先 strip 宿主同名前缀再注入。
     const merged: SpawnSpec = proxyEnv
       ? {
@@ -188,7 +183,6 @@ class AcpDriver implements HarnessDriver {
       () => loading,
       options.proxyEnv,
       usage,
-      options.runtimePreference ?? (options.proxyEnv ? "managed" : "local"),
     )
     if (nativeSessionId && init.agentCapabilities?.sessionCapabilities?.resume) {
       try {
@@ -288,7 +282,7 @@ class AcpDriver implements HarnessDriver {
           conn.setSessionConfigOption({
             sessionId,
             configId: effortConfig.id,
-            value: this.id === "omp" ? (effort === "off" ? "off" : "auto") : effort,
+            value: effort,
           })
       : undefined
 

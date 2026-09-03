@@ -7,11 +7,45 @@ import type { HarnessEvent, LogRecord } from "../src/core/events"
 import type { MessageOrigin } from "../src/core/collaboration"
 import type { HarnessDriver, HarnessStartOptions } from "./drivers/types"
 import type { PromptInput } from "../src/core/types"
+import { SessionConfigRegistry } from "./session-config/registry"
+import type { SessionConfigAdapter } from "./session-config/types"
+import { selectionKey } from "./session-config/types"
 import { SessionCollaborationBackend } from "./collaboration-session-backend"
 import type { CollaborationStateEvent } from "./sessions"
 import { SessionManager } from "./sessions"
+import type { HarnessId } from "../src/core/harness"
 
 let tempDir = ""
+
+/** 直通 session-config adapter:Backend 单测的装配缝隙,不涉各 Harness 配置细节。 */
+function passthroughAdapter(harnessId: HarnessId): SessionConfigAdapter {
+  return {
+    harnessId,
+    async prepare(request) {
+      const selected = {
+        providerId: request.selected.providerId,
+        modelId: request.selected.modelId,
+        harnessModelId: request.selected.modelId,
+      }
+      return {
+        sessionKey: request.sessionKey,
+        harnessId: request.harnessId,
+        env: {},
+        strip: [],
+        selections: new Map([[selectionKey(selected.providerId, selected.modelId), selected]]),
+        selected,
+        revision: 1,
+        dispose: async () => {},
+      }
+    },
+    async reconfigure(_lease, next) {
+      return {
+        mode: "live",
+        selection: { providerId: next.providerId, modelId: next.modelId, harnessModelId: next.modelId },
+      }
+    },
+  }
+}
 
 afterEach(() => {
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true })
@@ -46,10 +80,12 @@ function scriptedDriver() {
   }
   return { driver, received, deferreds, started, emitEvent: (event: HarnessEvent) => emit?.(event) }
 }
-
 function setup(dir: string, driver: HarnessDriver, resolveSelection?: ConstructorParameters<typeof SessionCollaborationBackend>[1]) {
   const events: LogRecord[] = []
-  const manager = new SessionManager(dir, (_key, record) => events.push(record), () => driver)
+  const registry = new SessionConfigRegistry()
+  registry.register(passthroughAdapter("kimi"))
+  registry.register(passthroughAdapter("pi"))
+  const manager = new SessionManager(dir, (_key, record) => events.push(record), () => driver, null, null, registry, async () => [])
   const backend = new SessionCollaborationBackend(manager, resolveSelection)
   return { manager, backend, events }
 }
@@ -65,8 +101,8 @@ describe("SessionCollaborationBackend", () => {
     fs.mkdirSync(dirB)
     const { driver } = scriptedDriver()
     const { manager, backend } = setup(tempDir, driver)
-    await manager.createSession({ harnessId: "kimi", cwd: dirA, providerId: "native-kimi", modelId: "m" })
-    await manager.createSession({ harnessId: "pi", cwd: dirB, providerId: "native-pi", modelId: "m" })
+    await manager.createSession({ harnessId: "kimi", cwd: dirA, providerId: "user-kimi", modelId: "m" })
+    await manager.createSession({ harnessId: "pi", cwd: dirB, providerId: "user-pi", modelId: "m" })
 
     const sessions = backend.listSessions()
     // index 最新在前
@@ -84,15 +120,15 @@ describe("SessionCollaborationBackend", () => {
     const requested: Array<Record<string, string>> = []
     const { manager, backend } = setup(tempDir, driver, async (request) => {
       requested.push(request)
-      return request.providerId === "native-kimi" && request.modelId === "m-1"
+      return request.providerId === "user-kimi" && request.modelId === "m-1"
     })
-    await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "m-1" })
+    await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "m-1" })
 
     await expect(backend.createSession({
       title: "bad",
       workspace: { scope: "project", cwd: tempDir },
       harnessId: "kimi",
-      providerId: "native-other",
+      providerId: "user-other",
       modelId: "m-9",
     })).rejects.toMatchObject({ code: "selection_unavailable" })
     expect(backend.listSessions()).toHaveLength(1) // 不可执行 selection 不落 SessionRecord
@@ -101,18 +137,18 @@ describe("SessionCollaborationBackend", () => {
       title: "reviewer",
       workspace: { scope: "project", cwd: tempDir },
       harnessId: "kimi",
-      providerId: "native-kimi",
+      providerId: "user-kimi",
       modelId: "m-1",
       effort: "high",
     })
     expect(created).toMatchObject({
       title: "reviewer",
-      providerId: "native-kimi",
+      providerId: "user-kimi",
       modelId: "m-1",
       effort: "high",
       runtime: "sleeping",
     })
-    expect(requested.at(-1)).toMatchObject({ harnessId: "kimi", providerId: "native-kimi", modelId: "m-1" })
+    expect(requested.at(-1)).toMatchObject({ harnessId: "kimi", providerId: "user-kimi", modelId: "m-1" })
     // pending 创建不启动 driver
     expect(started).toHaveLength(1) // 仅最初的 createSession 启动过
   })
@@ -121,7 +157,7 @@ describe("SessionCollaborationBackend", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-backend-send-"))
     const { driver, received, deferreds, started } = scriptedDriver()
     const { manager, backend, events } = setup(tempDir, driver)
-    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "m" })
+    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "m" })
 
     // 先完成一个回合,让 Session 有 user_message:之后 close 才保留 record 变 sleeping
     const first = await backend.sendToSession(key, { originalText: "warmup", wireText: "warmup", origin: ORIGIN })
@@ -158,7 +194,7 @@ describe("SessionCollaborationBackend", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-backend-read-"))
     const { driver, emitEvent } = scriptedDriver()
     const { manager, backend } = setup(tempDir, driver)
-    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "m" })
+    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "m" })
 
     const turn = await backend.sendToSession(key, { originalText: "分析", wireText: "分析", origin: ORIGIN })
     emitEvent({ type: "agent_message_chunk", text: "结论:" })
@@ -199,7 +235,7 @@ describe("SessionCollaborationBackend", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-backend-wait-"))
     const { driver, emitEvent, deferreds } = scriptedDriver()
     const { manager, backend } = setup(tempDir, driver)
-    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "m" })
+    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "m" })
 
     // working:turn 启动事件唤醒尚未开始的等待
     const workingPromise = backend.waitForSession(key, "working", 0, 2_000)
@@ -222,7 +258,7 @@ describe("SessionCollaborationBackend", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-backend-wait2-"))
     const { driver } = scriptedDriver()
     const { manager, backend } = setup(tempDir, driver)
-    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "m" })
+    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "m" })
 
     await expect(backend.waitForSession(key, "settled", 0, 2_000)).resolves.toMatchObject({ matched: "settled" })
     await expect(backend.waitForSession(key, "working", 0, 50)).rejects.toMatchObject({ code: "timeout" })
@@ -235,7 +271,7 @@ describe("SessionCollaborationBackend", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-backend-chain-"))
     const { driver, deferreds } = scriptedDriver()
     const { manager, backend } = setup(tempDir, driver)
-    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "m" })
+    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "m" })
 
     const first = await backend.sendToSession(key, { originalText: "1", wireText: "1", origin: ORIGIN })
     deferreds[0].resolve({})
@@ -260,7 +296,7 @@ describe("SessionCollaborationBackend 生命周期与边界", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-backend-sleep-"))
     const { driver, deferreds } = scriptedDriver()
     const { manager, backend } = setup(tempDir, driver)
-    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "m" })
+    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "m" })
 
     // human 发起的 turn(不经 backend,lastTurns 无登记)
     const human = manager.prompt(key, "human 输入")
@@ -294,7 +330,7 @@ describe("SessionCollaborationBackend 生命周期与边界", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-backend-removed-"))
     const { driver } = scriptedDriver()
     const { manager } = setup(tempDir, driver)
-    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "m" })
+    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "m" })
     const removed: CollaborationStateEvent[] = []
     // 订阅两次,验证事件恰好各送达一次且不重复
     const w1 = manager.waitForCollaborationState(key, (e) => e.type === "session_removed", 2_000)
@@ -310,7 +346,7 @@ describe("SessionCollaborationBackend 生命周期与边界", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-backend-race-"))
     const { driver, deferreds } = scriptedDriver()
     const { manager } = setup(tempDir, driver)
-    const created = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "m" })
+    const created = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "m" })
     const key = created.key
     const warm = manager.prompt(key, "warm")
     await new Promise((resolve) => setTimeout(resolve, 0)) // 等 beginTurn 触达 driver
@@ -338,7 +374,7 @@ describe("SessionCollaborationBackend 生命周期与边界", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-backend-stale-seq-"))
     const { driver, deferreds } = scriptedDriver()
     const { manager, backend } = setup(tempDir, driver)
-    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "m" })
+    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "m" })
 
     // backend 第一回合 settle 后,lastTurns 登记被删除
     const first = await backend.sendToSession(key, { originalText: "1", wireText: "1", origin: ORIGIN })
@@ -365,7 +401,7 @@ describe("SessionCollaborationBackend 生命周期与边界", () => {
       title: "chat peer",
       workspace: { scope: "chat" },
       harnessId: "kimi",
-      providerId: "native-kimi",
+      providerId: "user-kimi",
       modelId: "m",
     })
     expect(created.workspace.scope).toBe("chat")
@@ -377,7 +413,7 @@ describe("SessionCollaborationBackend 生命周期与边界", () => {
       title: "bad chat",
       workspace: { scope: "chat" },
       harnessId: "kimi",
-      providerId: "native-kimi",
+      providerId: "user-kimi",
       modelId: "m",
     })).rejects.toMatchObject({ code: "selection_unavailable" })
     // record 与私有目录都被清理
@@ -389,7 +425,7 @@ describe("SessionCollaborationBackend 生命周期与边界", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-backend-legacy-"))
     const { driver } = scriptedDriver()
     const { manager, backend, events } = setup(tempDir, driver)
-    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "m" })
+    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "m" })
     events.length = 0
 
     // 直写 legacy 记录到 jsonl;createSession 已写过 metadata(seq1),继续编 seq
@@ -427,7 +463,7 @@ describe("SessionCollaborationBackend wait 边界", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-backend-removal-"))
     const { driver } = scriptedDriver()
     const { manager, backend } = setup(tempDir, driver)
-    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "m" })
+    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "m" })
 
     // 目标进入 working:settled 走精确 completion 等待,next_message 走事件等待
     const turn = await backend.sendToSession(key, { originalText: "go", wireText: "go", origin: ORIGIN })
@@ -445,7 +481,7 @@ describe("SessionCollaborationBackend wait 边界", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-backend-removal2-"))
     const { driver } = scriptedDriver()
     const { manager, backend } = setup(tempDir, driver)
-    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "m" })
+    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "m" })
     await manager.removeSession(key)
     // probe 必然合成为 removed:验证合成路径,不是 timeout
     await expect(
@@ -466,7 +502,7 @@ describe("SessionCollaborationBackend wait 边界", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-backend-nm-"))
     const { driver, emitEvent } = scriptedDriver()
     const { manager, backend } = setup(tempDir, driver)
-    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "native-kimi", modelId: "m" })
+    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "m" })
 
     const turn = await backend.sendToSession(key, { originalText: "go", wireText: "go", origin: ORIGIN })
     const next = backend.waitForSession(key, "next_message", turn.acceptedSeq, 5_000)

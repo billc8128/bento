@@ -48,7 +48,9 @@ function SpecialProviderForm({
           <p className="text-xs text-muted-foreground">
             {preset.category === "cloud"
               ? "需要项目、区域或云端身份配置，不能作为普通 API Key 端点添加。"
-              : "使用供应商账户或现有 CLI 登录状态连接。"}
+              : preset.category === "account"
+                ? "该类账户登录(如 Cursor、GitHub Copilot)需在对应 CLI 内使用,Bento 不导入也不代理其登录态。"
+                : "使用供应商账户或现有 CLI 登录状态连接。"}
           </p>
         </div>
         <a
@@ -62,7 +64,7 @@ function SpecialProviderForm({
       </div>
       <footer className="flex justify-end gap-2 border-t border-border px-5 py-3">
         <Button variant="ghost" onClick={onCancel}>返回</Button>
-        <Button onClick={onDetect}>检测本机配置</Button>
+        {preset.category !== "account" && <Button onClick={onDetect}>检测本机配置</Button>}
       </footer>
     </div>
   )
@@ -73,16 +75,25 @@ export function ProviderWizard({
   onOpenChange,
   editing,
   onSaved,
+  startStep = null,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   editing: CustomProviderEntry | null
   /** 保存/导入成功后回传 provider id,便于父级选中并反馈。 */
   onSaved: (providerId?: string) => void
+  /** 打开时直接进入的步骤(空态导入 CTA 用 detect);关闭时复位。 */
+  startStep?: Step | null
 }) {
   const [pick, setPick] = useState<Pick>(null)
-  const [step, setStep] = useState<Step>("pick")
+  const [step, setStep] = useState<Step>(startStep ?? "pick")
   const [query, setQuery] = useState("")
+  // startStep 变化时在渲染期同步(空态导入 CTA 复用挂载中的向导)。
+  const [lastStartStep, setLastStartStep] = useState(startStep)
+  if (startStep !== lastStartStep) {
+    setLastStartStep(startStep)
+    setStep(startStep ?? "pick")
+  }
   const editingPreset = editing?.presetId ? getProviderPreset(editing.presetId) : undefined
   const selected = editingPreset ?? (pick !== null && pick !== "custom" ? pick : undefined)
   const activeStep: Step = editing ? "form" : step

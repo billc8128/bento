@@ -1,13 +1,12 @@
 /**
  * SessionManager × session-config adapter 集成测试(fake driver):
- * native adapters + Kimi/OpenCode Bento adapter 接入后的启动/切换/清理全链路。
+ * Bento adapter 接入后的启动/切换/清理全链路。
  */
 
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { NATIVE_MODEL_ID } from "../../src/core/provider"
 import type { CustomProviderConfig, ProviderModel } from "../../src/core/provider"
 import type { HarnessDriver, HarnessStartOptions } from "../drivers/types"
 import { CustomProviderStore, type SecretStore } from "../custom-providers"
@@ -18,7 +17,6 @@ import { OpenCodeBentoConfigAdapter } from "./opencode"
 import { OmpBentoConfigAdapter } from "./omp"
 import { PiBentoConfigAdapter } from "./pi"
 import { HermesBentoConfigAdapter } from "./hermes"
-import { NativeConfigAdapter } from "./native"
 import { SessionConfigRegistry } from "./registry"
 
 function memorySecrets(): SecretStore {
@@ -118,16 +116,6 @@ function bentoRuntimes(harnessId: "kimi" | "opencode" | "omp" | "pi" | "hermes",
     })
 }
 
-/** native 模式 runtime resolver:返回本机目录(模拟 ProviderRegistry native views)。 */
-function nativeRuntimes(catalog: Array<{ providerId: string; name: string; models: ProviderModel[] }>) {
-  return async () => catalog.map((entry) => ({
-    providerId: entry.providerId,
-    name: entry.name,
-    baseUrl: "",
-    wireProtocol: "openai-chat" as const,
-    models: entry.models,
-  }))
-}
 
 describe("Kimi bento adapter 集成", () => {
   it("start 收到 KIMI_CODE_HOME 与 alias 模型;跨 provider setModel live;close 保留 revive 复用 remove 删除", async () => {
@@ -140,7 +128,6 @@ describe("Kimi bento adapter 集成", () => {
     routings.push(routing)
 
     const registry = new SessionConfigRegistry()
-    registry.register(new NativeConfigAdapter("kimi"))
     registry.register(new KimiBentoConfigAdapter("kimi", routing, dir))
 
     const { driver, starts, setModelCalls } = fakeDriver("kimi")
@@ -274,90 +261,6 @@ describe("Kimi bento adapter 集成", () => {
     expect(routing.sessionsUsing("user-alpha")).toBe(0)
   })
 
-  it("native Kimi:empty env + 原始 modelId,目录内跨 native provider setModel live", async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-sm-kimi-native-"))
-    dirs.push(dir)
-    const registry = new SessionConfigRegistry()
-    registry.register(new NativeConfigAdapter("kimi"))
-
-    const { driver, starts, setModelCalls } = fakeDriver("pi")
-    const manager = new SessionManager(
-      dir,
-      () => {},
-      () => driver,
-      null,
-      null,
-      registry,
-      nativeRuntimes([
-        {
-          providerId: "native-kimi",
-          name: "Kimi",
-          models: [
-            { id: "kimi-code/k3", name: "K3", reasoning: true },
-            { id: "kimi-code/k3-256k", name: "K3-256k", reasoning: true },
-          ],
-        },
-        {
-          providerId: "native-kimi/volcengine-agent-plan",
-          name: "火山方舟",
-          models: [{ id: "agent-plan/kimi-k3", name: "Kimi K3", reasoning: true }],
-        },
-      ]),
-    )
-    await manager.createSession({
-      harnessId: "kimi", cwd: dir, providerId: "native-kimi", modelId: "kimi-code/k3",
-    })
-    // native:无 env 注入、无临时目录,原始 model id
-    expect(starts[0]!.runtimePreference).toBe("local")
-    expect(starts[0]!.proxyEnv).toBeUndefined()
-    expect(starts[0]!.modelId).toBe("kimi-code/k3")
-
-    const realKey = manager.listSessions()[0]!.key
-    await manager.prompt(realKey, "hi")
-    await manager.setModel(realKey, "native-kimi/volcengine-agent-plan", "agent-plan/kimi-k3")
-    expect(setModelCalls).toEqual(["agent-plan/kimi-k3"])
-    expect(manager.listSessions()[0]).toMatchObject({
-      providerId: "native-kimi/volcengine-agent-plan",
-      modelId: "agent-plan/kimi-k3",
-    })
-  })
-
-  it("native 哨兵模型:Driver.start 省略 modelId;会话内不可 live 切换到哨兵", async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-sm-kimi-sentinel-"))
-    dirs.push(dir)
-    const registry = new SessionConfigRegistry()
-    registry.register(new NativeConfigAdapter("kimi"))
-
-    const { driver, starts, setModelCalls } = fakeDriver("kimi")
-    const manager = new SessionManager(
-      dir,
-      () => {},
-      () => driver,
-      null,
-      null,
-      registry,
-      nativeRuntimes([{
-        providerId: "native-kimi",
-        name: "Kimi",
-        models: [
-          { id: NATIVE_MODEL_ID, name: "本机默认模型", reasoning: false },
-          { id: "kimi-code/k3", name: "K3", reasoning: true },
-        ],
-      }]),
-    )
-    const { key } = await manager.createSession({
-      harnessId: "kimi", cwd: dir, providerId: "native-kimi", modelId: NATIVE_MODEL_ID,
-    })
-    // 哨兵不下发:start 无 modelId,CLI 用自己的默认模型
-    expect(starts[0]!.proxyEnv).toBeUndefined()
-    expect(starts[0]!.modelId).toBeUndefined()
-
-    await manager.prompt(key, "hi")
-    await manager.setModel(key, "native-kimi", "kimi-code/k3")
-    expect(setModelCalls).toEqual(["kimi-code/k3"])
-    await expect(manager.setModel(key, "native-kimi", NATIVE_MODEL_ID))
-      .rejects.toThrow(/需要新会话/)
-  })
 })
 
 describe("Hermes bento adapter 集成", () => {
@@ -365,7 +268,6 @@ describe("Hermes bento adapter 集成", () => {
     const routing = new ProviderRoutingService(dir, () => store)
     routings.push(routing)
     const registry = new SessionConfigRegistry()
-    registry.register(new NativeConfigAdapter("hermes"))
     registry.register(new HermesBentoConfigAdapter("hermes", routing, dir))
     const { driver, starts, setModelCalls } = fakeDriver("hermes")
     const manager = new SessionManager(
@@ -465,7 +367,6 @@ describe("OpenCode bento adapter 集成", () => {
     const routing = new ProviderRoutingService(dir, () => store)
     routings.push(routing)
     const registry = new SessionConfigRegistry()
-    registry.register(new NativeConfigAdapter("opencode"))
     registry.register(new OpenCodeBentoConfigAdapter("opencode", routing, dir))
     const { driver, starts, setModelCalls } = fakeDriver("opencode")
     const manager = new SessionManager(
@@ -497,7 +398,6 @@ describe("OpenCode bento adapter 集成", () => {
     })
 
     expect(starts).toHaveLength(1)
-    expect(starts[0]!.runtimePreference).toBe("managed")
     const configFile = starts[0]!.proxyEnv!.env.OPENCODE_CONFIG!
     expect(configFile).toContain("opencode-bento-")
     const text = fs.readFileSync(configFile, "utf8")
@@ -575,7 +475,6 @@ describe("OpenCode bento adapter 集成", () => {
 describe("OMP bento adapter 集成", () => {
   function ompHarness(dir: string, store: CustomProviderStore) {
     const registry = new SessionConfigRegistry()
-    registry.register(new NativeConfigAdapter("omp"))
     registry.register(new OmpBentoConfigAdapter("omp", new ProviderRoutingService(dir, () => store), dir))
     const { driver, starts, setModelCalls } = fakeDriver("omp")
     const manager = new SessionManager(
@@ -677,7 +576,6 @@ describe("Pi bento adapter 集成", () => {
     const routing = new ProviderRoutingService(dir, () => store)
     routings.push(routing)
     const registry = new SessionConfigRegistry()
-    registry.register(new NativeConfigAdapter("pi"))
     registry.register(new PiBentoConfigAdapter("pi", routing, dir))
     const { driver, starts, setModelCalls } = fakeDriver("pi")
     const manager = new SessionManager(

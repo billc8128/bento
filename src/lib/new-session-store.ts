@@ -44,12 +44,15 @@ export function closeNewSession() {
   emit()
 }
 
+export function subscribeNewSession(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
+export function getNewSessionSnapshot(): NewSessionSnapshot {
+  return snapshot
+}
+
 export function useNewSession(): NewSessionSnapshot {
-  return useSyncExternalStore(
-    (listener) => {
-      listeners.add(listener)
-      return () => listeners.delete(listener)
-    },
-    () => snapshot,
-  )
+  return useSyncExternalStore(subscribeNewSession, getNewSessionSnapshot)
 }

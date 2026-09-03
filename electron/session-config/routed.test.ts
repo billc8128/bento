@@ -78,7 +78,6 @@ describe("RoutedBentoConfigAdapter", () => {
       sessionKey: "s1",
       harnessId: "codex",
       cwd: dir,
-      mode: "bento",
       selected: { providerId: "user-a", modelId: "user-a-model" },
       providers,
     })

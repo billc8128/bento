@@ -20,8 +20,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
-import { getHarness } from "@/core/harness"
-import { NATIVE_MODEL_ID, type CustomModelConfig, type CustomProviderConfig, type ProviderModel, type ProviderView } from "@/core/provider"
+import type { CustomModelConfig, CustomProviderConfig, ProviderModel, ProviderView } from "@/core/provider"
 import {
   deleteCustomProvider,
   saveCustomProvider,
@@ -29,18 +28,18 @@ import {
   type CustomProviderEntry,
 } from "@/lib/custom-provider-store"
 import { applyProviderModelVisibility, useAllProviderCatalogs } from "@/lib/provider-store"
+import { useLocalImportSources } from "@/lib/local-import"
 import { consumeAddProviderIntent } from "@/lib/settings-store"
 import { toast } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 
 import { CUSTOM_HARNESSES, describeFetchError } from "./labels"
-import { nativeCanonicalId, providerFamilyId } from "./provider-grouping"
+import { providerFamilyId } from "./provider-grouping"
 import { ProviderMark } from "./ProviderMark"
 import { ProviderWizard } from "./ProviderWizard"
 
 type ProviderSource =
   | { kind: "builtin"; id: string; name: string; connected: boolean; modelCount: number; authMethod: "none" | "apiKey" | "oauth"; brandKey: string; view: ProviderView }
-  | { kind: "native"; id: string; name: string; connected: true; modelCount: number; authMethod: "native"; brandKey: string; view: ProviderView }
   | { kind: "custom"; id: string; name: string; connected: boolean; modelCount: number; authMethod: "none" | "apiKey" | "oauth"; brandKey?: string; entry: CustomProviderEntry }
 
 type ProviderGroup = {
@@ -64,9 +63,6 @@ function providerFamilyName(id: string, fallback: string): string {
 }
 
 function sourceTabLabel(source: ProviderSource): string {
-  if (source.kind === "native") {
-    return getHarness(source.view.harnessIds[0]!).name
-  }
   if (source.authMethod === "oauth") return "OAuth"
   if (source.authMethod === "apiKey") return "API Key"
   return "无需鉴权"
@@ -132,7 +128,6 @@ function sourceModels(
   const draft = drafts[source.id]
   const models = source.kind === "custom" ? customModels(source.entry) : catalogModels(source.view)
   return models
-    .filter((model) => model.id !== NATIVE_MODEL_ID)
     .map((model) => draft && model.id in draft ? { ...model, enabled: draft[model.id] } : model)
 }
 
@@ -222,7 +217,7 @@ function ProvidersSkeleton() {
   )
 }
 
-export function ProvidersSection({ addProviderIntent }: { addProviderIntent: boolean }) {
+export function ProvidersSection({ addProviderIntent }: { addProviderIntent: false | "form" | "detect" }) {
   const { desktop, loaded, providers: customProviders } = useCustomProviders()
   const {
     providers: catalogProviders,
@@ -231,22 +226,6 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: boo
     discoverAll,
   } = useAllProviderCatalogs("")
   const sources = useMemo<ProviderSource[]>(() => [
-    ...catalogProviders
-      .filter((provider) =>
-        provider.source === "native" &&
-        nativeCanonicalId(provider) !== null &&
-        catalogModels(provider).some((model) => model.id !== NATIVE_MODEL_ID),
-      )
-      .map((view): ProviderSource => ({
-        kind: "native",
-        id: view.id,
-        name: view.name,
-        connected: true,
-        modelCount: catalogModels(view).filter((model) => model.enabled !== false).length,
-        authMethod: "native",
-        brandKey: nativeCanonicalId(view)!,
-        view,
-      })),
     ...catalogProviders
       .filter((provider) => provider.source === "builtin")
       .map((view): ProviderSource => ({
@@ -272,7 +251,6 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: boo
   ], [catalogProviders, customProviders])
   const groups = useMemo<ProviderGroup[]>(() => {
     const canonicalId = (source: ProviderSource) => {
-      if (source.kind === "native") return nativeCanonicalId(source.view)!
       if (source.kind === "custom") return source.entry.presetId ?? source.id.replace(/^user-/, "")
       if (source.id === "openai") return "openai-api"
       if (source.id === "anthropic") return "anthropic-api"
@@ -296,13 +274,15 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: boo
   const [selectedId, setSelectedId] = useState("")
   const [query, setQuery] = useState("")
   const [wizardOpen, setWizardOpen] = useState(false)
+  const [wizardStartStep, setWizardStartStep] = useState<"pick" | "detect" | null>(null)
   const [editing, setEditing] = useState<CustomProviderEntry | null>(null)
   const [deleting, setDeleting] = useState<CustomProviderEntry | null>(null)
   const [sessionsUsing, setSessionsUsing] = useState<{ id: string; count: number } | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const nativeDiscoveryStarted = useRef(new Set<string>())
+  // 空态导入 CTA(§2.5):只在无任何供应商时展示,候选只看可直接导入的。
+  const importSources = useLocalImportSources()
 
   useEffect(() => {
     if (!desktop) return
@@ -336,24 +316,12 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: boo
   const customSource = selectedGroup?.sources.find(
     (source): source is Extract<ProviderSource, { kind: "custom" }> => source.kind === "custom",
   )
-  const nativeSources = selectedGroup?.sources.filter(
-    (source): source is Extract<ProviderSource, { kind: "native" }> => source.kind === "native",
-  ) ?? []
-
-  useEffect(() => {
-    if (!selectedGroup) return
-    for (const source of selectedGroup.sources) {
-      if (source.kind !== "native" || source.view.modelDiscovery === "ready") continue
-      if (nativeDiscoveryStarted.current.has(source.id)) continue
-      nativeDiscoveryStarted.current.add(source.id)
-      void discoverCatalog(source.view.harnessIds[0]!)
-    }
-  }, [discoverCatalog, selectedGroup])
 
   const [intentHandled, setIntentHandled] = useState(false)
   if (addProviderIntent && desktop && !intentHandled) {
     setIntentHandled(true)
     setEditing(null)
+    setWizardStartStep(addProviderIntent === "detect" ? "detect" : null)
     setWizardOpen(true)
   }
 
@@ -421,7 +389,7 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: boo
   }
 
   async function toggleCatalogModels(
-    entry: Extract<ProviderSource, { kind: "builtin" | "native" }>,
+    entry: Extract<ProviderSource, { kind: "builtin" }>,
     modelId: string | null,
     enabled: boolean,
   ) {
@@ -525,7 +493,9 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: boo
     if (!selectedGroup) return
     setRefreshing(true)
     setError(null)
-    const harnesses = new Set(nativeSources.map((source) => source.view.harnessIds[0]!))
+    const harnesses = new Set(selectedGroup.sources
+      .filter((source): source is Extract<ProviderSource, { kind: "builtin" }> => source.kind === "builtin")
+      .map((source) => source.view.harnessIds[0]!))
     await Promise.all([
       ...[...harnesses].map((harnessId) => discoverCatalog(harnessId, true)),
       ...selectedGroup.sources
@@ -623,6 +593,15 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: boo
                 <div className="px-3 py-10 text-center">
                   <p className="text-xs text-muted-foreground">还没有供应商</p>
                   <p className="mt-1 text-xs text-muted-foreground/70">从下方添加一个开始</p>
+                  {importSources !== null && importSources.length > 0 && (
+                    <button
+                      type="button"
+                      className="mt-2 block w-full text-xs text-foreground underline underline-offset-4"
+                      onClick={() => { setEditing(null); setWizardStartStep("detect"); setWizardOpen(true) }}
+                    >
+                      从本机配置导入({importSources.join(" / ")})…
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -747,9 +726,10 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: boo
 
       <ProviderWizard
         open={pageReady && wizardOpen}
+        startStep={wizardStartStep}
         onOpenChange={(open) => {
           setWizardOpen(open)
-          if (!open) { setEditing(null); consumeAddProviderIntent() }
+          if (!open) { setEditing(null); setWizardStartStep(null); consumeAddProviderIntent() }
         }}
         editing={editing}
         onSaved={onWizardSaved}

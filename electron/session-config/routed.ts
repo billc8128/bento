@@ -10,13 +10,12 @@ import type {
   SessionConfigLease,
   SessionConfigRequest,
 } from "./types"
-import { modeOfSelection, selectionKey } from "./types"
+import { selectionKey } from "./types"
 
 type RoutedHarnessId = "claude-code" | "codex"
 
 /** Claude Code / Codex 继续用单个稳定 loopback URL，切供应商只原子换路由。 */
 export class RoutedBentoConfigAdapter implements SessionConfigAdapter {
-  readonly mode = "bento" as const
 
   constructor(
     readonly harnessId: RoutedHarnessId,
@@ -60,7 +59,6 @@ export class RoutedBentoConfigAdapter implements SessionConfigAdapter {
     return {
       sessionKey,
       harnessId: this.harnessId,
-      mode: "bento",
       env,
       strip,
       configDir,
@@ -80,9 +78,7 @@ export class RoutedBentoConfigAdapter implements SessionConfigAdapter {
     if (!selection) {
       return {
         mode: "new-session",
-        reason: modeOfSelection(next) !== lease.mode
-          ? "本机配置与 Bento 模型之间切换需要新会话"
-          : "该模型不在当前 Bento 注册表中，需要新会话",
+        reason: "该模型不在当前 Bento 注册表中，需要新会话",
       }
     }
     await this.routing.switchRoute(lease.sessionKey, selection.providerId, this.harnessId)
