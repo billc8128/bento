@@ -155,8 +155,10 @@ export function NewSessionView({
                       inputRef.current?.focus()
                     }}
                     className={cn(
-                      "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-sm text-muted-foreground transition-[color,background-color,box-shadow] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                      scope === "chat" && "bg-background font-medium text-foreground shadow-sm",
+                      "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-sm text-muted-foreground transition-[color,background-color,box-shadow,transform] duration-150 ease-out focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:scale-[0.97] motion-reduce:transition-none",
+                      scope === "chat"
+                        ? "bg-background font-medium text-foreground shadow-sm"
+                        : "hover:bg-background/60 hover:text-foreground",
                     )}
                   >
                     <MessageCircle className="size-4" />
@@ -172,8 +174,10 @@ export function NewSessionView({
                       inputRef.current?.focus()
                     }}
                     className={cn(
-                      "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-sm text-muted-foreground transition-[color,background-color,box-shadow] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                      scope === "project" && "bg-background font-medium text-foreground shadow-sm",
+                      "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-sm text-muted-foreground transition-[color,background-color,box-shadow,transform] duration-150 ease-out focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:scale-[0.97] motion-reduce:transition-none",
+                      scope === "project"
+                        ? "bg-background font-medium text-foreground shadow-sm"
+                        : "hover:bg-background/60 hover:text-foreground",
                     )}
                   >
                     <Folder className="size-4" />
