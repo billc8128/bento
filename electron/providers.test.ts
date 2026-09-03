@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 import { modelsForProvider, type CustomProviderConfig, type ProviderView } from "../src/core/provider"
 import { ProviderDiscoveryService } from "./provider-discovery"
 import type { ProviderModelCache } from "./provider-model-cache"
-import { mergeDiscoveredModelsIntoConfigured, ProviderRegistry } from "./providers"
+import { enrichConfiguredModelsFromDiscovery, ProviderRegistry } from "./providers"
 
 describe("ProviderRegistry", () => {
   it("OpenAI OAuth 未完成账户发现前不发布静态模型", async () => {
@@ -84,7 +84,7 @@ describe("ProviderRegistry", () => {
     ])
   })
 
-  it("同一已配置供应商合入本机发现模型，但保留 Bento Provider 身份", () => {
+  it("同一已配置供应商用本机发现充实已配置模型的元数据,但不增补未配置模型", () => {
     const configured: ProviderView = {
       id: "user-zhipu-coding-plan-cn",
       canonicalId: "zhipu-coding-plan-cn",
@@ -109,11 +109,11 @@ describe("ProviderRegistry", () => {
       ] },
     }
 
-    const [merged] = mergeDiscoveredModelsIntoConfigured([configured], [discovered], "pi")
+    const [merged] = enrichConfiguredModelsFromDiscovery([configured], [discovered], "pi")
     expect(merged?.id).toBe(configured.id)
+    // 已配置模型:reasoning 等元数据被本机发现充实;未配置的 glm-5.3-flash 不进目录
     expect(merged?.models.pi).toEqual([
       { id: "bento/glm-5.3", name: "GLM 5.3", reasoning: true },
-      { id: "bento/glm-5.3-flash", name: "GLM 5.3 Flash", reasoning: true },
     ])
   })
 
@@ -137,7 +137,7 @@ describe("ProviderRegistry", () => {
       models: { "claude-code": [{ id: "runtime-only", name: "Runtime", reasoning: true }] },
     }
 
-    expect(mergeDiscoveredModelsIntoConfigured([builtin], [runtime], "claude-code"))
+    expect(enrichConfiguredModelsFromDiscovery([builtin], [runtime], "claude-code"))
       .toEqual([builtin])
   })
 

@@ -55,11 +55,12 @@ function discoveredForHarness(
 }
 
 /**
- * 同一 canonical Provider 的本机发现只补目录，不改变鉴权来源。
- * 结果仍挂在 builtin/user Provider 下，因此 Bento Adapter 可直接执行；
- * 只有 native 凭证、没有 Bento 配置的 Provider 不会被合入。
+ * 同一 canonical Provider 的本机发现只充实**已配置模型**的元数据
+ * (reasoning/efforts/contextWindow)，不增补新模型——设置页开什么，
+ * 选择器就有什么(开关交互才有意义)。鉴权来源不变;builtin OAuth 不借
+ * 本机目录,只有本机凭证、没有 Bento 配置的 Provider 不参与。
  */
-export function mergeDiscoveredModelsIntoConfigured(
+export function enrichConfiguredModelsFromDiscovery(
   configured: ProviderView[],
   discovered: ProviderView[],
   harnessId: HarnessId,
@@ -96,11 +97,7 @@ export function mergeDiscoveredModelsIntoConfigured(
           }
           continue
         }
-        indexes.set(key, models.length)
-        models.push({
-          ...model,
-          id: ["pi", "opencode", "omp"].includes(harnessId) ? `bento/${key}` : key,
-        })
+        // 未配置的模型不增补:目录集合恒等于用户在设置页管理的清单。
       }
     }
     return { ...provider, models: { ...provider.models, [harnessId]: models } }
@@ -235,7 +232,7 @@ export class ProviderRegistry {
     const users = this.userProvidersFor(options.harnessId)
     return [
       ...runtimeProviders,
-      ...mergeDiscoveredModelsIntoConfigured([...builtins, ...users], runtimeProviders, options.harnessId),
+      ...enrichConfiguredModelsFromDiscovery([...builtins, ...users], runtimeProviders, options.harnessId),
     ]
   }
 
