@@ -315,14 +315,16 @@ export function ChatView({ messages, pending = true, turn, queued }: ChatViewPro
     {!following && (
       <button
         type="button"
+        aria-label="回到最新"
+        title="回到最新"
         onClick={() => scrollToLatest("smooth")}
         className={cn(
-          "absolute right-4 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-card px-3 text-xs font-medium shadow-pop hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-          traits.composer === "floating" ? "bottom-56" : "bottom-3",
+          "absolute right-4 z-20 grid size-8 place-items-center rounded-full border border-border bg-card shadow-pop hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+          // 贴住输入区上沿,别浮在正文中间挡视线
+          traits.composer === "floating" ? "bottom-44" : "bottom-3",
         )}
       >
-        <ArrowDown className="size-3.5" />
-        回到最新
+        <ArrowDown className="size-4" />
       </button>
     )}
     </div>

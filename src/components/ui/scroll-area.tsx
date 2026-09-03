@@ -20,7 +20,10 @@ function ScrollArea({
     >
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
-        className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
+        // [&>div]:!block:Radix 默认给内容包一层 display:table 做测量,
+        // 表格布局会让内容按 max-content 撑宽,窄窗口下长文本不换行、
+        // 右侧被裁掉(实测)。强制 block 让宽度约束正常传递。
+        className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none [&>div]:!block"
       >
         {children}
       </ScrollAreaPrimitive.Viewport>
