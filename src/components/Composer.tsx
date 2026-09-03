@@ -92,11 +92,20 @@ export function Composer({
   )
   const folderName = cwd.replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean).at(-1) ?? cwd
 
-  function addFiles(files: FileList | null, kind: Attachment["kind"]) {
+  async function addFiles(files: FileList | File[] | null, kind: Attachment["kind"]) {
     if (!files?.length) return
-    const next = Array.from(files).flatMap((f, i) => {
-        const path = window.bento?.pathForFile(f) ?? ""
-        if (!path) return []
+    const next = (await Promise.all(Array.from(files).map(async (f, i) => {
+        // 剪贴板粘贴的 File 没有磁盘路径,先把字节落盘成附件文件
+        let path = window.bento?.pathForFile(f) ?? ""
+        if (!path && window.bento?.saveAttachmentBlob) {
+          const saved = await window.bento.saveAttachmentBlob({
+            name: f.name || `pasted-${Date.now()}`,
+            mimeType: f.type || "application/octet-stream",
+            data: await f.arrayBuffer(),
+          })
+          path = saved.path ?? ""
+        }
+        if (!path) return null
         const isImage = f.type.startsWith("image/")
         return {
           id: `${Date.now()}-${i}`,
@@ -107,7 +116,7 @@ export function Composer({
           kind: isImage ? ("image" as const) : kind,
           ...(isImage ? { url: URL.createObjectURL(f) } : {}),
         }
-      })
+      }))).filter((a) => a !== null)
     setAttachments((prev) => [...prev, ...next])
   }
 
@@ -224,6 +233,15 @@ export function Composer({
           <Textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onPaste={(e) => {
+              const files = Array.from(e.clipboardData?.items ?? [])
+                .filter((item) => item.kind === "file")
+                .map((item) => item.getAsFile())
+                .filter((f): f is File => f !== null)
+              if (files.length === 0) return
+              e.preventDefault()
+              void addFiles(files, "file")
+            }}
             onCompositionStart={() => { composingRef.current = true }}
             onCompositionEnd={() => { composingRef.current = false }}
             onKeyDown={(e) => {
@@ -353,7 +371,7 @@ export function Composer({
             )}
           >
             <kbd className="font-mono">⏎</kbd> 发送 · <kbd className="font-mono">⇧⏎</kbd> 换行 ·
-            可直接把图片或文件拖进来
+            可直接把图片或文件拖进来,或直接粘贴剪贴板图片
           </p>
         )}
       </div>

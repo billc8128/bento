@@ -102,6 +102,11 @@ const api = {
   chooseDirectory: () => ipcRenderer.invoke("project:choose-directory"),
   /** 拖进窗口的 File → 绝对路径(Electron 32+ File.path 已移除,必须走 webUtils) */
   pathForFile: (file: File) => webUtils.getPathForFile(file),
+  /** 剪贴板粘贴的 File 没有磁盘路径,把字节落盘为附件文件 */
+  saveAttachmentBlob: (input: { name: string; mimeType: string; data: ArrayBuffer }) =>
+    ipcRenderer.invoke("attachment:save-blob", input),
+  openPath: (target: string) => ipcRenderer.invoke("shell:open-path", target),
+  readFileDataUrl: (target: string) => ipcRenderer.invoke("file:read-data-url", target),
   createProject: (opts: { sourceDir: string; name: string }) =>
     ipcRenderer.invoke("project:create", opts),
 

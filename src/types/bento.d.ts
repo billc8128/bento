@@ -140,6 +140,12 @@ declare global {
       chooseDirectory(): Promise<{ path?: string; error?: string }>
       /** 拖入的 File → 绝对路径(拖拽建项目用) */
       pathForFile(file: File): string
+      /** 剪贴板粘贴等无路径 Blob → 落盘为附件文件,返回绝对路径 */
+      saveAttachmentBlob(input: { name: string; mimeType: string; data: ArrayBuffer }): Promise<
+        { path: string; error?: undefined } | { path?: undefined; error: string }
+      >
+      openPath(target: string): Promise<string>
+      readFileDataUrl(target: string): Promise<{ dataUrl?: string; error?: string }>
       createProject(opts: { sourceDir: string; name: string }): Promise<
         { path: string; error?: undefined } | { path?: undefined; error: string }
       >

@@ -278,6 +278,13 @@ export class ProviderRoutingService {
         "requires_openai_auth = false",
         "supports_websockets = false",
         "",
+        // codex 只对「OpenAI actor 授权」的 provider 注册 image_generation 等
+        // hosted tools(spec_plan.rs image_generation_available);非空
+        // x-openai-actor-authorization 头即可过这道门。该头只在本地过门控,
+        // model-proxy 的 STRIP_INBOUND 会在出栈前剥掉,不会泄漏到真实上游。
+        "[model_providers.bento.http_headers]",
+        'x-openai-actor-authorization = "bento-local-proxy"',
+        "",
       ].join("\n"),
     )
     return { env: { CODEX_HOME: home, OPENAI_API_KEY: "bento-local-proxy" } }

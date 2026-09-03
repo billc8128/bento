@@ -3,7 +3,7 @@
 import fixPath from "fix-path"
 import fs from "node:fs"
 import os from "node:os"
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, screen, webContents, type OpenDialogOptions } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, screen, shell, webContents, type OpenDialogOptions } from "electron"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -14,6 +14,7 @@ import type { PromptInput } from "../src/core/types"
 import type { BentoAppId, UserAppInput } from "../src/core/apps"
 import { configureBinaryManager } from "./binaries/manager"
 import { createProject } from "./projects"
+import { readFileDataUrl, saveAttachmentBlob } from "./local-files"
 import type { CustomProviderConfig } from "../src/core/provider"
 import { providerConfigFromPreset, providerPresetView } from "../src/core/provider-preset"
 import { getProviderPreset, PROVIDER_PRESETS } from "../src/data/provider-presets"
@@ -751,6 +752,16 @@ app.whenReady().then(async () => {
       return { error: String(err instanceof Error ? err.message : err) }
     }
   })
+
+  ipcMain.handle("attachment:save-blob", (_e, input: { name: string; mimeType: string; data: ArrayBuffer }) => {
+    try {
+      return { path: saveAttachmentBlob(app.getPath("userData"), input) }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.handle("shell:open-path", (_e, target: string) => shell.openPath(target))
+  ipcMain.handle("file:read-data-url", (_e, target: string) => readFileDataUrl(target))
 
   ipcMain.handle("workspace-terminal:create", (event, input: { cwd: string; cols: number; rows: number }) => {
     try {

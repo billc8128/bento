@@ -59,6 +59,8 @@ const STRIP_INBOUND = new Set([
   "chatgpt-account-id",
   "anthropic-beta",
   "cookie",
+  // codex-home config.toml 里为解锁 hosted tools 注入的本地门控头,不出本机
+  "x-openai-actor-authorization",
 ])
 
 export function buildProxyHeaders(
