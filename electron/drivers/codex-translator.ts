@@ -38,6 +38,14 @@ function itemStatus(status: unknown): HarnessToolStatus {
   return "running"
 }
 
+/** 命令跑完但退出码非 0(探测命令/测试红灯)不算工具失败:
+ *  照常 completed,退出码进 detail 保留信号;⚠ 留给真正没跑成的调用
+ *  (被拒/沙箱拦截/进程错误,这类没有 exitCode)。 */
+function commandStatus(item: JsonObject): HarnessToolStatus {
+  if (typeof item.exitCode === "number") return "completed"
+  return itemStatus(item.status)
+}
+
 /** §7:item/completed 的输出全文;exitCode 非 0 时末尾追加 exit code 行。 */
 function itemOutput(item: JsonObject): string | undefined {
   const parts: string[] = []
@@ -104,11 +112,20 @@ export function translateCodexNotification(method: string, params: JsonObject): 
     const diffs = kind === "edit" ? fileChangeDiffs(item) : undefined
     const output = itemOutput(item)
     const url = itemUrl(kind, item)
+    const status = kind === "bash"
+      ? commandStatus(item)
+      : item.status === undefined
+        ? "completed"
+        : itemStatus(item.status)
     return [{
       type: "tool_updated",
       id,
       title: itemTitle(item),
-      status: item.status === undefined ? "completed" : itemStatus(item.status),
+      status,
+      // 命令类:非零退出码进 detail(红点留给没跑成的调用,信号不丢)
+      ...(kind === "bash" && typeof item.exitCode === "number" && item.exitCode !== 0
+        ? { detail: `exit ${item.exitCode}` }
+        : {}),
       ...(diffs ? { diffs } : {}),
       ...(output ? { output } : {}),
       ...(url ? { url } : {}),

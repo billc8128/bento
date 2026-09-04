@@ -137,7 +137,7 @@ describe("translateCodexNotification 工具输出与搜索链接(TRACE_DATA_PLAN
     ])
   })
 
-  it("exitCode 非 0 时输出末尾追加 exit code 行", () => {
+  it("exitCode 非 0 不算工具失败:completed + detail 带退出码,输出末尾仍追加", () => {
     expect(
       translateCodexNotification("item/completed", {
         item: {
@@ -154,8 +154,29 @@ describe("translateCodexNotification 工具输出与搜索链接(TRACE_DATA_PLAN
         type: "tool_updated",
         id: "cmd-10",
         title: "pnpm test",
-        status: "failed",
+        status: "completed",
+        detail: "exit 1",
         output: "2 failed\nexit code 1",
+      },
+    ])
+  })
+
+  it("没有 exitCode 的失败才是真失败(被拒/进程错误)", () => {
+    expect(
+      translateCodexNotification("item/completed", {
+        item: {
+          id: "cmd-11",
+          type: "commandExecution",
+          command: "rm -rf /",
+          status: "declined",
+        },
+      }),
+    ).toEqual([
+      {
+        type: "tool_updated",
+        id: "cmd-11",
+        title: "rm -rf /",
+        status: "failed",
       },
     ])
   })
