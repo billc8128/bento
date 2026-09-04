@@ -59,6 +59,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { FolderIcon } from "@/components/FolderIcon"
 import { PinIcon } from "@/components/PinIcon"
+import { StatusGlyph } from "@/components/StatusGlyph"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
@@ -85,6 +86,7 @@ import {
 import { hasUnreadSessionMessage, isRunning, liveMeta, removeLive, renameLive, useLive } from "@/lib/live-store"
 import { togglePin, usePinnedSessions } from "@/lib/pinned-sessions"
 import { openSettings } from "@/lib/settings-store"
+import { useStatusGlyph } from "@/lib/status-glyph"
 import { SESSION_MIME } from "@/views/DockWorkspace"
 import { STYLES, type SidebarShape, type StyleId } from "@/data/styles"
 
@@ -133,6 +135,7 @@ export function AppSidebar() {
   const theme = useTheme()
   const pinned = usePinnedSessions()
   const folderPreferences = useFolderPreferences()
+  const statusGlyph = useStatusGlyph()
   const newSessionOpen = useNewSession().open
   /** 行内重命名:Electron 不支持 window.prompt,换成输入框就地编辑 */
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -237,16 +240,9 @@ export function AppSidebar() {
           {/* 会话行不带图标:标题落文字轴(pl-11 = 44px),层级靠错落缩进表达,
               不靠压父级颜色(Codex 式) */}
           <span className="flex-1 truncate text-sm">{s.title}</span>
-          {running && (
-            <span className="relative flex size-1.5 shrink-0">
-              {/* 运行态用品牌琥珀:ok 绿留给「完成」,进行中和完成不共用一个颜色 */}
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-brand opacity-70 motion-reduce:animate-none" />
-              <span className="relative inline-flex size-1.5 rounded-full bg-brand" />
-            </span>
-          )}
-          {!running && unread && (
-            <span className="size-1.5 shrink-0 rounded-full bg-brand" aria-label="有来自其它会话的新消息" />
-          )}
+          {/* 状态指示样式由设置 → 主题 里的 StatusGlyph 决定 */}
+          {running && <StatusGlyph state="running" variant={statusGlyph} />}
+          {!running && unread && <StatusGlyph state="unread" variant={statusGlyph} />}
           {/* 平时只露置顶标;hover 换成 时间 + pin + ⋯ 快捷操作 */}
           {!running && allowPin && isPinned && (
             <PinIcon className="size-3 text-muted-foreground group-hover/menu-item:hidden" />

@@ -7,7 +7,9 @@
 
 import { Check } from "lucide-react"
 
+import { StatusGlyph } from "@/components/StatusGlyph"
 import { STYLES, type StyleId } from "@/data/styles"
+import { STATUS_GLYPH_VARIANTS, setStatusGlyph, useStatusGlyph } from "@/lib/status-glyph"
 import { useTheme } from "@/lib/theme-context"
 import { cn } from "@/lib/utils"
 
@@ -21,6 +23,7 @@ const SWATCHES: Record<StyleId, { bg: string; primary: string; accent: string }>
 
 export function AppearanceSection() {
   const theme = useTheme()
+  const statusGlyph = useStatusGlyph()
 
   return (
     <div className="flex flex-col gap-8">
@@ -60,6 +63,50 @@ export function AppearanceSection() {
                   {activeItem && <Check className="size-4 shrink-0 text-brand" />}
                 </div>
                 <p className="type-micro mt-0.5 text-muted-foreground">{s.desc}</p>
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-sm font-medium">会话状态指示</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          侧栏会话行的「进行中 / 未读」指示样式,琥珀代表进行中,绿色代表新消息。
+        </p>
+        <div className="mt-3 flex flex-col gap-2">
+          {STATUS_GLYPH_VARIANTS.map((v) => {
+            const activeItem = statusGlyph === v.id
+            return (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => setStatusGlyph(v.id)}
+                className={cn(
+                  "flex items-center gap-3 rounded-xl border p-3 text-left transition-colors",
+                  activeItem
+                    ? "border-brand ring-1 ring-brand/40"
+                    : "border-border hover:border-foreground/25",
+                )}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{v.name}</span>
+                    {activeItem && <Check className="size-4 shrink-0 text-brand" />}
+                  </div>
+                  <p className="type-micro mt-0.5 text-muted-foreground">{v.desc}</p>
+                </div>
+                {/* 预览:复刻真实会话行的文字轴(pl-11/pr-5),D 的能量条才能对得上 */}
+                <div className="flex w-44 shrink-0 flex-col rounded-lg border border-border/60 bg-muted/40 py-1">
+                  <span className="relative flex h-7 items-center pl-11 pr-5 text-xs">
+                    <span className="flex-1 truncate">重构 imagegen 注入</span>
+                    <StatusGlyph state="running" variant={v.id} />
+                  </span>
+                  <span className="relative flex h-7 items-center pl-11 pr-5 text-xs">
+                    <span className="flex-1 truncate">看下这个项目</span>
+                    <StatusGlyph state="unread" variant={v.id} />
+                  </span>
+                </div>
               </button>
             )
           })}
