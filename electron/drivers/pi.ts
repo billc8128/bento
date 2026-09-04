@@ -221,7 +221,9 @@ class PiRpcProcess {
     this.child = spawn(command.cmd, args, {
       cwd,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...env, ...proxyEnv?.env, ...app?.env, ELECTRON_RUN_AS_NODE: "1" },
+      // BENTO_EMBEDDED:让打补丁后的 pi 跳过 process.title——macOS 上设标题会
+      // 触发 LaunchServices 注册,Dock 里冒出一个通用 exec 图标(真实事故)
+      env: { ...env, ...proxyEnv?.env, ...app?.env, ELECTRON_RUN_AS_NODE: "1", BENTO_EMBEDDED: "1" },
     })
     this.child.stdout!.on("data", (chunk: Buffer) => this.read(chunk.toString()))
     this.child.stderr!.on("data", (chunk: Buffer) => {

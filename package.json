@@ -75,7 +75,10 @@
       "electron",
       "esbuild",
       "node-pty"
-    ]
+    ],
+    "patchedDependencies": {
+      "@earendil-works/pi-coding-agent": "patches/@earendil-works__pi-coding-agent.patch"
+    }
   },
   "build": {
     "appId": "dev.bento.workbench",

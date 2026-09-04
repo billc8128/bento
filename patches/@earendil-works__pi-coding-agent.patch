@@ -1,0 +1,26 @@
+diff --git a/dist/cli.js b/dist/cli.js
+index 2323e54e6d17fe5685471df04097d5967fd086e0..7e9d7cf567752d2d9a8c245eff36207ab90edec8 100755
+--- a/dist/cli.js
++++ b/dist/cli.js
+@@ -8,7 +8,7 @@
+ import { APP_NAME } from "./config.js";
+ import { configureHttpDispatcher } from "./core/http-dispatcher.js";
+ import { main } from "./main.js";
+-process.title = APP_NAME;
++if (!process.env.BENTO_EMBEDDED) process.title = APP_NAME;
+ process.env.PI_CODING_AGENT = "true";
+ process.env.AI_AGENT = "pi";
+ process.emitWarning = (() => { });
+diff --git a/dist/rpc-entry.js b/dist/rpc-entry.js
+index 82e9297f37902b2cb256be6e83014696b9a1e59d..6cc26cb216ca5ed6295399d524a7ca1a81c7b874 100755
+--- a/dist/rpc-entry.js
++++ b/dist/rpc-entry.js
+@@ -2,7 +2,7 @@
+ import { APP_NAME } from "./config.js";
+ import { configureHttpDispatcher } from "./core/http-dispatcher.js";
+ import { main } from "./main.js";
+-process.title = `${APP_NAME}-rpc`;
++if (!process.env.BENTO_EMBEDDED) process.title = `${APP_NAME}-rpc`;
+ process.env.PI_CODING_AGENT = "true";
+ process.env.AI_AGENT = "pi";
+ process.emitWarning = (() => { });

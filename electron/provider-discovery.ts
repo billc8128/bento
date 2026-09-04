@@ -140,7 +140,7 @@ export async function discoverPiProvider(cwd: string): Promise<ProviderDiscovery
   const child = spawn(command.cmd, command.args, {
     cwd,
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", BENTO_EMBEDDED: "1" },
   })
   child.stderr?.resume()
   const pending = new Map<string, ReturnType<typeof Promise.withResolvers<unknown>>>()

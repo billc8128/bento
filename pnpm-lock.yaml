@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@earendil-works/pi-coding-agent':
+    hash: ca3fe1be6669bf3231df1f29686de6c55fe825d3e53e7ccd0b1c34d6b5147805
+    path: patches/@earendil-works__pi-coding-agent.patch
+
 importers:
 
   .:
@@ -16,7 +21,7 @@ importers:
         version: 0.2.112(zod@4.4.3)
       '@earendil-works/pi-coding-agent':
         specifier: 0.84.2
-        version: 0.84.2(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3)
+        version: 0.84.2(patch_hash=ca3fe1be6669bf3231df1f29686de6c55fe825d3e53e7ccd0b1c34d6b5147805)(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3)
       '@fontsource-variable/dm-sans':
         specifier: ^5.3.0
         version: 5.3.0
@@ -5260,7 +5265,7 @@ snapshots:
     dependencies:
       '@earendil-works/pi-protocol': 0.84.2
 
-  '@earendil-works/pi-coding-agent@0.84.2(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3)':
+  '@earendil-works/pi-coding-agent@0.84.2(patch_hash=ca3fe1be6669bf3231df1f29686de6c55fe825d3e53e7ccd0b1c34d6b5147805)(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3)':
     dependencies:
       '@earendil-works/pi-agent-core': 0.84.2(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3)
       '@earendil-works/pi-ai': 0.84.2(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3)
