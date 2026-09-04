@@ -340,11 +340,7 @@ export function Composer({
                   if (!running) onEffortChange?.(next)
                 }}
                 permissionProfile={permissionProfile ?? "standard"}
-                onPermissionChange={onPermissionChange
-                  ? (next) => {
-                      if (!running) onPermissionChange(next)
-                    }
-                  : undefined}
+                onPermissionChange={onPermissionChange}
                 onHarnessChange={(next) => {
                   if (!running && next !== harnessId) onHarnessChange?.(next)
                 }}
