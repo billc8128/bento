@@ -359,7 +359,7 @@ export function AppSidebar() {
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={appsFocused && !newSessionOpen}
-                    className="h-8 gap-2 rounded-none px-5 text-sm text-muted-foreground hover:text-sidebar-foreground"
+                    className="h-8 gap-2 rounded-none px-5 text-sm"
                     onClick={() => {
                       openAppsView()
                       closeNewSession()
@@ -370,12 +370,12 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               </SidebarMenu>
-              {/* 小节标签:type-micro 灰色 quiet 标签,图标落 px-5 图标轴、
-                  文字落 +24px 文字轴(size-3.5 + gap-2.5),不上分隔线 */}
+              {/* 对话是与应用并列的主侧栏入口,沿用同一档 UI 字号与前景色。
+                  它仍以小节标题的字重和下方会话缩进表达层级,不上分隔线。 */}
               <section className="pb-2">
-                <div className="flex h-7 items-center gap-2.5 px-5 text-muted-foreground">
-                  <MessageCircle className="size-3.5" />
-                  <span className="type-micro font-semibold tracking-[0.08em]">对话</span>
+                <div className="flex h-8 items-center gap-2 px-5 text-sidebar-foreground">
+                  <MessageCircle className="size-4" />
+                  <span className="text-sm font-medium">对话</span>
                 </div>
                 {chatKeys.length === 0 && (
                   <p className="pl-11 pr-5 type-micro text-muted-foreground">还没有对话</p>
