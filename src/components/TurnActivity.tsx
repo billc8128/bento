@@ -283,6 +283,39 @@ function ToolsPhaseRow({ tools, label, live }: { tools: ToolCall[]; label: strin
   )
 }
 
+/** live 回合的计划摘要:一行进度条 + x/y + 当前项,点击展开全表(限高滚动)。
+ * 放在阶段栈底部(贴最新消息),不再钉栈顶被滚出视野。 */
+function PlanSummary({ plan }: { plan: PlanItem[] }) {
+  const [open, setOpen] = useState(false)
+  const done = plan.filter((item) => item.status === "completed").length
+  const current = plan.find((item) => item.status === "in_progress")
+  const pct = plan.length > 0 ? (done / plan.length) * 100 : 0
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger className="group -ml-1.5 flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-md px-1.5 py-1 text-sm font-medium text-foreground/70 transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none">
+        <span className="h-[3px] w-16 shrink-0 overflow-hidden rounded-full bg-border">
+          <span
+            className="block h-full rounded-full bg-brand transition-[width] duration-300"
+            style={{ width: `${pct}%` }}
+          />
+        </span>
+        <span className="shrink-0">
+          计划 <span className="type-micro tabular-nums text-muted-foreground">{done}/{plan.length}</span>
+        </span>
+        {current && (
+          <span className="min-w-0 truncate font-normal text-muted-foreground">正在:{current.content}</span>
+        )}
+        <ChevronDown className="ml-auto size-3.5 shrink-0 text-muted-foreground transition-transform duration-300 group-data-[state=open]:rotate-180 motion-reduce:transition-none" />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="collapsible-section">
+        <div className="max-h-48 overflow-y-auto overscroll-contain">
+          <PlanRows plan={plan} />
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
 function PlanRows({ plan }: { plan: PlanItem[] }) {
   return (
     <div className="mb-0.5 flex flex-col">
@@ -443,7 +476,6 @@ export function TurnActivity({
     const fallback = liveId === undefined ? liveStatus(turn) : undefined
     return (
       <div className="flex min-w-0 max-w-full flex-col gap-0.5">
-        {plan.length > 0 && <PlanRows plan={plan} />}
         {phases.map((row) => (
           <PhaseRowView key={row.id} row={row} livePhase={row.id === liveId} compact onResolveApproval={onResolveApproval} />
         ))}
@@ -453,6 +485,8 @@ export function TurnActivity({
             <ShiningText text={fallback.label} className="shrink-0" />
           </div>
         )}
+        {/* plan 摘要在栈底:贴最新消息,进度一眼可见;全表点击展开 */}
+        {plan.length > 0 && <PlanSummary plan={plan} />}
       </div>
     )
   }

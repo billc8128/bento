@@ -89,14 +89,20 @@ export function Composer({
 
   // 只有圆角外壳的形态才有"胶囊"可收;docked/inline 没收起意义
   const canCollapse = collapsible && (shape === "floating" || shape === "card")
-  // 有内容/在跑/有排队时强制展开:停止钮和队列提示必须有地方放
-  const busy = running || queueFull || attachments.length > 0 || text.trim().length > 0
+  // 只有内容(文字/附件)阻止收起;运行中也可收——停止/发送钮钉在右下角,
+  // 收起态同样可见,队列提示本来就在 ChatView 消息流里
+  const busy = attachments.length > 0 || text.trim().length > 0
   const collapsed = canCollapse && !busy && !manualOpen
 
-  // 点外部收回(仅收起语义下;busy 时 collapsed 已为 false,收起无害)
+  // Radix 弹层(RuntimePicker 等)portal 在 shell 外,点它不算"点外部"
+  const inPopper = (t: EventTarget | null) =>
+    t instanceof Element && Boolean(t.closest("[data-radix-popper-content-wrapper]"))
+
+  // 点外部收回(busy 时 collapsed 已为 false,收起无害)
   useEffect(() => {
     if (!canCollapse) return
     const onDown = (e: PointerEvent) => {
+      if (inPopper(e.target)) return
       if (!shellRef.current?.contains(e.target as Node)) setManualOpen(false)
     }
     document.addEventListener("pointerdown", onDown)
@@ -267,6 +273,14 @@ export function Composer({
             value={text}
             onChange={(e) => setText(e.target.value)}
             onFocus={() => setManualOpen(true)}
+            onBlur={(e) => {
+              // 光标移出也收回(Tab/切窗口);焦点落在弹层里(选模型中)不收
+              const next = e.relatedTarget
+              if (!canCollapse) return
+              if (next && shellRef.current?.contains(next)) return
+              if (inPopper(next)) return
+              setManualOpen(false)
+            }}
             onPaste={(e) => {
               const files = Array.from(e.clipboardData?.items ?? [])
                 .filter((item) => item.kind === "file")

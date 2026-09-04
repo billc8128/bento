@@ -99,7 +99,7 @@ export type CollaborationCatalog = {
   }): Promise<CollaborationSelection | null>
 }
 
-const DEFAULT_TIMEOUT_MS = 30_000
+const DEFAULT_TIMEOUT_MS = 120_000
 
 export class CollaborationService {
   constructor(
@@ -203,8 +203,8 @@ export class CollaborationService {
       })
       const prompt: SessionCreatePromptOutcome = "accepted"
       if (input.wait) {
-        const reply = await this.awaitReply(session.id, input.timeoutMs, acceptedSeq)
-        return { session, prompt: "settled", ui, reply }
+        const { settled, reply } = await this.awaitReply(session.id, input.timeoutMs, acceptedSeq)
+        return { session, prompt: settled ? "settled" : "accepted", ui, ...(reply ? { reply } : {}) }
       }
       return { session, prompt, ui }
     } catch (error) {
@@ -227,8 +227,9 @@ export class CollaborationService {
   ): Promise<SessionSendResult> {
     const { acceptedSeq } = await this.sendToSession(callerSessionId, input)
     if (input.wait) {
-      const reply = await this.awaitReply(input.targetSessionId, input.timeoutMs, acceptedSeq)
-      return { targetSessionId: input.targetSessionId, status: "settled", acceptedSeq, reply }
+      const { settled, reply } = await this.awaitReply(input.targetSessionId, input.timeoutMs, acceptedSeq)
+      if (!settled) return { targetSessionId: input.targetSessionId, status: "accepted", acceptedSeq }
+      return { targetSessionId: input.targetSessionId, status: "settled", acceptedSeq, ...(reply ? { reply } : {}) }
     }
     return { targetSessionId: input.targetSessionId, status: "accepted", acceptedSeq }
   }
@@ -281,13 +282,23 @@ export class CollaborationService {
     const target = this.requireTarget(input.targetSessionId)
     const until = input.until ?? "settled"
     const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS
-    const { session, matched } = await this.backend.waitForSession(
-      input.targetSessionId,
-      until,
-      input.afterSeq ?? 0,
-      timeoutMs,
-    )
-    return { session: session ?? target, matched, lastSeq: (session ?? target).lastSeq }
+    try {
+      const { session, matched } = await this.backend.waitForSession(
+        input.targetSessionId,
+        until,
+        input.afterSeq ?? 0,
+        timeoutMs,
+      )
+      return { session: session ?? target, matched, lastSeq: (session ?? target).lastSeq }
+    } catch (error) {
+      // 超时中性化:长任务等不完是常态,报 matched:"timeout" + 目标当前状态,
+      // 不以错误结束——否则 agent 会把"还在跑"误判成"监控通道坏了"而放弃监督
+      if (error instanceof CollaborationError && error.code === "timeout") {
+        const current = this.requireTarget(input.targetSessionId)
+        return { session: current, matched: "timeout", lastSeq: current.lastSeq }
+      }
+      throw error
+    }
   }
 
   // ---------- UI 工具(Phase 2) ----------
@@ -462,13 +473,19 @@ export class CollaborationService {
     targetSessionId: string,
     timeoutMs: number | undefined,
     afterSeq: number,
-  ): Promise<SessionMessage | undefined> {
-    await this.backend.waitForSession(
-      targetSessionId,
-      "settled",
-      afterSeq,
-      timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    )
+  ): Promise<{ settled: boolean; reply?: SessionMessage }> {
+    try {
+      await this.backend.waitForSession(
+        targetSessionId,
+        "settled",
+        afterSeq,
+        timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      )
+    } catch (error) {
+      // 超时=任务还在跑;由调用方如实返回 accepted,不谎报 settled
+      if (error instanceof CollaborationError && error.code === "timeout") return { settled: false }
+      throw error
+    }
     // 从 afterSeq 开始读;没有新 assistant 消息也算 settled,reply 缺省。
     const { messages } = this.backend.readSessionMessages(
       targetSessionId,
@@ -482,7 +499,7 @@ export class CollaborationService {
         reply = message
       }
     }
-    return reply
+    return { settled: true, ...(reply ? { reply } : {}) }
   }
 }
 

@@ -353,7 +353,7 @@ export class AppRuntimeHost {
     })))
 
     server.registerTool("session_create", {
-      description: "创建协作者 Session；同 Harness 继承调用者配置，跨 Harness 自动使用该 Harness 最近或默认的可执行模型。",
+      description: "创建协作者 Session；同 Harness 继承调用者配置，跨 Harness 自动使用该 Harness 最近或默认的可执行模型。派发长任务建议 wait:true 等首轮 settled；若返回 prompt=accepted 且无 reply，是超时但任务仍在跑，应继续 session_wait 或先 session_read 看进展。",
       inputSchema: {
         title: z.string().optional(),
         prompt: z.string().optional(),
@@ -367,17 +367,17 @@ export class AppRuntimeHost {
         placement: z.enum(["auto", "right", "down"]).optional(),
         focus: z.boolean().optional(),
         wait: z.boolean().optional(),
-        timeoutMs: z.number().int().positive().max(600_000).optional(),
+        timeoutMs: z.number().int().positive().max(1_800_000).optional(),
       },
     }, wrap(async (args) => requireService().create(caller, args as never)))
 
     server.registerTool("session_send", {
-      description: "向目标 Session 发送消息;working 目标返回 session_busy,第一版不排队。",
+      description: "向目标 Session 发送消息;working 目标返回 session_busy,第一版不排队。wait:true 等本轮 settled 并带回 reply;超时返回 status=accepted(任务仍在跑),不是失败,可继续 session_wait。",
       inputSchema: {
         targetSessionId: z.string(),
         text: z.string(),
         wait: z.boolean().optional(),
-        timeoutMs: z.number().int().positive().max(600_000).optional(),
+        timeoutMs: z.number().int().positive().max(1_800_000).optional(),
       },
     }, wrap(async (args) => requireService().send(caller, args as never)))
 
@@ -430,12 +430,12 @@ export class AppRuntimeHost {
     }, wrap(async (args) => requireService().uiFocus(caller, { sessionId: String(args.sessionId) })))
 
     server.registerTool("session_wait", {
-      description: "等待目标 Session 状态(settled/working/next_message);超时不 cancel 目标。",
+      description: "等待目标 Session 状态(settled/working/next_message)。监督协作者进度的标准做法;超时不 cancel 目标,且返回 matched=timeout + 目标当前状态——这是中性结果,表示仍在跑,可再次调用继续等。",
       inputSchema: {
         targetSessionId: z.string(),
         until: z.enum(["working", "settled", "next_message"]).optional(),
         afterSeq: z.number().int().nonnegative().optional(),
-        timeoutMs: z.number().int().positive().max(600_000).optional(),
+        timeoutMs: z.number().int().positive().max(1_800_000).optional(),
       },
     }, wrap(async (args) => requireService().wait(caller, args as never)))
   }

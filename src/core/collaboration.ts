@@ -309,7 +309,8 @@ export type SessionWaitInput = {
 
 export type SessionWaitResult = {
   session: CollaborationSession
-  matched: "working" | "settled" | "next_message"
+  /** timeout 是中性结果:目标仍在工作,不是失败——agent 可继续等或先 read 看进展 */
+  matched: "working" | "settled" | "next_message" | "timeout"
   lastSeq: number
 }
 

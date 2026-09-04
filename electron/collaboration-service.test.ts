@@ -361,15 +361,16 @@ describe("CollaborationService", () => {
     )
   })
 
-  it("wait 默认 until settled;超时不吞掉错误码", async () => {
+  it("wait 默认 until settled;超时返回中性 matched=timeout,不当错误抛", async () => {
     const target = session({ id: "s-b" })
     const service = new CollaborationService(backend([caller, target]))
     const result = await service.wait("s-caller", { targetSessionId: "s-b" })
     expect(result.matched).toBe("settled")
     expect(result.lastSeq).toBe(99)
-    await expect(
-      service.wait("s-caller", { targetSessionId: "s-b", timeoutMs: 0 }),
-    ).rejects.toMatchObject({ code: "timeout" })
+    // 超时中性化:目标仍在工作时长任务等不完是常态,agent 侧不应收到 failed
+    const timedOut = await service.wait("s-caller", { targetSessionId: "s-b", timeoutMs: 0 })
+    expect(timedOut.matched).toBe("timeout")
+    expect(timedOut.session.id).toBe("s-b")
     await expect(
       service.wait("s-caller", { targetSessionId: "s-gone" }),
     ).rejects.toMatchObject({ code: "session_not_found" })
