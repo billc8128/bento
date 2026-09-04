@@ -70,8 +70,8 @@ function PaneHeader({
       className={cn(
         "app-window-drag flex shrink-0 items-center gap-2 [-webkit-app-region:drag]",
         minimal
-          // h-16 透明太飘:降到 h-12 + 淡底色细分线,和对话区柔和过渡
-          ? cn("h-12 border-b border-border/50 bg-muted/35", CHAT_CONTENT_GUTTER[composer])
+          // 压缩到 h-8:头部只剩文件夹名/标题一行,再厚就和正文抢地盘
+          ? cn("h-8 border-b border-border/50 bg-muted/35", CHAT_CONTENT_GUTTER[composer])
           : "h-12 border-b px-4",
       )}
     >
