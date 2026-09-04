@@ -30,6 +30,7 @@ let snapshot: LiveSnapshot = { version: 0, initialized: false, sessions: [], bin
 const accs = new Map<string, Accumulator>()
 const loaded = new Set<string>()
 const running = new Set<string>()
+/** 未读:协作会话发来的消息,或非焦点会话跑完了回合(结果还没被看过)。聚焦即清。 */
 const unreadSessionMessages = new Set<string>()
 export type QueuedPromptView = {
   id: string
@@ -139,6 +140,9 @@ async function init() {
         }
       } else if (payload.type === "turn_finished") {
         running.delete(key)
+        // 非焦点会话的回合结束:结果还没被看过,亮未读(协作唤醒的 user_message
+        // 已经加过,Set 幂等)
+        if (key !== focusedSessionId) unreadSessionMessages.add(key)
         patch = {
           sessions: snapshot.sessions.map((session) =>
             session.key === key
