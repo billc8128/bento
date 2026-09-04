@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronsUpDown,
+  FolderPlus,
   Keyboard,
   MessageCircle,
   Moon,
@@ -11,6 +12,7 @@ import {
   Palette,
   Pencil,
   PenSquare,
+  Plus,
   RotateCcw,
   Search,
   Settings,
@@ -78,6 +80,7 @@ import { useTraits } from "@/lib/style-context"
 import { useTheme } from "@/lib/theme-context"
 import { closeSession, openAppsView, openSession, resetLayout, setLayoutMode, useLayout } from "@/lib/layout-store"
 import { closeNewSession, requestNewSession, useNewSession } from "@/lib/new-session-store"
+import { NewProjectDialog } from "@/components/ProjectPicker"
 import {
   hideFolder,
   renameFolder,
@@ -148,6 +151,13 @@ export function AppSidebar() {
   const [closedGroups, setClosedGroups] = useState<Set<string>>(() => new Set())
   const [chatCollapsed, setChatCollapsed] = useState(false)
   const [projectsCollapsed, setProjectsCollapsed] = useState(false)
+  const [createProjectOpen, setCreateProjectOpen] = useState(false)
+
+  /** 项目区「使用现有文件夹」:选完目录直接进该目录的新会话起始页 */
+  async function pickProjectFolder() {
+    const result = await window.bento?.chooseDirectory()
+    if (result?.path) requestNewSession({ scope: "project", cwd: result.path })
+  }
   const [chatExpanded, setChatExpanded] = useState(false)
   const [chatArchiveOpen, setChatArchiveOpen] = useState(false)
   const [chatQuery, setChatQuery] = useState("")
@@ -384,14 +394,25 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               </SidebarMenu>
-              {/* 小节标签(Codex 式):muted 小字 + 可收展 chevron;操作区(新对话/应用)
-                  保持行样式,内容区用标签分层,不再让「对话」混成第三个操作入口 */}
+              {/* 小节标签(Codex 式):muted + 可收展 chevron;hover 右侧出快捷动作。
+                  操作区(新对话/应用)保持行样式,内容区用标签分层 */}
               <section className="pb-2">
                 <Collapsible open={!chatCollapsed} onOpenChange={(open) => setChatCollapsed(!open)}>
-                  <CollapsibleTrigger className="group flex h-7 w-full items-center gap-1.5 px-5 type-micro font-medium tracking-wider text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
-                    对话
-                    <ChevronDown className="size-3 transition-transform group-data-[state=closed]:-rotate-90" />
-                  </CollapsibleTrigger>
+                  <div className="group/section relative flex h-6 items-center">
+                    <CollapsibleTrigger className="group flex h-full w-full items-center gap-1.5 px-5 pr-9 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+                      对话
+                      <ChevronDown className="size-3.5 transition-transform group-data-[state=closed]:-rotate-90" />
+                    </CollapsibleTrigger>
+                    <button
+                      type="button"
+                      title="新建对话"
+                      aria-label="新建对话"
+                      onClick={() => requestNewSession({ scope: "chat" })}
+                      className="absolute right-2 grid size-5 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-border hover:text-foreground focus-visible:opacity-100 group-hover/section:opacity-100 group-focus-within/section:opacity-100"
+                    >
+                      <Plus className="size-3.5" />
+                    </button>
+                  </div>
                   <CollapsibleContent className="collapsible-section">
                 {chatKeys.length === 0 && (
                   <p className="pl-5 pr-5 pt-1 type-micro text-muted-foreground">还没有对话</p>
@@ -439,9 +460,9 @@ export function AppSidebar() {
               {/* 置顶区:脱离文件夹组,集中在顶部;标签样式与「对话/项目」同规 */}
               {pinnedKeys.length > 0 && (
                 <Collapsible defaultOpen>
-                  <CollapsibleTrigger className="group flex h-7 w-full items-center gap-1.5 px-5 type-micro font-medium tracking-wider text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+                  <CollapsibleTrigger className="group flex h-6 w-full items-center gap-1.5 px-5 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
                     置顶
-                    <ChevronDown className="size-3 transition-transform group-data-[state=closed]:-rotate-90" />
+                    <ChevronDown className="size-3.5 transition-transform group-data-[state=closed]:-rotate-90" />
                   </CollapsibleTrigger>
                   <CollapsibleContent className="collapsible-section">
                     <SidebarMenu className="gap-0.5">
@@ -451,12 +472,36 @@ export function AppSidebar() {
                 </Collapsible>
               )}
               <Collapsible open={!projectsCollapsed} onOpenChange={(open) => setProjectsCollapsed(!open)}>
-                <CollapsibleTrigger className="group flex h-7 w-full items-center gap-1.5 px-5 type-micro font-medium tracking-wider text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
-                  项目
-                  <ChevronDown className="size-3 transition-transform group-data-[state=closed]:-rotate-90" />
-                </CollapsibleTrigger>
+                <div className="group/section relative flex h-6 items-center">
+                  <CollapsibleTrigger className="group flex h-full w-full items-center gap-1.5 px-5 pr-9 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+                    项目
+                    <ChevronDown className="size-3.5 transition-transform group-data-[state=closed]:-rotate-90" />
+                  </CollapsibleTrigger>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        title="新建项目"
+                        aria-label="新建项目"
+                        className="absolute right-2 grid size-5 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-border hover:text-foreground focus-visible:opacity-100 group-hover/section:opacity-100 group-focus-within/section:opacity-100"
+                      >
+                        <Plus className="size-3.5" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent side="right" align="start" className="w-44">
+                      <DropdownMenuItem className="gap-2 text-sm" onSelect={() => setCreateProjectOpen(true)}>
+                        <Plus className="size-3.5 opacity-70" />
+                        新建空白项目
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="gap-2 text-sm" onSelect={() => void pickProjectFolder()}>
+                        <FolderPlus className="size-3.5 opacity-70" />
+                        使用现有文件夹
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
                 <CollapsibleContent className="collapsible-section">
-              <div className="space-y-1">
+              <div className="space-y-0">
                 {groups.map((g) => {
                   const open = !closedGroups.has(g.cwd)
                   const label = folderPreferences.aliases[g.cwd] ?? dirLabel(g.cwd)
@@ -476,7 +521,7 @@ export function AppSidebar() {
                     >
                       {/* 分组小节标题:点击名称收折;hover 时右侧出现管理与新对话。 */}
                       {renamingFolder === g.cwd ? (
-                        <div className="flex h-7 items-center px-5">
+                        <div className="flex h-6 items-center px-5">
                           <Input
                             autoFocus
                             defaultValue={label}
@@ -491,7 +536,7 @@ export function AppSidebar() {
                           />
                         </div>
                       ) : (
-                        <div className="group/folder relative flex h-7 items-center">
+                        <div className="group/folder relative flex h-6 items-center">
                           <CollapsibleTrigger className="flex h-full w-full items-center gap-2 px-5 pr-14 text-sm font-medium text-sidebar-foreground transition-colors hover:text-sidebar-foreground">
                             <FolderIcon open={open} className="size-4" />
                             <span className="truncate">{label}</span>
@@ -512,7 +557,7 @@ export function AppSidebar() {
                                   type="button"
                                   title="文件夹操作"
                                   aria-label={`${label} 文件夹操作`}
-                                  className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                                  className="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                                 >
                                   <MoreHorizontal className="size-3.5" />
                                 </button>
@@ -541,7 +586,7 @@ export function AppSidebar() {
                               type="button"
                               title="在此文件夹中新建对话"
                               aria-label={`在 ${label} 中新建对话`}
-                              className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                              className="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                               onClick={() => requestNewSession({ scope: "project", cwd: g.cwd })}
                             >
                               <PenSquare className="size-3.5" />
@@ -648,6 +693,13 @@ export function AppSidebar() {
           </DropdownMenu>
         </SidebarFooter>
       </Sidebar>
+
+      {/* 项目区「新建空白项目」:建完文件夹直接进它的新会话起始页 */}
+      <NewProjectDialog
+        open={createProjectOpen}
+        onOpenChange={setCreateProjectOpen}
+        onCreated={(path) => requestNewSession({ scope: "project", cwd: path })}
+      />
 
       <Dialog
         open={chatArchiveOpen}

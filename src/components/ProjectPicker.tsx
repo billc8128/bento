@@ -37,7 +37,7 @@ function parentName(value: string) {
   return items.length > 1 ? items.at(-2) : undefined
 }
 
-function NewProjectDialog({
+export function NewProjectDialog({
   open,
   onOpenChange,
   onCreated,

@@ -75,7 +75,7 @@ export const STYLES = [
     name: "石墨单色",
     desc: "石墨灰阶 · 琥珀点睛 · 悬浮输入",
     tone: "light",
-    layout: { sidebar: { default: 220, min: 196, max: 304 } },
+    layout: { sidebar: { default: 204, min: 196, max: 304 } },
     traits: {
       sidebar: "flush",
       message: "bubble-user",
@@ -91,7 +91,7 @@ export const STYLES = [
     name: "靛蓝暗夜",
     desc: "纯黑底 · 靛蓝强调 · 浮岛侧栏",
     tone: "dark",
-    layout: { sidebar: { default: 232, min: 208, max: 320 } },
+    layout: { sidebar: { default: 216, min: 208, max: 320 } },
     traits: {
       sidebar: "island",
       message: "bubble-user",
@@ -107,7 +107,7 @@ export const STYLES = [
     name: "柔和浮岛",
     desc: "大圆角 · 双向气泡 · 悬浮输入",
     tone: "light",
-    layout: { sidebar: { default: 240, min: 216, max: 336 } },
+    layout: { sidebar: { default: 224, min: 216, max: 336 } },
     traits: {
       sidebar: "island",
       message: "bubble-both",
@@ -123,7 +123,7 @@ export const STYLES = [
     name: "温暖编辑",
     desc: "衬线标题 · 双向气泡 · 圆润",
     tone: "light",
-    layout: { sidebar: { default: 236, min: 212, max: 328 } },
+    layout: { sidebar: { default: 220, min: 212, max: 328 } },
     traits: {
       sidebar: "flush",
       message: "bubble-both",
@@ -139,7 +139,7 @@ export const STYLES = [
     name: "终端极客",
     desc: "等宽字体 · 锐角 · 贴底输入区",
     tone: "dark",
-    layout: { sidebar: { default: 256, min: 224, max: 360 } },
+    layout: { sidebar: { default: 240, min: 224, max: 360 } },
     traits: {
       sidebar: "flush",
       message: "plain",
