@@ -2,7 +2,6 @@ import { useRef, useState } from "react"
 import { ArrowUp, FileText, ImageIcon, Paperclip, Square, X } from "lucide-react"
 
 import { RuntimePicker } from "@/components/RuntimePicker"
-import { FolderIcon } from "@/components/FolderIcon"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -12,7 +11,7 @@ import { getHarness, type HarnessId } from "@/core/harness"
 import type { PermissionProfile } from "@/core/permission"
 import { findProviderModel } from "@/core/provider"
 import { shouldSubmitComposerKey } from "@/core/composer-keyboard"
-import type { Effort, PromptAttachment, PromptInput, SessionScope } from "@/core/types"
+import type { Effort, PromptAttachment, PromptInput } from "@/core/types"
 import { useProviderCatalog } from "@/lib/provider-store"
 import { COLUMN, type ComposerShape } from "@/data/styles"
 
@@ -42,7 +41,6 @@ const SHELL: Record<ComposerShape, string> = {
 type ComposerProps = {
   /** 助手是否正在生成——决定右下角是发送还是停止 */
   running: boolean
-  scope: SessionScope
   /** 会话所属 harness 与真实生效的模型配置。 */
   harnessId: HarnessId
   cwd: string
@@ -61,7 +59,6 @@ type ComposerProps = {
 
 export function Composer({
   running,
-  scope,
   harnessId,
   cwd,
   providerId,
@@ -95,7 +92,6 @@ export function Composer({
   const providerConnected = providerCatalog.providers.some(
     (provider) => provider.id === providerId && provider.connected,
   )
-  const folderName = cwd.replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean).at(-1) ?? cwd
 
   async function addFiles(files: FileList | File[] | null, kind: Attachment["kind"]) {
     if (!files?.length) return
@@ -268,18 +264,6 @@ export function Composer({
 
           {/* 工具栏 */}
           <div className="flex items-center gap-1 px-3 pb-3">
-            {scope === "project" && (
-              <>
-                <span
-                  title={cwd}
-                  className="flex h-7 min-w-0 max-w-44 items-center gap-1.5 rounded-full px-2 text-sm text-muted-foreground"
-                >
-                  <FolderIcon open className="size-3.5 shrink-0" />
-                  <span className="truncate">{folderName}</span>
-                </span>
-                <div className="mx-0.5 h-4 w-px shrink-0 bg-border" />
-              </>
-            )}
             {/* 附件 */}
             <input
               ref={imageRef}

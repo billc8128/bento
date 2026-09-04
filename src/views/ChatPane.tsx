@@ -90,12 +90,21 @@ function PaneHeader({
         <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
           <FolderIcon className="size-4" />
           <span className="max-w-32 truncate text-sm font-medium">{info.folder}</span>
-          <span aria-hidden className="mx-0.5 text-border">·</span>
         </span>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* 标题比正文高一级(text-base):它是这个面板的名字,不是一条列表项 */}
-        <h1 className="app-title truncate text-base font-semibold leading-tight">{info.title}</h1>
+        {/* minimal + 项目会话不显示标题:文件夹名已承载 pane 身份,标题和侧栏重复。
+            其余场景标题保留;minimal 下缩到 text-sm,与文件夹名同一级 */}
+        {!(minimal && info.folder) && (
+          <h1
+            className={cn(
+              "app-title truncate leading-tight",
+              minimal ? "text-sm font-medium" : "text-base font-semibold",
+            )}
+          >
+            {info.title}
+          </h1>
+        )}
         {!minimal && (
           <p className="type-micro truncate font-mono text-muted-foreground">
             {info.path}
@@ -208,7 +217,6 @@ export function ChatPane() {
       ) : (
         <Composer
           running={running}
-          scope={live.scope}
           harnessId={live.harnessId as HarnessId}
           cwd={live.cwd}
           providerId={live.providerId}
