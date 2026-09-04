@@ -189,9 +189,11 @@ export function Composer({
             textareaRef.current?.focus()
           }}
           className={cn(
-            "relative transition-[border-color,box-shadow,max-width,border-radius] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+            "relative transition-[border-color,box-shadow,max-width] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
             SHELL[shape],
-            collapsed && "mx-auto max-w-[460px] cursor-text rounded-full",
+            // 收起态 48px 高配 24px 圆角已是完整胶囊;rounded-full(9999px)→24px 的
+            // 插值会被"半径≤高度一半"钳制,动画前段看着不动、末尾跳变,所以不能用它
+            collapsed && "mx-auto max-w-[460px] cursor-text rounded-[24px]",
             dragging && "border-ring ring-2 ring-ring/60",
             dragging && shape === "inline" && "border",
           )}
