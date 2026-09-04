@@ -188,6 +188,7 @@ export function ChatPane() {
         messages={messages}
         pending={running}
         turn={turn}
+        cwd={live.scope === "project" ? live.cwd : undefined}
         onResolveApproval={(id, decision) => void resolveLiveApproval(sessionId, id, decision)}
         queued={queued ? {
           text: queued.input.text,

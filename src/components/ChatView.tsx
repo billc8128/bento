@@ -96,6 +96,7 @@ const AssistantMessage = memo(function AssistantMessage({
   message,
   tools,
   running,
+  cwd,
 }: {
   m: AssistantMsg
   message: MessageShape
@@ -106,6 +107,8 @@ const AssistantMessage = memo(function AssistantMessage({
    * 照常长正文。回合落定(running=false)后,同一批 activity 折叠到
    * final 正文上方,默认一行摘要。 */
   running: boolean
+  /** 会话工作目录:正文里的相对文件链接靠它锚定并接入右侧文件面板 */
+  cwd?: string
 }) {
   const activity = resolveActivity(m)
   return (
@@ -135,6 +138,7 @@ const AssistantMessage = memo(function AssistantMessage({
       {m.text && (
         <Markdown
           text={m.text}
+          cwd={cwd}
           className={cn(
             message === "bubble-both"
               ? "w-auto max-w-[92%] rounded-lg border border-border bg-card px-3.5 py-2.5"
@@ -176,6 +180,8 @@ type ChatViewProps = {
   turn?: LiveTurn
   /** 审批卡片决议入口(转发给 live TurnActivity) */
   onResolveApproval?: (id: string, decision: ApprovalDecision) => void
+  /** 会话工作目录:传给 Markdown 解析相对文件链接 */
+  cwd?: string
   queued?: {
     text: string
     steerAvailable: boolean
@@ -185,7 +191,7 @@ type ChatViewProps = {
   }
 }
 
-export function ChatView({ messages, pending = true, turn, onResolveApproval, queued }: ChatViewProps) {
+export function ChatView({ messages, pending = true, turn, onResolveApproval, queued, cwd }: ChatViewProps) {
   const traits = useTraits()
   const rootRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -272,6 +278,7 @@ export function ChatView({ messages, pending = true, turn, onResolveApproval, qu
                     message={traits.message}
                     tools={traits.tools}
                     running={pending && m.id === "draft"}
+                    cwd={cwd}
                   />
                 </div>
               ),

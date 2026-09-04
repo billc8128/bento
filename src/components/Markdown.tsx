@@ -4,19 +4,34 @@ import remarkGfm from "remark-gfm"
 
 import { cn } from "@/lib/utils"
 import { hardBreaks } from "@/lib/markdown-breaks"
+import { requestWorkspaceFileReveal } from "@/lib/workspace-file-reveal"
 
-/** 模型常把本地产物写成绝对路径链接(如 [下载 Logo](/Users/…/icon.png));
- * file:// 与裸绝对路径都认,非绝对路径(http/相对)不动。 */
-function localFilePath(href: string | undefined): string | null {
-  if (!href) return null
-  const raw = href.startsWith("file://") ? decodeURIComponent(href.slice(7)) : href
-  return raw.startsWith("/") ? raw : null
+/** 模型常把本地产物写成路径链接:file:// 与裸绝对路径都认;
+ * 有 cwd 时相对路径(如 [报告](docs/a.md))锚到会话工作目录;
+ * 带协议(http/mailto 等)、// 与 # 锚点不动。 */
+function localFilePath(href: string | undefined, cwd?: string): string | null {
+  if (!href || href.startsWith("#")) return null
+  if (href.startsWith("file://")) {
+    const raw = decodeURIComponent(href.slice(7))
+    return raw.startsWith("/") ? raw : null
+  }
+  if (href.startsWith("/")) return href
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//")) return null
+  if (!cwd) return null
+  return `${cwd.replace(/[\\/]+$/, "")}/${href}`
+}
+
+/** 绝对路径落在工作区内时给出相对路径——文件面板的路径边界只收相对路径 */
+function workspaceRelative(path: string, cwd?: string): string | null {
+  if (!cwd) return null
+  const root = cwd.replace(/[\\/]+$/, "")
+  return path.startsWith(`${root}/`) ? path.slice(root.length + 1) : null
 }
 
 const IMAGE_PATH = /\.(png|jpe?g|gif|webp|svg|bmp|ico)(\?|#|$)/i
 
 /** 本地图片:经 IPC 读成 data URL 内联渲染;读不到就退成可点击的文件链接。 */
-function LocalImage({ path, alt }: { path: string; alt?: string }) {
+function LocalImage({ path, alt, cwd }: { path: string; alt?: string; cwd?: string }) {
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
     let alive = true
@@ -30,7 +45,7 @@ function LocalImage({ path, alt }: { path: string; alt?: string }) {
       alive = false
     }
   }, [path])
-  if (!url) return <LocalFileLink path={path}>{alt || path}</LocalFileLink>
+  if (!url) return <LocalFileLink path={path} cwd={cwd}>{alt || path}</LocalFileLink>
   return (
     <img
       src={url}
@@ -42,14 +57,17 @@ function LocalImage({ path, alt }: { path: string; alt?: string }) {
   )
 }
 
-function LocalFileLink({ path, children }: { path: string; children: ReactNode }) {
+function LocalFileLink({ path, cwd, children }: { path: string; cwd?: string; children: ReactNode }) {
+  const relative = workspaceRelative(path, cwd)
   return (
     <a
       href={`file://${path}`}
-      title={path}
+      title={relative ? `${path}(点击在右侧文件面板预览)` : `${path}(点击在访达中打开)`}
       onClick={(e) => {
         e.preventDefault()
-        void window.bento?.openPath(path)
+        // 工作区内的文件进右侧文件面板预览;区外的(或 chat 会话没有 cwd)退回访达
+        if (relative && cwd) requestWorkspaceFileReveal(cwd, relative)
+        else void window.bento?.openPath(path)
       }}
       className="cursor-pointer text-primary underline underline-offset-2"
     >
@@ -65,7 +83,7 @@ function LocalFileLink({ path, children }: { path: string; children: ReactNode }
  */
 // memo(text/className 值相等即跳过):流式期间只有文本真正变化的 draft 会重解析,
 // 历史消息与纯 tool 更新帧不再重复 parse markdown
-export const Markdown = memo(function Markdown({ text, className }: { text: string; className?: string }) {
+export const Markdown = memo(function Markdown({ text, className, cwd }: { text: string; className?: string; cwd?: string }) {
   return (
     <div className={cn("min-w-0 wrap-anywhere text-sm leading-relaxed", className)}>
       <ReactMarkdown
@@ -79,11 +97,11 @@ export const Markdown = memo(function Markdown({ text, className }: { text: stri
           ol: ({ children }) => <ol className="mb-2.5 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>,
           li: ({ children }) => <li className="leading-relaxed">{children}</li>,
           a: ({ children, href }) => {
-            const local = localFilePath(href)
+            const local = localFilePath(href, cwd)
             if (local) {
               return IMAGE_PATH.test(local)
-                ? <LocalImage path={local} alt={typeof children === "string" ? children : undefined} />
-                : <LocalFileLink path={local}>{children}</LocalFileLink>
+                ? <LocalImage path={local} alt={typeof children === "string" ? children : undefined} cwd={cwd} />
+                : <LocalFileLink path={local} cwd={cwd}>{children}</LocalFileLink>
             }
             return (
               <a
@@ -97,8 +115,8 @@ export const Markdown = memo(function Markdown({ text, className }: { text: stri
             )
           },
           img: ({ src, alt }) => {
-            const local = localFilePath(typeof src === "string" ? src : undefined)
-            if (local) return <LocalImage path={local} alt={alt} />
+            const local = localFilePath(typeof src === "string" ? src : undefined, cwd)
+            if (local) return <LocalImage path={local} alt={alt} cwd={cwd} />
             return <img src={typeof src === "string" ? src : undefined} alt={alt ?? ""} className="my-2 max-w-full rounded-lg" />
           },
           blockquote: ({ children }) => (

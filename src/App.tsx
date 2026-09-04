@@ -35,6 +35,7 @@ import {
   useWorkspaceToolsStarted,
 } from "@/lib/workspace-tools-store"
 import { useWorkspaceBrowserReveal } from "@/lib/workspace-browser-reveal"
+import { consumeWorkspaceFileReveal, useWorkspaceFileReveal } from "@/lib/workspace-file-reveal"
 import "@/views/builtin"
 import { DEFAULT_STYLE, STYLES, getStyle, type StyleId } from "@/data/styles"
 import { cn } from "@/lib/utils"
@@ -70,6 +71,7 @@ export default function App() {
   const workspaceToolsOpen = useWorkspaceToolsOpen()
   const workspaceToolsStarted = useWorkspaceToolsStarted()
   const browserRevealId = useWorkspaceBrowserReveal()
+  const fileReveal = useWorkspaceFileReveal()
   const { focusedSessionId } = useLayout()
   const { sessions } = useLive()
   const settings = useSettingsPage()
@@ -141,6 +143,19 @@ export default function App() {
     setWorkspaceToolsOpen(true)
     window.requestAnimationFrame(() => workspacePanelRef.current?.resize(preferredBrowserPanelWidth()))
   }, [browserRevealId, preferredBrowserPanelWidth])
+
+  // 聊天文件链接 → 右侧文件面板。root 对不上当前工作区(点了非焦点 pane 的
+  // 链接,或 chat 会话没有工作区)时面板放不下,退回访达打开。
+  // 命中时只负责展开面板;落哪个 tab、开哪个预览由 WorkspaceToolsPanel 消费。
+  useEffect(() => {
+    if (!fileReveal) return
+    if (!workspaceRoot || fileReveal.root !== workspaceRoot) {
+      consumeWorkspaceFileReveal(fileReveal.nonce)
+      void window.bento?.openPath(`${fileReveal.root}/${fileReveal.relativePath}`)
+      return
+    }
+    setWorkspaceToolsOpen(true)
+  }, [fileReveal, workspaceRoot])
 
   // ⌘B 与标题栏按钮共用同一个收折开关(收折是运行时状态,不持久化)。
   // 动画靠给面板元素临时挂 flex-grow transition:collapse/expand 改的是

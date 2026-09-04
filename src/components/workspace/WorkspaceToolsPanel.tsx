@@ -21,6 +21,10 @@ import {
   consumeWorkspaceBrowserReveal,
   useWorkspaceBrowserReveal,
 } from "@/lib/workspace-browser-reveal"
+import {
+  consumeWorkspaceFileReveal,
+  useWorkspaceFileReveal,
+} from "@/lib/workspace-file-reveal"
 
 const BrowserWorkspacePane = lazy(() => import("@/components/workspace/BrowserWorkspacePane").then((module) => ({ default: module.BrowserWorkspacePane })))
 const FilesWorkspacePane = lazy(() => import("@/components/workspace/FilesWorkspacePane").then((module) => ({ default: module.FilesWorkspacePane })))
@@ -224,6 +228,9 @@ export function WorkspaceToolsPanel({
   const [overlayOpen, setOverlayOpen] = useState(false)
   const counters = useRef<Record<WorkspaceTabKind, number>>(tabCounters(initial.tabs))
   const browserRevealId = useWorkspaceBrowserReveal()
+  const fileReveal = useWorkspaceFileReveal()
+  /** 已落 tab 但未落预览的 reveal:转发给对应 FilesWorkspacePane 消费 */
+  const [pendingFileReveal, setPendingFileReveal] = useState<{ tabId: string; relativePath: string } | null>(null)
 
   useEffect(() => {
     try {
@@ -254,6 +261,23 @@ export function WorkspaceToolsPanel({
     setVisited((current) => current.has(target.id) ? current : new Set(current).add(target.id))
     consumeWorkspaceBrowserReveal(browserRevealId)
   }, [browserRevealId, tabs])
+
+  // 聊天文件链接 reveal:root 匹配已由 App 把关;这里找/建一个文件 tab,
+  // 激活它,再把相对路径转给 pane 开预览(参考 browser reveal 的绑定流程)
+  useEffect(() => {
+    if (!fileReveal) return
+    const existing = tabs.find((tab) => tab.kind === "files")
+    let targetId = existing?.id
+    if (!targetId) {
+      targetId = `files-${++counters.current.files}`
+      const tab = { id: targetId, kind: "files" as const, title: tabTitle("files", counters.current.files) }
+      setTabs((current) => [...current, tab])
+    }
+    setActiveId(targetId)
+    setVisited((current) => current.has(targetId!) ? current : new Set(current).add(targetId!))
+    setPendingFileReveal({ tabId: targetId, relativePath: fileReveal.relativePath })
+    consumeWorkspaceFileReveal(fileReveal.nonce)
+  }, [fileReveal, tabs])
 
   function activateTab(tabId: string) {
     setActiveId(tabId)
@@ -300,7 +324,7 @@ export function WorkspaceToolsPanel({
               {visited.has(tab.id) && (
                 <Suspense fallback={<div className="grid h-full place-items-center text-xs text-muted-foreground">正在打开工具…</div>}>
                   {tab.kind === "terminal" && <TerminalWorkspacePane cwd={workspaceRoot} onTitleChange={(title) => renameTab(tab.id, title)} />}
-                  {tab.kind === "files" && <FilesWorkspacePane root={workspaceRoot} instanceId={tab.id} storageKey={paneStorageKey(workspaceRoot, tab.id)} />}
+                  {tab.kind === "files" && <FilesWorkspacePane root={workspaceRoot} instanceId={tab.id} storageKey={paneStorageKey(workspaceRoot, tab.id)} revealPath={pendingFileReveal?.tabId === tab.id ? pendingFileReveal.relativePath : null} onRevealHandled={() => setPendingFileReveal(null)} />}
                   {tab.kind === "browser" && <BrowserWorkspacePane active={active} suspended={suspended || overlayOpen} storageKey={paneStorageKey(workspaceRoot, tab.id)} preferredBrowserId={tab.browserId} onBrowserIdChange={(browserId) => bindBrowser(tab.id, browserId)} onTitleChange={(title) => renameTab(tab.id, title)} />}
                 </Suspense>
               )}

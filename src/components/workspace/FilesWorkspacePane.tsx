@@ -278,7 +278,14 @@ function loadFilesState(storageKey: string): SavedFilesState {
   }
 }
 
-export function FilesWorkspacePane({ root, instanceId, storageKey }: { root: string; instanceId: string; storageKey: string }) {
+export function FilesWorkspacePane({ root, instanceId, storageKey, revealPath, onRevealHandled }: {
+  root: string
+  instanceId: string
+  storageKey: string
+  /** 聊天文件链接转来的待打开预览(相对 root);消费完经 onRevealHandled 清掉 */
+  revealPath?: string | null
+  onRevealHandled?: () => void
+}) {
   const treeTabKey = "__files__"
   const idPrefix = `files-${instanceId.replace(/[^a-zA-Z0-9_-]/g, "-")}`
   const [restored] = useState(() => loadFilesState(storageKey))
@@ -385,6 +392,13 @@ export function FilesWorkspacePane({ root, instanceId, storageKey }: { root: str
     setPreviewTabs((current) => current.includes(path) ? current : [...current, path])
     setActivePath(path)
   }
+
+  // 聊天文件链接转来的预览请求:直接开/激活对应预览 tab
+  useEffect(() => {
+    if (!revealPath) return
+    open(revealPath)
+    onRevealHandled?.()
+  }, [revealPath, onRevealHandled])
 
   function close(path: string) {
     const index = previewTabs.indexOf(path)
