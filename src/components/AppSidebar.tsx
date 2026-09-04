@@ -421,9 +421,9 @@ export function AppSidebar() {
               {/* 置顶区:脱离文件夹组,集中在顶部 */}
               {pinnedKeys.length > 0 && (
                 <Collapsible defaultOpen>
-                  <CollapsibleTrigger className="flex w-full items-center gap-2.5 px-5 pb-1.5 text-muted-foreground transition-colors hover:text-sidebar-foreground">
-                    <PinIcon className="size-3.5" />
-                    <span className="type-micro font-semibold tracking-[0.08em]">置顶</span>
+                  <CollapsibleTrigger className="flex h-8 w-full items-center gap-2 px-5 text-sidebar-foreground transition-colors hover:text-sidebar-foreground">
+                    <PinIcon className="size-4" />
+                    <span className="text-sm font-medium">置顶</span>
                   </CollapsibleTrigger>
                   <CollapsibleContent className="collapsible-section">
                     <SidebarMenu className="gap-0.5">
