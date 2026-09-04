@@ -117,6 +117,20 @@ export default function App() {
   const workspaceProgrammaticResizeRef = useRef(false)
   const sidebarCollapsed = useSidebarCollapsed()
 
+  // Codex 式悬停 peek:侧栏收起时,左缘热区悬停滑出悬浮侧栏,移出 250ms 后
+  // 自动收回。侧栏本体在 0 宽面板里保持挂载(折叠不丢组件态,如文件夹开合);
+  // peek 期间 overlay 是第二个实例,内容来自同一份 store。
+  const [sidebarPeek, setSidebarPeek] = useState(false)
+  const sidebarPeekTimerRef = useRef(0)
+  const openSidebarPeek = () => {
+    window.clearTimeout(sidebarPeekTimerRef.current)
+    setSidebarPeek(true)
+  }
+  const closeSidebarPeek = () => {
+    window.clearTimeout(sidebarPeekTimerRef.current)
+    sidebarPeekTimerRef.current = window.setTimeout(() => setSidebarPeek(false), 250)
+  }
+
   const preferredBrowserPanelWidth = useCallback(() => {
     const sidebarWidth = sidebarElRef.current?.getBoundingClientRect().width ?? sidebarLayout.default
     return browserRevealPanelWidth(window.innerWidth, sidebarWidth)
@@ -335,6 +349,34 @@ export default function App() {
                   )}
                 </ResizablePanel>
               </ResizablePanelGroup>
+
+              {/* Codex 式悬停 peek:收起后左缘热区滑出悬浮侧栏,移出自动收回。
+                  悬浮层盖在内容上不占布局,窄窗口同样适用。
+                  收起期间常驻挂载(位移进出才有动画),隐藏时不可聚焦不可点。 */}
+              {sidebarCollapsed && (
+                <>
+                  <div
+                    aria-hidden
+                    className="fixed bottom-0 left-0 top-9 z-30 w-3"
+                    onMouseEnter={openSidebarPeek}
+                    onMouseLeave={closeSidebarPeek}
+                  />
+                  <div
+                    aria-hidden={!sidebarPeek}
+                    inert={!sidebarPeek}
+                    className={cn(
+                      "fixed bottom-0 left-0 top-9 z-40 border-r border-sidebar-border bg-background shadow-pop",
+                      "transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none",
+                      sidebarPeek ? "translate-x-0" : "pointer-events-none -translate-x-full",
+                    )}
+                    style={{ width: sidebarLayout.default }}
+                    onMouseEnter={openSidebarPeek}
+                    onMouseLeave={closeSidebarPeek}
+                  >
+                    <Sessions />
+                  </div>
+                </>
+              )}
               <SettingsPage />
               <Toaster />
             </SidebarProvider>
