@@ -58,6 +58,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { FolderIcon } from "@/components/FolderIcon"
+import { HarnessIcon } from "@/components/HarnessIcon"
 import { PinIcon } from "@/components/PinIcon"
 import { StatusGlyph } from "@/components/StatusGlyph"
 import { Input } from "@/components/ui/input"
@@ -84,6 +85,7 @@ import {
   useFolderPreferences,
 } from "@/lib/folder-preferences"
 import { hasUnreadSessionMessage, isRunning, liveMeta, removeLive, renameLive, useLive, hasPendingApproval } from "@/lib/live-store"
+import type { HarnessId } from "@/core/harness"
 import { togglePin, usePinnedSessions } from "@/lib/pinned-sessions"
 import { openSettings } from "@/lib/settings-store"
 import { useStatusGlyph } from "@/lib/status-glyph"
@@ -223,6 +225,11 @@ export function AppSidebar() {
     }
     return (
       <SidebarMenuItem key={key}>
+        {/* harness 小标落在左侧缩进槽,与文件夹图标同列(x=20);标题保持文字轴不动。
+            比文件夹图标略小(size-3.5),弱透明度避免抢标题 */}
+        <span className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 opacity-70">
+          <HarnessIcon id={s.harnessId as HarnessId} className="size-3.5" />
+        </span>
         <SidebarMenuButton
           isActive={active}
           onClick={() => {
