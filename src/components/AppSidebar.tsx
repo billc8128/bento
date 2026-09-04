@@ -237,9 +237,9 @@ export function AppSidebar() {
     }
     return (
       <SidebarMenuItem key={key}>
-        {/* harness 小标落在左侧缩进槽,与文件夹图标同列(x=20);标题保持文字轴不动。
-            比文件夹图标略小(size-3.5),弱透明度避免抢标题 */}
-        <span className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 opacity-70">
+        {/* harness 小标比文件夹图标列(left-5)再错进一档(left-6),树状错落而不是
+            一条直线;标题保持文字轴(pl-11)不动 */}
+        <span className="pointer-events-none absolute left-6 top-1/2 -translate-y-1/2 opacity-70">
           <HarnessIcon id={s.harnessId as HarnessId} className="size-3.5" />
         </span>
         <SidebarMenuButton
