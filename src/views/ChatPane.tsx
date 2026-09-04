@@ -215,6 +215,7 @@ export function ChatPane() {
       ) : (
         <Composer
           running={running}
+          collapsible={!solo}
           harnessId={live.harnessId as HarnessId}
           cwd={live.cwd}
           providerId={live.providerId}

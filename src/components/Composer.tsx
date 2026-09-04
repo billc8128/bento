@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ArrowUp, FileText, ImageIcon, Paperclip, Square, X } from "lucide-react"
 
 import { RuntimePicker } from "@/components/RuntimePicker"
@@ -55,6 +55,8 @@ type ComposerProps = {
   onPermissionChange?: (profile: PermissionProfile) => void
   onHarnessChange?: (harnessId: HarnessId) => void
   queueFull?: boolean
+  /** 分栏时为 true:composer 默认收成胶囊,聚焦/点击展开 */
+  collapsible?: boolean
 }
 
 export function Composer({
@@ -72,14 +74,34 @@ export function Composer({
   onPermissionChange,
   onHarnessChange,
   queueFull = false,
+  collapsible = false,
 }: ComposerProps) {
   const { composer: shape, width } = useTraits()
   const [text, setText] = useState("")
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [dragging, setDragging] = useState(false)
+  const [manualOpen, setManualOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const imageRef = useRef<HTMLInputElement>(null)
+  const shellRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const composingRef = useRef(false)
+
+  // 只有圆角外壳的形态才有"胶囊"可收;docked/inline 没收起意义
+  const canCollapse = collapsible && (shape === "floating" || shape === "card")
+  // 有内容/在跑/有排队时强制展开:停止钮和队列提示必须有地方放
+  const busy = running || queueFull || attachments.length > 0 || text.trim().length > 0
+  const collapsed = canCollapse && !busy && !manualOpen
+
+  // 点外部收回(仅收起语义下;busy 时 collapsed 已为 false,收起无害)
+  useEffect(() => {
+    if (!canCollapse) return
+    const onDown = (e: PointerEvent) => {
+      if (!shellRef.current?.contains(e.target as Node)) setManualOpen(false)
+    }
+    document.addEventListener("pointerdown", onDown)
+    return () => document.removeEventListener("pointerdown", onDown)
+  }, [canCollapse])
 
   const harness = getHarness(harnessId)
   const providerCatalog = useProviderCatalog(harnessId, cwd)
@@ -154,15 +176,22 @@ export function Composer({
       {/* 输入区跟正文同宽,不然满宽风格里会出现一条居中的窄输入框 */}
       <div className={cn("w-full", COLUMN[width])}>
         <div
+          ref={shellRef}
           onDragOver={(e) => {
             e.preventDefault()
             setDragging(true)
           }}
           onDragLeave={() => setDragging(false)}
           onDrop={drop}
+          onClick={() => {
+            if (!collapsed) return
+            setManualOpen(true)
+            textareaRef.current?.focus()
+          }}
           className={cn(
-            "relative transition-[border-color,box-shadow] duration-150 ease-out motion-reduce:transition-none",
+            "relative transition-[border-color,box-shadow,max-width,border-radius] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
             SHELL[shape],
+            collapsed && "mx-auto max-w-[460px] cursor-text rounded-full",
             dragging && "border-ring ring-2 ring-ring/60",
             dragging && shape === "inline" && "border",
           )}
@@ -232,8 +261,10 @@ export function Composer({
           )}
 
           <Textarea
+            ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onFocus={() => setManualOpen(true)}
             onPaste={(e) => {
               const files = Array.from(e.clipboardData?.items ?? [])
                 .filter((item) => item.kind === "file")
@@ -246,6 +277,11 @@ export function Composer({
             onCompositionStart={() => { composingRef.current = true }}
             onCompositionEnd={() => { composingRef.current = false }}
             onKeyDown={(e) => {
+              if (e.key === "Escape" && canCollapse && !text.trim()) {
+                setManualOpen(false)
+                e.currentTarget.blur()
+                return
+              }
               if (shouldSubmitComposerKey({
                 key: e.key,
                 shiftKey: e.shiftKey,
@@ -255,15 +291,49 @@ export function Composer({
                 send()
               }
             }}
-            placeholder={`向 ${harness.name} 描述你要做的事…`}
-            rows={2}
-            // field-sizing-content(Textarea 默认)按内容长高;预留两行高度,
-            // 单行输入看起来太扁
-            className="max-h-40 min-h-16 resize-none border-0 bg-transparent px-4 pb-2 pt-3.5 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
+            placeholder={collapsed ? "描述你要做的事…" : `向 ${harness.name} 描述你要做的事…`}
+            rows={collapsed ? 1 : 2}
+            // field-sizing-content(Textarea 默认)按内容长高;展开态预留两行高度,
+            // 单行输入看起来太扁。收起态固定 48px 单行居中,py-3 对称 padding 居中文字
+            className={cn(
+              "resize-none border-0 bg-transparent px-4 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent",
+              "transition-[height,padding] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+              collapsed
+                ? "h-12 max-h-12 min-h-12 overflow-hidden py-3 pr-44 leading-6"
+                : "max-h-40 min-h-16 pb-2 pt-3.5",
+            )}
           />
 
-          {/* 工具栏 */}
-          <div className="flex items-center gap-1 px-3 pb-3">
+          {/* 收起态胶囊里的 harness·model 身份:分栏下一眼认出这条会话是哪个 agent;
+              展开后淡出,身份由工具栏的 RuntimePicker 承接 */}
+          {canCollapse && (
+            <span
+              className={cn(
+                "pointer-events-none absolute right-14 top-1/2 -translate-y-1/2 text-xs text-muted-foreground transition-opacity duration-200",
+                collapsed ? "opacity-100" : "opacity-0",
+              )}
+            >
+              {harness.name}
+              {model ? ` · ${model.name}` : ""}
+            </span>
+          )}
+
+          {/* 工具栏:收起态 0fr 收掉;发送/停止钮绝对定位在右下角,两种状态共用同一个位置 */}
+          <div
+            className={cn(
+              "grid transition-[grid-template-rows] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+              collapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]",
+            )}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <div
+                className={cn(
+                  "flex items-center gap-1 px-3 pb-3 transition-opacity duration-200",
+                  // 右侧给绝对定位的发送(+停止)钮留位
+                  running ? "pr-20" : "pr-12",
+                  collapsed && "opacity-0",
+                )}
+              >
             {/* 附件 */}
             <input
               ref={imageRef}
@@ -333,8 +403,12 @@ export function Composer({
                 }}
               />
             </div>
+              </div>
+            </div>
+          </div>
 
-            {/* 运行中仍允许发下一条；停止保持独立动作。 */}
+          {/* 运行中仍允许发下一条;停止保持独立动作。钉在右下角:收起态也可见 */}
+          <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1">
             <Button size="icon" className="size-7 rounded-full" disabled={!canSend} onClick={send}>
               <ArrowUp className="size-4" />
               <span className="sr-only">{running ? "发送为下一条" : "发送"}</span>
