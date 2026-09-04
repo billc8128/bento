@@ -146,6 +146,8 @@ export function AppSidebar() {
   const [openFolderMenu, setOpenFolderMenu] = useState<string | null>(null)
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null)
   const [closedGroups, setClosedGroups] = useState<Set<string>>(() => new Set())
+  const [chatCollapsed, setChatCollapsed] = useState(false)
+  const [projectsCollapsed, setProjectsCollapsed] = useState(false)
   const [chatExpanded, setChatExpanded] = useState(false)
   const [chatArchiveOpen, setChatArchiveOpen] = useState(false)
   const [chatQuery, setChatQuery] = useState("")
@@ -361,7 +363,9 @@ export function AppSidebar() {
                     className="h-8 gap-2 rounded-none px-5 text-sm"
                     onClick={() => requestNewSession()}
                   >
-                    <PenSquare className="size-4" />
+                    {/* PenSquare 字形左侧留白比 Blocks 多 ~1px(viewBox 内边距不同),
+                        光学补偿 -1px 让两个图标的左缘对齐 */}
+                    <PenSquare className="size-4 -translate-x-px" />
                     <span>新对话</span>
                     <span className="ml-auto type-micro text-muted-foreground">⌘N</span>
                   </SidebarMenuButton>
@@ -380,15 +384,17 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               </SidebarMenu>
-              {/* 对话是与应用并列的主侧栏入口,沿用同一档 UI 字号与前景色。
-                  它仍以小节标题的字重和下方会话缩进表达层级,不上分隔线。 */}
+              {/* 小节标签(Codex 式):muted 小字 + 可收展 chevron;操作区(新对话/应用)
+                  保持行样式,内容区用标签分层,不再让「对话」混成第三个操作入口 */}
               <section className="pb-2">
-                <div className="flex h-8 items-center gap-2 px-5 text-sidebar-foreground">
-                  <MessageCircle className="size-4" />
-                  <span className="text-sm font-medium">对话</span>
-                </div>
+                <Collapsible open={!chatCollapsed} onOpenChange={(open) => setChatCollapsed(!open)}>
+                  <CollapsibleTrigger className="group flex h-7 w-full items-center gap-1.5 px-5 type-micro font-medium tracking-wider text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+                    对话
+                    <ChevronDown className="size-3 transition-transform group-data-[state=closed]:-rotate-90" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="collapsible-section">
                 {chatKeys.length === 0 && (
-                  <p className="pl-11 pr-5 type-micro text-muted-foreground">还没有对话</p>
+                  <p className="pl-5 pr-5 pt-1 type-micro text-muted-foreground">还没有对话</p>
                 )}
                 {chatKeys.length > 0 && (
                   <SidebarMenu className="gap-0.5">
@@ -427,13 +433,15 @@ export function AppSidebar() {
                     </div>
                   </Collapsible>
                 )}
+                  </CollapsibleContent>
+                </Collapsible>
               </section>
-              {/* 置顶区:脱离文件夹组,集中在顶部 */}
+              {/* 置顶区:脱离文件夹组,集中在顶部;标签样式与「对话/项目」同规 */}
               {pinnedKeys.length > 0 && (
                 <Collapsible defaultOpen>
-                  <CollapsibleTrigger className="flex h-8 w-full items-center gap-2 px-5 text-sidebar-foreground transition-colors hover:text-sidebar-foreground">
-                    <PinIcon className="size-4" />
-                    <span className="text-sm font-medium">置顶</span>
+                  <CollapsibleTrigger className="group flex h-7 w-full items-center gap-1.5 px-5 type-micro font-medium tracking-wider text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+                    置顶
+                    <ChevronDown className="size-3 transition-transform group-data-[state=closed]:-rotate-90" />
                   </CollapsibleTrigger>
                   <CollapsibleContent className="collapsible-section">
                     <SidebarMenu className="gap-0.5">
@@ -442,6 +450,12 @@ export function AppSidebar() {
                   </CollapsibleContent>
                 </Collapsible>
               )}
+              <Collapsible open={!projectsCollapsed} onOpenChange={(open) => setProjectsCollapsed(!open)}>
+                <CollapsibleTrigger className="group flex h-7 w-full items-center gap-1.5 px-5 type-micro font-medium tracking-wider text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+                  项目
+                  <ChevronDown className="size-3 transition-transform group-data-[state=closed]:-rotate-90" />
+                </CollapsibleTrigger>
+                <CollapsibleContent className="collapsible-section">
               <div className="space-y-1">
                 {groups.map((g) => {
                   const open = !closedGroups.has(g.cwd)
@@ -544,6 +558,8 @@ export function AppSidebar() {
                   )
                 })}
               </div>
+                </CollapsibleContent>
+              </Collapsible>
             </div>
         </SidebarGroup>
       </SidebarContent>
