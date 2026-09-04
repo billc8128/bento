@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils"
 import { useTraits } from "@/lib/style-context"
 import { getHarness, type HarnessId } from "@/core/harness"
+import type { PermissionProfile } from "@/core/permission"
 import { findProviderModel } from "@/core/provider"
 import { shouldSubmitComposerKey } from "@/core/composer-keyboard"
 import type { Effort, PromptAttachment, PromptInput, SessionScope } from "@/core/types"
@@ -48,10 +49,12 @@ type ComposerProps = {
   providerId?: string
   modelId?: string
   effort?: Effort
+  permissionProfile?: PermissionProfile
   onToggleRun: () => void
   onSend?: (input: PromptInput) => void
   onModelChange?: (providerId: string, modelId: string) => void
   onEffortChange?: (effort: Effort) => void
+  onPermissionChange?: (profile: PermissionProfile) => void
   onHarnessChange?: (harnessId: HarnessId) => void
   queueFull?: boolean
 }
@@ -64,10 +67,12 @@ export function Composer({
   providerId,
   modelId,
   effort = "medium",
+  permissionProfile,
   onToggleRun,
   onSend,
   onModelChange,
   onEffortChange,
+  onPermissionChange,
   onHarnessChange,
   queueFull = false,
 }: ComposerProps) {
@@ -334,6 +339,12 @@ export function Composer({
                 onEffortChange={(next) => {
                   if (!running) onEffortChange?.(next)
                 }}
+                permissionProfile={permissionProfile ?? "standard"}
+                onPermissionChange={onPermissionChange
+                  ? (next) => {
+                      if (!running) onPermissionChange(next)
+                    }
+                  : undefined}
                 onHarnessChange={(next) => {
                   if (!running && next !== harnessId) onHarnessChange?.(next)
                 }}

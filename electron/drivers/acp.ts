@@ -6,9 +6,11 @@ import * as acp from "@agentclientprotocol/sdk"
 
 import { managedBinary, managedUvxBinary } from "../binaries/manager"
 import { resolveHarnessRuntime } from "../harness-runtime"
+import { resolveRealPath } from "../realpath"
 import { harnessUsage } from "./usage"
 import { translateAcpUpdate } from "./acp-translator"
-import type { HarnessUsage } from "../../src/core/events"
+import type { ApprovalDecision, HarnessUsage } from "../../src/core/events"
+import { triageAcpToolCall, type PermissionProfile } from "../../src/core/permission"
 import { normalizePromptInput } from "../../src/core/types"
 import type {
   HarnessConnection,
@@ -24,6 +26,28 @@ export function acpMcpServers(servers: NonNullable<HarnessStartOptions["mcpServe
     args: server.args,
     env: Object.entries(server.env).map(([name, value]) => ({ name, value })),
   }))
+}
+
+/** 决议 → ACP 选项:allow_once/allow_always 各自优先同名变体,deny 优先 reject_once。
+ *  deny 时连非 allow 选项都没有是协议外的病态情形,仍不落 allow 首项(fail-closed 取末项)。 */
+export function pickAcpPermissionOption<T extends { kind: string }>(
+  decision: ApprovalDecision,
+  options: T[],
+): T {
+  const wanted = decision === "allow_once"
+    ? ["allow_once", "allow_always"]
+    : decision === "allow_always"
+      ? ["allow_always", "allow_once"]
+      : ["reject_once", "reject_always"]
+  const hit = wanted
+    .map((kind) => options.find((item) => item.kind === kind))
+    .find(Boolean)
+  if (hit) return hit
+  if (decision === "deny") {
+    const nonAllow = options.find((item) => !item.kind.startsWith("allow"))
+    return nonAllow ?? options[options.length - 1]
+  }
+  return options[0]
 }
 
 type SpawnSpec = {
@@ -57,12 +81,20 @@ type AcpOpenResult = {
   init: acp.InitializeResponse
 }
 
+/** 审批 hold 的共享状态:open(clientImpl 发起)与 connection(结算/取消兑现)两端共用 */
+type AcpApprovals = {
+  waiters: Map<string, (decision: ApprovalDecision) => void>
+  seq: number
+}
+
 type AcpOpen = (
   cwd: string,
   emit: Parameters<HarnessDriver["start"]>[1],
   isLoading: () => boolean,
   proxyEnv?: HarnessStartOptions["proxyEnv"],
   usage?: { current: HarnessUsage | undefined },
+  permission?: { current: PermissionProfile },
+  approvals?: AcpApprovals,
 ) => Promise<AcpOpenResult>
 
 async function harnessCommand(id: AcpDriverId): Promise<SpawnSpec> {
@@ -101,7 +133,11 @@ class AcpDriver implements HarnessDriver {
     isLoading: () => boolean,
     proxyEnv?: { env: Record<string, string>; strip?: string[] },
     usage?: { current: HarnessUsage | undefined },
+    permission: { current: PermissionProfile } = { current: "standard" },
+    approvals: AcpApprovals = { waiters: new Map(), seq: 0 },
   ) {
+    // cwd 同样归一(macOS 的 /tmp 就是 symlink),两侧同口径才能比
+    const realCwd = resolveRealPath(cwd)
     const spec = await harnessCommand(this.id)
     // provider 会话若有 host 路由 env,先 strip 宿主同名前缀再注入。
     const merged: SpawnSpec = proxyEnv
@@ -124,15 +160,49 @@ class AcpDriver implements HarnessDriver {
 
     const clientImpl: acp.Client = {
       async requestPermission(params) {
-        const allow = params.options.find((item) => item.kind === "allow_once") ?? params.options[0]
-        // §3.4:许可批准不是回合级事件,notice 会终结 draft 并让后续
-        // tool_call_update 落空;改道 metadata,审批痕迹照常落盘、不渲染。
+        // 档位裁决(src/core/permission 单一真源;工具集近似,非硬边界)。
+        // requestPermission 每次调用现读档位,会话中切换后续调用即生效。
+        const title = params.toolCall?.title ?? "工具调用"
+        // realpath 归一后再判工作区:cwd 内的 symlink 不能借字符串判定逃逸
+        const toolCall = params.toolCall
+          ? {
+              ...params.toolCall,
+              locations: params.toolCall.locations?.map((loc) => ({
+                ...loc,
+                path: resolveRealPath(loc.path),
+              })),
+            }
+          : {}
+        const triage = triageAcpToolCall(permission.current, toolCall, realCwd)
+        if (triage !== "ask") {
+          const option = pickAcpPermissionOption(triage === "allow" ? "allow_once" : "deny", params.options)
+          // §3.4:许可批准不是回合级事件,notice 会终结 draft 并让后续
+          // tool_call_update 落空;改道 metadata,审批痕迹照常落盘、不渲染。
+          emit({
+            type: "metadata",
+            name: triage === "allow" ? "permission/auto_approved" : "permission/auto_denied",
+            data: { title, profile: permission.current },
+          })
+          return { outcome: { outcome: "selected", optionId: option.optionId } }
+        }
+        // ask:审批闭环,hold 到渲染端决议(approval_resolved 由 main 统一落盘)
+        const id = `apr-${++approvals.seq}`
         emit({
-          type: "metadata",
-          name: "permission/auto_approved",
-          data: { title: params.toolCall?.title ?? "工具调用" },
+          type: "approval_request",
+          id,
+          title,
+          detail: `${params.toolCall?.kind ?? "other"} 类工具请求权限(当前档位「${permission.current}」不自动放行)`,
+          options: [
+            { id: "allow_once", label: "允许一次" },
+            { id: "allow_always", label: "本会话总是允许" },
+            { id: "deny", label: "拒绝" },
+          ],
         })
-        return { outcome: { outcome: "selected", optionId: allow.optionId } }
+        const decision = await new Promise<ApprovalDecision>((resolve) => {
+          approvals.waiters.set(id, resolve)
+        })
+        const option = pickAcpPermissionOption(decision, params.options)
+        return { outcome: { outcome: "selected", optionId: option.optionId } }
       },
       async sessionUpdate(params) {
         // §7 P4:usage_update 是上下文窗口 + 会话累计成本,没有逐回合 token
@@ -176,6 +246,8 @@ class AcpDriver implements HarnessDriver {
     let setup: unknown
     const mcpServers = acpMcpServers(options.mcpServers ?? [])
     const usage: { current: HarnessUsage | undefined } = { current: undefined }
+    const permission = { current: options.permissionProfile ?? ("standard" as const) }
+    const approvals: AcpApprovals = { waiters: new Map(), seq: 0 }
     const injectedOpen = deps?.open as AcpOpen | undefined
     const { child, conn, init } = await (injectedOpen ?? this.open.bind(this))(
       options.cwd,
@@ -183,6 +255,8 @@ class AcpDriver implements HarnessDriver {
       () => loading,
       options.proxyEnv,
       usage,
+      permission,
+      approvals,
     )
     if (nativeSessionId && init.agentCapabilities?.sessionCapabilities?.resume) {
       try {
@@ -212,6 +286,8 @@ class AcpDriver implements HarnessDriver {
       conn,
       nativeSessionId,
       selection,
+      permission,
+      approvals,
       usage,
       init.agentCapabilities?.promptCapabilities?.image === true,
     )
@@ -299,6 +375,8 @@ class AcpDriver implements HarnessDriver {
       setModel?: (modelId: string) => Promise<unknown>
       setEffort?: (effort: NonNullable<HarnessStartOptions["effort"]>) => Promise<unknown>
     },
+    permission: { current: PermissionProfile },
+    approvals: AcpApprovals,
     usage?: { current: HarnessUsage | undefined },
     supportsImages = false,
   ): HarnessConnection {
@@ -311,11 +389,17 @@ class AcpDriver implements HarnessDriver {
     }
     child.on("exit", finish)
     child.on("error", () => finish(null))
+    // cancel 竞态与关闭:hold 中的审批立即 decline,不等 agent 回包
+    const settleApprovals = () => {
+      for (const waiter of approvals.waiters.values()) waiter("deny")
+      approvals.waiters.clear()
+    }
     return {
       nativeSessionId,
       capabilities: {
         modelSwitch: selection.setModel ? "live" : "none",
         effortSwitch: selection.setEffort ? "live" : "none",
+        permissionSwitch: "live",
       },
       prompt: async (input) => {
         const request = normalizePromptInput(input)
@@ -344,8 +428,14 @@ class AcpDriver implements HarnessDriver {
         })) as { stopReason?: string }
         return { stopReason: result?.stopReason, ...(usage?.current ? { usage: usage.current } : {}) }
       },
-      cancel: () => conn.cancel({ sessionId: nativeSessionId }),
-      close: () => child.kill(),
+      cancel: () => {
+        settleApprovals()
+        return conn.cancel({ sessionId: nativeSessionId })
+      },
+      close: () => {
+        settleApprovals()
+        child.kill()
+      },
       onExit(callback) {
         if (exitCode !== undefined) callback(exitCode)
         else exitListeners.add(callback)
@@ -353,6 +443,15 @@ class AcpDriver implements HarnessDriver {
       },
       ...(selection.setModel ? { setModel: async (modelId: string) => { await selection.setModel!(modelId) } } : {}),
       ...(selection.setEffort ? { setEffort: async (effort) => { await selection.setEffort!(effort) } } : {}),
+      async setPermissionProfile(next: PermissionProfile) {
+        permission.current = next
+      },
+      resolveApproval(id: string, decision: ApprovalDecision) {
+        const waiter = approvals.waiters.get(id)
+        if (!waiter) return
+        approvals.waiters.delete(id)
+        waiter(decision)
+      },
     }
   }
 }

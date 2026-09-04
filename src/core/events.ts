@@ -23,6 +23,27 @@ export type HarnessUsage = {
   cost?: number
 }
 
+/** 审批卡片的通用决议:allow_always 的会话级记忆由各 driver 自己兑现
+ *  (codex=acceptForSession、claude=会话内规则集、ACP=原生 allow_always)。 */
+export type ApprovalDecision = "allow_once" | "allow_always" | "deny"
+
+export type ApprovalDecisionSource = "user" | "cancel" | "session-close" | "unattended-auto"
+
+export type ApprovalRequestEvent = {
+  type: "approval_request"
+  id: string
+  title: string
+  detail?: string
+  options: { id: ApprovalDecision; label: string }[]
+}
+
+export type ApprovalResolvedEvent = {
+  type: "approval_resolved"
+  id: string
+  decision: ApprovalDecision
+  source: ApprovalDecisionSource
+}
+
 export type HarnessEvent =
   | {
       type: "user_message"
@@ -59,6 +80,8 @@ export type HarnessEvent =
   | { type: "notice"; text: string }
   | { type: "turn_finished"; reason?: string; usage?: HarnessUsage }
   | { type: "metadata"; name: string; data: unknown }
+  | ApprovalRequestEvent
+  | ApprovalResolvedEvent
 
 export type EventLogRecord = {
   seq: number

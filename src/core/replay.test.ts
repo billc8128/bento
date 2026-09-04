@@ -909,3 +909,55 @@ describe("thinking 段计时闭合(step2)", () => {
     ])
   })
 })
+
+describe("replay 审批事件", () => {
+  const REQUEST = {
+    type: "approval_request" as const,
+    id: "apr-1",
+    title: "rm -rf /tmp/x",
+    detail: "需要删除目录",
+    options: [{ id: "allow_once" as const, label: "允许一次" }],
+  }
+
+  it("approval_request 进 draft 为 pending 卡片,resolved 折叠为静态记录", () => {
+    const acc = createAccumulator()
+    applyRecord(acc, { seq: 1, at, kind: "event", payload: { type: "agent_message_chunk", text: "我来处理" } })
+    applyRecord(acc, { seq: 2, at, kind: "event", payload: REQUEST })
+    const draft = messagesOf(acc).find((m) => m.id === "draft")
+    expect(draft).toMatchObject({
+      activity: [
+        { kind: "progress", text: "我来处理" },
+        { kind: "approval", approval: { id: "apr-1", title: "rm -rf /tmp/x", state: "pending" } },
+      ],
+    })
+
+    applyRecord(acc, {
+      seq: 3, at, kind: "event",
+      payload: { type: "approval_resolved", id: "apr-1", decision: "allow_once", source: "user" },
+    })
+    const after = messagesOf(acc).find((m) => m.id === "draft")
+    expect(after).toMatchObject({
+      activity: [
+        { kind: "progress" },
+        { kind: "approval", approval: { state: { decision: "allow_once", source: "user" } } },
+      ],
+    })
+  })
+
+  it("未匹配的 resolved 不产生悬挂,回合终结后卡片随消息定稿", () => {
+    const acc = createAccumulator()
+    applyRecord(acc, { seq: 1, at, kind: "event", payload: { type: "approval_resolved", id: "ghost", decision: "deny", source: "cancel" } })
+    expect(messagesOf(acc)).toEqual([])
+
+    applyRecord(acc, { seq: 2, at, kind: "event", payload: REQUEST })
+    applyRecord(acc, {
+      seq: 3, at, kind: "event",
+      payload: { type: "approval_resolved", id: "apr-1", decision: "deny", source: "session-close" },
+    })
+    applyRecord(acc, { seq: 4, at, kind: "event", payload: { type: "turn_finished", reason: "completed" } })
+    const final = messagesOf(acc).find((m) => m.role === "assistant")
+    expect(final).toMatchObject({
+      activity: [{ kind: "approval", approval: { state: { decision: "deny", source: "session-close" } } }],
+    })
+  })
+})

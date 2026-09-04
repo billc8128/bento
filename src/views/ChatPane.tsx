@@ -32,6 +32,8 @@ import {
   sendPrompt,
   setLiveEffort,
   setLiveModel,
+  setLivePermissionProfile,
+  resolveLiveApproval,
   steerQueuedPrompt,
   useLive,
 } from "@/lib/live-store"
@@ -162,6 +164,7 @@ export function ChatPane() {
         messages={messages}
         pending={running}
         turn={turn}
+        onResolveApproval={(id, decision) => void resolveLiveApproval(sessionId, id, decision)}
         queued={queued ? {
           text: queued.input.text,
           steerAvailable: queued.steerAvailable,
@@ -194,6 +197,7 @@ export function ChatPane() {
           providerId={live.providerId}
           modelId={live.modelId}
           effort={live.effort}
+          permissionProfile={live.permissionProfile}
           onToggleRun={() => void cancelPrompt(sessionId)}
           onSend={(input) => void (running
             ? queueLivePrompt(sessionId, input)
@@ -208,6 +212,11 @@ export function ChatPane() {
           onEffortChange={
             !running && live.capabilities?.effortSwitch === "live"
               ? (effort) => void setLiveEffort(sessionId, effort)
+              : undefined
+          }
+          onPermissionChange={
+            !running && live.capabilities?.permissionSwitch === "live"
+              ? (profile) => void setLivePermissionProfile(sessionId, profile)
               : undefined
           }
         />

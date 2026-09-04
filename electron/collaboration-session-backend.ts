@@ -70,6 +70,9 @@ export class SessionCollaborationBackend implements SessionBackend {
         providerId: spec.providerId,
         modelId: spec.modelId,
         ...(spec.effort ? { effort: spec.effort } : {}),
+        // 协作创建的会话固定 full:驱动方本来就是 agent 在替用户干活,
+        // 保持 M1 前的全放行为;人类会话被协作 send 时由 per-turn origin 自动裁决。
+        permissionProfile: "full",
       })
       const valid = await this.validateSelection({
         harnessId: spec.harnessId,
@@ -101,6 +104,8 @@ export class SessionCollaborationBackend implements SessionBackend {
       providerId: spec.providerId,
       modelId: spec.modelId,
       ...(spec.effort ? { effort: spec.effort } : {}),
+      // 协作创建的会话固定 full:见上 chat 分支同注。
+      permissionProfile: "full",
     })
     return this.manager.collaborationSession(record.key)!
   }

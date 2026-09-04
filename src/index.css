@@ -397,3 +397,22 @@
   .sg-d-edge, .sg-d-sweep,
   .sg-f-grid span { animation: none !important; }
 }
+
+/* 各变体的 attention(待审批)态:统一琥珀、形状与 running 区分 */
+.sg-a-attn { width: 7px; height: 7px; border-radius: 2px; background: var(--color-brand); flex: none; animation: sg-a-breathe 1.2s ease-in-out infinite; }
+.sg-b-attn { width: 14px; height: 14px; display: grid; place-items: center; flex: none; }
+.sg-b-attn i { width: 8px; height: 8px; border-radius: 3px; background: var(--color-brand); animation: sg-b-attn 1.4s ease-in-out infinite; }
+@keyframes sg-b-attn { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.78); opacity: 0.55; } }
+.sg-c-attn { flex: none; font-size: 11px; font-weight: 500; color: var(--color-brand); animation: sg-c-attn 1.4s ease-in-out infinite; }
+@keyframes sg-c-attn { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.sg-d-attn { position: absolute; left: 34px; top: 7px; bottom: 7px; width: 2px; border-radius: 1px; background: var(--color-brand); animation: sg-d-attn 1s ease-in-out infinite; pointer-events: none; }
+@keyframes sg-d-attn { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+/* F 的 attention:! 竖线两格闪烁、底点常驻(运行态是波前,待审批是叹号) */
+.sg-f-grid.attn span { background: var(--color-brand); opacity: 0.06; }
+.sg-f-grid.attn span.hit { opacity: 1; }
+.sg-f-grid.attn span.blink { opacity: 1; animation: sg-f-bang 1s ease-in-out infinite; }
+@keyframes sg-f-bang { 0%, 100% { opacity: 1; } 50% { opacity: 0.12; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .sg-a-attn, .sg-b-attn i, .sg-c-attn, .sg-d-attn, .sg-f-grid.attn span { animation: none !important; }
+}

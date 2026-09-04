@@ -151,6 +151,68 @@ describe("claudeAgentSdkDriver", () => {
       modelId: "claude-sonnet-4-6",
     }, () => {})).rejects.toThrow(/缺少 Bento provider 路由环境/)
   })
+
+  it("权限档位驱动 canUseTool 裁决,切 full 后走 bypassPermissions", async () => {
+    const calls: Parameters<ClaudeQueryFactory>[0][] = []
+    const query: ClaudeQueryFactory = vi.fn((params) => {
+      calls.push(params)
+      return queryOf([result("s-profile")])
+    })
+    const events: unknown[] = []
+    const connection = await claudeAgentSdkDriver.start({
+      cwd: "/repo",
+      proxyEnv: { env: { ANTHROPIC_BASE_URL: "http://127.0.0.1:1/r" }, strip: [] },
+      permissionProfile: "restricted",
+    }, (event) => events.push(event), { query })
+
+    await connection.prompt("one")
+    const canUseTool = calls[0]?.options?.canUseTool
+    expect(canUseTool).toBeDefined()
+    await expect(canUseTool!("Read", {}, { toolUseID: "t1" } as never))
+      .resolves.toMatchObject({ behavior: "allow" })
+    await expect(canUseTool!("Edit", { file_path: "/repo/a.ts" }, { toolUseID: "t2" } as never))
+      .resolves.toMatchObject({ behavior: "allow" })
+    await expect(canUseTool!("Bash", {}, { toolUseID: "t3" } as never))
+      .resolves.toMatchObject({ behavior: "deny" })
+    await expect(canUseTool!("WebFetch", {}, { toolUseID: "t4" } as never))
+      .resolves.toMatchObject({ behavior: "deny" })
+
+    // 会话中切档:canUseTool 现读档位,standard 立刻放行网络类
+    await connection.setPermissionProfile?.("standard")
+    await expect(canUseTool!("WebFetch", {}, { toolUseID: "t5" } as never))
+      .resolves.toMatchObject({ behavior: "allow" })
+
+    // standard 的 execute 不再自动拒:发审批卡 hold,决议后兑现
+    const held = canUseTool!("Bash", { command: "rm -rf /tmp/x" }, { toolUseID: "t6" } as never)
+    await vi.waitFor(() =>
+      expect(events.some((e) => (e as { type?: string }).type === "approval_request")).toBe(true))
+    const request = events.find((e) => (e as { type?: string }).type === "approval_request") as { id: string; title: string }
+    expect(request.title).toBe("rm -rf /tmp/x")
+    connection.resolveApproval?.(request.id, "allow_always")
+    await expect(held).resolves.toMatchObject({ behavior: "allow" })
+    // 总是允许已入会话规则:同名工具后续直接放行,不再发审批
+    const before = events.length
+    await expect(canUseTool!("Bash", { command: "ls" }, { toolUseID: "t7" } as never))
+      .resolves.toMatchObject({ behavior: "allow" })
+    expect(events.slice(before).some((e) => (e as { type?: string }).type === "approval_request")).toBe(false)
+
+    // 越界写:同样走审批;拒绝则 deny
+    const held2 = canUseTool!("Edit", { file_path: "/etc/hosts" }, { toolUseID: "t8" } as never)
+    await vi.waitFor(() =>
+      expect(events.filter((e) => (e as { type?: string }).type === "approval_request").length).toBe(2))
+    const request2 = events.filter((e) => (e as { type?: string }).type === "approval_request")[1] as { id: string }
+    connection.resolveApproval?.(request2.id, "deny")
+    await expect(held2).resolves.toMatchObject({ behavior: "deny" })
+
+    // full:下个 query 走 bypassPermissions(必须带 allowDangerouslySkipPermissions),不再挂 canUseTool
+    await connection.setPermissionProfile?.("full")
+    await connection.prompt("two")
+    expect(calls[1]?.options).toMatchObject({
+      permissionMode: "bypassPermissions",
+      allowDangerouslySkipPermissions: true,
+    })
+    expect(calls[1]?.options?.canUseTool).toBeUndefined()
+  })
 })
 
 describe("claudeSdkEnv", () => {

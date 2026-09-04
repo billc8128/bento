@@ -16,6 +16,7 @@ import {
 } from "@/core/provider"
 import type { Effort, SessionScope } from "@/core/types"
 import { closeNewSession } from "@/lib/new-session-store"
+import { useDefaultPermissionProfile } from "@/lib/permission-profile"
 import { loadRecentCwds, saveRecentCwd } from "@/lib/recent-cwds"
 import { showFolder } from "@/lib/folder-preferences"
 import { openSession } from "@/lib/layout-store"
@@ -45,6 +46,8 @@ export function NewSessionView({
   const [effort, setEffort] = useState<Effort>(
     () => getHarness(initialHarnessId).defaultEffort,
   )
+  const defaultPermissionProfile = useDefaultPermissionProfile()
+  const [permissionProfile, setPermissionProfile] = useState(defaultPermissionProfile)
   const [task, setTask] = useState("")
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -98,6 +101,7 @@ export function NewSessionView({
       title: prompt.slice(0, 24) || "新会话",
       providerId: resolvedProviderId!,
       modelId: resolvedModelId!,
+      permissionProfile,
       ...(harness.effortSelection && selectedModel?.reasoning !== false ? { effort } : {}),
     })
     setCreating(false)
@@ -245,6 +249,8 @@ export function NewSessionView({
                   providers={providerCatalog.providers}
                   onDiscover={providerCatalog.discover}
                   onEffortChange={setEffort}
+                  permissionProfile={permissionProfile}
+                  onPermissionChange={setPermissionProfile}
                   onHarnessChange={(next) => {
                     setHarnessId(next)
                     setProviderId(null)

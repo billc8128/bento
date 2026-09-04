@@ -1084,3 +1084,167 @@ describe("SessionManager waitForTurn 精确匹配", () => {
     await second.completion
   })
 })
+
+describe("SessionManager 审批编排", () => {
+  type Deferred = { resolve: (value: unknown) => void; reject: (error: unknown) => void }
+  /** 带审批能力的 mock driver:emit 捕获、resolveApproval/cancel  spy、prompt 手动结算 */
+  function approvalDriver() {
+    let emitEvent: (event: HarnessEvent) => void = () => {}
+    const deferreds: Deferred[] = []
+    const resolved: Array<{ id: string; decision: string }> = []
+    const cancelCalls: number[] = []
+    const driver: HarnessDriver = {
+      id: "kimi",
+      async start(_options, emit) {
+        emitEvent = emit
+        return {
+          nativeSessionId: "approval-native",
+          capabilities: { modelSwitch: "none", effortSwitch: "none", permissionSwitch: "live" },
+          prompt: async () => new Promise((resolve, reject) => deferreds.push({ resolve, reject })),
+          cancel: async () => { cancelCalls.push(1) },
+          close: () => {},
+          onExit: () => () => {},
+          resolveApproval: (id: string, decision: "allow_once" | "allow_always" | "deny") => {
+            resolved.push({ id, decision })
+          },
+        }
+      },
+    }
+    return { driver, deferreds, resolved, cancelCalls, emit: (e: HarnessEvent) => emitEvent(e) }
+  }
+  const REQUEST = {
+    type: "approval_request" as const,
+    id: "apr-1",
+    title: "rm -rf /tmp/x",
+    options: [{ id: "allow_once" as const, label: "允许一次" }],
+  }
+  const resolvedEvents = (emitted: LogRecord[]) =>
+    emitted.filter((r) => r.kind === "event" && (r.payload as HarnessEvent).type === "approval_resolved")
+      .map((r) => r.payload as Extract<HarnessEvent, { type: "approval_resolved" }>)
+
+  it("用户决议:落盘 approval_resolved(source=user)并兑现 driver hold", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-apr-user-"))
+    const { driver, deferreds, resolved, emit } = approvalDriver()
+    const { manager, emitted } = collabManager(tempDir, driver)
+    const { key } = await manager.createSession({
+      harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "model",
+    })
+    const turn = await manager.startPrompt(key, "干活")
+    emit(REQUEST)
+    manager.resolveApproval(key, "apr-1", "allow_once")
+    expect(resolvedEvents(emitted)).toEqual([
+      { type: "approval_resolved", id: "apr-1", decision: "allow_once", source: "user" },
+    ])
+    expect(resolved).toEqual([{ id: "apr-1", decision: "allow_once" }])
+    // 重复决议/未知 id 报错,不重复落盘
+    expect(() => manager.resolveApproval(key, "apr-1", "deny")).toThrow("已结算")
+    deferreds[0].resolve({ stopReason: "end_turn" })
+    await turn.completion
+  })
+
+  it("cancel 竞态:pending 先按 cancel 结算落盘,再调 connection.cancel", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-apr-cancel-"))
+    const { driver, deferreds, resolved, cancelCalls, emit } = approvalDriver()
+    const { manager, emitted } = collabManager(tempDir, driver)
+    const { key } = await manager.createSession({
+      harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "model",
+    })
+    const turn = await manager.startPrompt(key, "干活")
+    emit(REQUEST)
+    await manager.cancel(key)
+    expect(resolvedEvents(emitted)).toEqual([
+      { type: "approval_resolved", id: "apr-1", decision: "deny", source: "cancel" },
+    ])
+    expect(resolved).toEqual([{ id: "apr-1", decision: "deny" }])
+    expect(cancelCalls).toHaveLength(1)
+    deferreds[0].resolve({ stopReason: "cancelled" })
+    await turn.completion
+  })
+
+  it("会话关闭:pending 按 session-close 结算落盘,回放不留悬挂卡", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-apr-close-"))
+    const { driver, deferreds, resolved, emit } = approvalDriver()
+    const { manager, emitted } = collabManager(tempDir, driver)
+    const { key } = await manager.createSession({
+      harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "model",
+    })
+    const turn = await manager.startPrompt(key, "干活")
+    emit(REQUEST)
+    await manager.closeSession(key)
+    deferreds[0].resolve({ stopReason: "process_exit" })
+    await turn.completion.catch(() => {})
+    expect(resolvedEvents(emitted)).toEqual([
+      { type: "approval_resolved", id: "apr-1", decision: "deny", source: "session-close" },
+    ])
+    expect(resolved).toEqual([{ id: "apr-1", decision: "deny" }])
+    // logStream.end 不 await finish,磁盘断言等 flush 落稳
+    await vi.waitFor(() => {
+      expect(resolvedEvents(manager.readEvents(key))).toEqual([
+        { type: "approval_resolved", id: "apr-1", decision: "deny", source: "session-close" },
+      ])
+    })
+  })
+
+  it("协作 origin 回合:审批请求立即按 deny 自动裁决(unattended),不排队", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-apr-unattended-"))
+    const { driver, deferreds, resolved, emit } = approvalDriver()
+    const { manager, emitted } = collabManager(tempDir, driver)
+    const { key } = await manager.createSession({
+      harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "model",
+    })
+    const origin: MessageOrigin = { kind: "session", sessionId: "other", title: "别的会话", harnessId: "kimi" }
+    const turn = await manager.startPrompt(key, "协作任务", { origin })
+    emit(REQUEST)
+    // 无需用户动作:append 时即刻自动结算
+    expect(resolvedEvents(emitted)).toEqual([
+      { type: "approval_resolved", id: "apr-1", decision: "deny", source: "unattended-auto" },
+    ])
+    expect(resolved).toEqual([{ id: "apr-1", decision: "deny" }])
+    deferreds[0].resolve({ stopReason: "end_turn" })
+    await turn.completion
+  })
+})
+
+describe("SessionManager 权限规则注入与回报", () => {
+  it("持久规则注入 start 选项,rule_added 回报写回项目文件", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-rule-inject-"))
+    // 预置项目级规则:claude-code 的 Bash 总是允许
+    fs.mkdirSync(path.join(tempDir, ".bento"), { recursive: true })
+    fs.writeFileSync(path.join(tempDir, ".bento", "permissions.json"), JSON.stringify({
+      version: 1,
+      rules: [{ harnessId: "kimi", rule: "Bash", createdAt: "2026-01-01T00:00:00.000Z" }],
+    }))
+    let started: HarnessStartOptions | undefined
+    let emitEvent: (event: HarnessEvent) => void = () => {}
+    const driver: HarnessDriver = {
+      id: "kimi",
+      async start(options, emit) {
+        started = options
+        emitEvent = emit
+        return {
+          nativeSessionId: "rule-native",
+          capabilities: { modelSwitch: "none", effortSwitch: "none" },
+          prompt: async () => ({ stopReason: "end_turn" }),
+          cancel: async () => {},
+          close: () => {},
+          onExit: () => () => {},
+        }
+      },
+    }
+    const manager = new SessionManager(
+      tempDir, () => {}, () => driver, null, null, ...sessionConfigFor("kimi"),
+    )
+    await manager.createSession({
+      harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "model",
+    })
+    expect(started?.allowedTools).toEqual(["Bash"])
+
+    // driver 回报新规则 → main 写回项目级 permissions.json
+    emitEvent({ type: "metadata", name: "permission/rule_added", data: { toolName: "Edit" } })
+    const onDisk = JSON.parse(
+      fs.readFileSync(path.join(tempDir, ".bento", "permissions.json"), "utf8"),
+    ) as { rules: Array<{ harnessId: string; rule: string }> }
+    expect(onDisk.rules.map((r) => `${r.harnessId}:${r.rule}`))
+      .toEqual(["kimi:Bash", "kimi:Edit"])
+  })
+})

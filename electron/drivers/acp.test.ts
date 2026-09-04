@@ -4,7 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { describe, expect, it, vi } from "vitest"
 
-import { acpMcpServers, createAcpDriver, sendLegacySessionModel } from "./acp"
+import { acpMcpServers, createAcpDriver, pickAcpPermissionOption, sendLegacySessionModel } from "./acp"
 
 describe("ACP MCP", () => {
   it("把 Bento stdio server 转成 ACP session/new 契约", () => {
@@ -19,6 +19,34 @@ describe("ACP MCP", () => {
       args: ["browser-mcp-server.mjs"],
       env: [{ name: "TOKEN", value: "secret" }],
     }])
+  })
+})
+
+describe("ACP 权限选项挑选", () => {
+  const options = [
+    { kind: "allow_always", optionId: "aa" },
+    { kind: "reject_once", optionId: "ro" },
+    { kind: "allow_once", optionId: "ao" },
+    { kind: "reject_always", optionId: "ra" },
+  ]
+  it("allow_once/allow_always 各优先同名变体,deny 优先 reject_once", () => {
+    expect(pickAcpPermissionOption("allow_always", options).optionId).toBe("aa")
+    expect(pickAcpPermissionOption("allow_once", options).optionId).toBe("ao")
+    expect(pickAcpPermissionOption("allow_once", options).optionId).toBe("ao")
+    expect(pickAcpPermissionOption("deny", options).optionId).toBe("ro")
+  })
+  it("缺 once 变体时退 always;deny 不落 allow 首项(fail-closed)", () => {
+    expect(pickAcpPermissionOption("allow_once", [{ kind: "allow_always", optionId: "aa" }]).optionId).toBe("aa")
+    expect(pickAcpPermissionOption("deny", [{ kind: "reject_always", optionId: "ra" }]).optionId).toBe("ra")
+    // deny 且无 reject 类:取非 allow 项;全是 allow 的病态情形兜底末项,不放行首项
+    expect(pickAcpPermissionOption("deny", [
+      { kind: "allow_once", optionId: "ao" },
+      { kind: "other", optionId: "ot" },
+    ]).optionId).toBe("ot")
+    expect(pickAcpPermissionOption("deny", [
+      { kind: "allow_once", optionId: "ao" },
+      { kind: "allow_always", optionId: "aa" },
+    ]).optionId).toBe("aa")
   })
 })
 

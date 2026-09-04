@@ -17,6 +17,8 @@ import {
 import type { BinaryProgress, LiveSessionRecord } from "@/types/bento"
 import type { HarnessEvent } from "@/core/events"
 import { normalizePromptInput, type Effort, type Message, type PromptInput, type SessionScope } from "@/core/types"
+import type { PermissionProfile } from "@/core/permission"
+import type { ApprovalDecision } from "@/core/events"
 
 type LiveSnapshot = {
   version: number
@@ -32,6 +34,8 @@ const loaded = new Set<string>()
 const running = new Set<string>()
 /** 未读:协作会话发来的消息,或非焦点会话跑完了回合(结果还没被看过)。聚焦即清。 */
 const unreadSessionMessages = new Set<string>()
+/** 侧栏"需注意":hold 中的审批请求 id(跨会话),结算即移除。驱动侧栏 attention 态。 */
+const pendingApprovals = new Map<string, Set<string>>()
 export type QueuedPromptView = {
   id: string
   input: PromptInput
@@ -150,6 +154,13 @@ async function init() {
               : session,
           ),
         }
+      } else if (payload.type === "approval_request") {
+        const set = pendingApprovals.get(key) ?? new Set()
+        set.add(payload.id)
+        pendingApprovals.set(key, set)
+        patch = {}
+      } else if (payload.type === "approval_resolved") {
+        if (pendingApprovals.get(key)?.delete(payload.id)) patch = {}
       }
     }
 
@@ -235,6 +246,21 @@ export function hasUnreadSessionMessage(sessionId: string): boolean {
   return unreadSessionMessages.has(sessionId)
 }
 
+/** 会话是否有 hold 中的审批(侧栏"需注意"态) */
+export function hasPendingApproval(sessionId: string): boolean {
+  return (pendingApprovals.get(sessionId)?.size ?? 0) > 0
+}
+
+/** 审批卡片决议:渲染端按钮 → main 结算(approval_resolved 经事件流回广播更新卡片) */
+export async function resolveLiveApproval(
+  sessionId: string,
+  id: string,
+  decision: ApprovalDecision,
+) {
+  const res = await window.bento?.resolveApproval(sessionId, id, decision)
+  if (res && "error" in res) return res.error
+}
+
 export function setFocusedSession(sessionId: string | null): void {
   focusedSessionId = sessionId
   if (sessionId && unreadSessionMessages.delete(sessionId)) bump()
@@ -286,6 +312,7 @@ export async function createLive(opts: {
   providerId: string
   modelId: string
   effort?: Effort
+  permissionProfile?: PermissionProfile
 }): Promise<{ key: string } | { error: string }> {
   const bento = window.bento
   if (!bento) return { error: "桌面模式不可用" }
@@ -314,6 +341,16 @@ export async function setLiveEffort(sessionId: string, effort: Effort) {
   bump({
     sessions: snapshot.sessions.map((session) =>
       session.key === sessionId ? { ...session, effort } : session,
+    ),
+  })
+}
+
+export async function setLivePermissionProfile(sessionId: string, profile: PermissionProfile) {
+  const res = await window.bento?.setPermissionProfile(sessionId, profile)
+  if (!res || "error" in res) return res?.error ?? "桌面模式不可用"
+  bump({
+    sessions: snapshot.sessions.map((session) =>
+      session.key === sessionId ? { ...session, permissionProfile: profile } : session,
     ),
   })
 }
@@ -428,6 +465,7 @@ export async function removeLive(sessionId: string) {
   running.delete(sessionId)
   unreadSessionMessages.delete(sessionId)
   queuedPrompts.delete(sessionId)
+  pendingApprovals.delete(sessionId)
   bump({ sessions: snapshot.sessions.filter((s) => s.key !== sessionId) })
 }
 

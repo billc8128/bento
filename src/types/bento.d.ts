@@ -5,6 +5,8 @@ import type { HarnessId, HarnessRuntimeStatus } from "@/core/harness"
 import type { CustomModelConfig, CustomProviderConfig, ProviderView } from "@/core/provider"
 import type { LocalProviderCandidate, ProviderPresetView } from "@/core/provider-preset"
 import type { BinaryProgress } from "../../electron/binaries/progress"
+import type { ApprovalDecision } from "@/core/events"
+import type { PermissionProfile } from "@/core/permission"
 import type { Effort, SessionScope } from "@/core/types"
 import type { PromptInput } from "@/core/types"
 import type { BentoAppId, BentoAppView, UserAppInput } from "@/core/apps"
@@ -32,10 +34,12 @@ export type LiveSessionRecord = {
   providerId?: string
   modelId?: string
   effort?: Effort
+  permissionProfile?: PermissionProfile
   capabilities?: {
     modelSwitch: "none" | "new-session" | "live"
     effortSwitch: "none" | "new-session" | "live"
     steer?: "none" | "live"
+    permissionSwitch?: "none" | "new-session" | "live"
   }
   title: string
   createdAt: string
@@ -57,6 +61,7 @@ declare global {
         providerId: string
         modelId: string
         effort?: Effort
+        permissionProfile?: PermissionProfile
       }): Promise<
         { key: string; record: LiveSessionRecord; error?: undefined } | { error: string }
       >
@@ -73,6 +78,12 @@ declare global {
       setEffort(key: string, effort: Effort): Promise<
         { record: LiveSessionRecord; error?: undefined } | { error: string }
       >
+      setPermissionProfile(key: string, profile: PermissionProfile): Promise<
+        { record: LiveSessionRecord; error?: undefined } | { error: string }
+      >
+      resolveApproval(key: string, id: string, decision: ApprovalDecision): Promise<{ ok: true } | { error: string }>
+      listPermissionRules(): Promise<{ cwd: string; rules: { harnessId: string; rule: string; createdAt: string }[] }[]>
+      removePermissionRule(cwd: string, harnessId: string, rule: string): Promise<{ ok: boolean }>
       renameSession(key: string, title: string): Promise<{ record: LiveSessionRecord; error?: undefined } | { error: string }>
       closeSession(key: string): Promise<void>
       removeSession(key: string): Promise<void>

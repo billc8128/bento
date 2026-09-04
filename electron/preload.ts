@@ -2,6 +2,8 @@
 
 import { contextBridge, ipcRenderer, webUtils } from "electron"
 import type { HarnessId } from "../src/core/harness"
+import type { ApprovalDecision } from "../src/core/events"
+import type { PermissionProfile } from "../src/core/permission"
 import type { Effort, PromptInput, SessionScope } from "../src/core/types"
 import type { BentoAppId, BentoAppView, UserAppInput } from "../src/core/apps"
 import type {
@@ -24,6 +26,7 @@ const api = {
     providerId: string
     modelId: string
     effort?: Effort
+    permissionProfile?: PermissionProfile
   }) =>
     ipcRenderer.invoke("session:create", opts),
   prompt: (key: string, input: PromptInput) => ipcRenderer.invoke("session:prompt", key, input),
@@ -38,6 +41,13 @@ const api = {
     ipcRenderer.invoke("session:set-model", key, selection),
   setEffort: (key: string, effort: Effort) =>
     ipcRenderer.invoke("session:set-effort", key, effort),
+  setPermissionProfile: (key: string, profile: PermissionProfile) =>
+    ipcRenderer.invoke("session:set-permission-profile", key, profile),
+  resolveApproval: (key: string, id: string, decision: ApprovalDecision) =>
+    ipcRenderer.invoke("session:resolve-approval", key, id, decision),
+  listPermissionRules: () => ipcRenderer.invoke("permission-rules:list"),
+  removePermissionRule: (cwd: string, harnessId: string, rule: string) =>
+    ipcRenderer.invoke("permission-rules:remove", cwd, harnessId, rule),
   renameSession: (key: string, title: string) =>
     ipcRenderer.invoke("session:rename", key, title),
   closeSession: (key: string) => ipcRenderer.invoke("session:close", key),

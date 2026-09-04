@@ -9,19 +9,21 @@
  * undefined,活动随消息折叠到 final 正文上方的一行总折叠(已工作 Xm XXs)里。
  */
 
-import type { ActivityItem, Message, PlanItem, ToolCall } from "./types"
+import type { ActivityItem, ApprovalRequest, Message, PlanItem, ToolCall } from "./types"
 import { formatDuration } from "./formatDuration"
 
 type AssistantMsg = Extract<Message, { role: "assistant" }>
 
 /** 阶段栈行(渲染的最小单元):连续 thinking 并成一段、连续 tool 并成一组;
- * progress/steer 是公开文字,独立成行、不参与折叠分组。thinking 段聚合整段耗时(合并的子段求和;
+ * progress/steer 是公开文字,独立成行、不参与折叠分组;approval 是审批卡片,独立成行。
+ * thinking 段聚合整段耗时(合并的子段求和;
  * 都没有计时数据时为 undefined,标题回退到无时长文案)。streaming = 合并的最后一个子段还没闭合
  * (durationMs 未写死),即思考还在流式——合并后 durationMs 可能已有部分和,不能拿它判 live。 */
 export type PhaseRow =
   | { id: string; kind: "thinking"; text: string; durationMs?: number; streaming?: boolean }
   | { id: string; kind: "tools"; tools: ToolCall[] }
   | { id: string; kind: "progress" | "steer"; text: string }
+  | { id: string; kind: "approval"; approval: ApprovalRequest }
 
 /** timeline 解析:新数据用结构化 activity;旧历史缺 activity 时回退
  * thinking + tools 聚合字段,顺序退化为 thinking 在前、工具在后。 */
@@ -73,6 +75,10 @@ export function buildPhases(items: ActivityItem[]): PhaseRow[] {
     if (item.kind === "tool") {
       if (last?.kind === "tools") last.tools.push(item.tool)
       else rows.push({ id: item.id, kind: "tools", tools: [item.tool] })
+      continue
+    }
+    if (item.kind === "approval") {
+      rows.push({ id: item.id, kind: "approval", approval: item.approval })
       continue
     }
     rows.push({ id: item.id, kind: item.kind, text: item.text })
@@ -139,6 +145,10 @@ export function liveStatus(turn: LiveTurn): { label: string } {
     return { label: "正在使用工具" }
   }
   const last = turn.activity.at(-1)
+  // 审批 hold 中的回合没有工具在跑、没有文本在流——如实说在等用户
+  if (last?.kind === "approval" && last.approval.state === "pending") {
+    return { label: "等待你的审批" }
+  }
   if (last?.kind === "steer") return { label: "已收到你的补充" }
   if (last?.kind === "thinking" && last.durationMs !== undefined) return { label: "正在回复" }
   if (turn.activity.some((item) => item.kind === "tool" || item.kind === "progress")) {

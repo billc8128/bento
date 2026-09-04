@@ -1,4 +1,6 @@
 import type { HarnessEvent, HarnessUsage } from "../../src/core/events"
+import type { ApprovalDecision } from "../../src/core/events"
+import type { PermissionProfile } from "../../src/core/permission"
 import type { Effort, PromptInput } from "../../src/core/types"
 
 export type HarnessId = "claude-code" | "kimi" | "codex" | "opencode" | "pi" | "omp" | "hermes"
@@ -11,6 +13,8 @@ export type HarnessCapabilities = {
   effortSwitch: "none" | "new-session" | "live"
   /** 当前回合运行时是否接受即时用户引导。缺省按 none。 */
   steer?: "none" | "live"
+  /** 权限档位切换:live = 后续回合生效;缺省按 new-session(connection 无 setPermissionProfile)。 */
+  permissionSwitch?: "none" | "new-session" | "live"
 }
 
 export type HarnessMcpServer = {
@@ -30,6 +34,10 @@ export type HarnessStartOptions = {
   providerId?: string
   modelId?: string
   effort?: Effort
+  /** 权限档位;缺省由 driver 按 DEFAULT_PERMISSION_PROFILE 处理 */
+  permissionProfile?: PermissionProfile
+  /** 「总是允许」持久规则(main 从项目级 permissions.json 注入;driver 红线不写文件) */
+  allowedTools?: string[]
   /**
    * builtin/user provider 会话的路由 env(ProviderRoutingService 组装):claude-code
    * 是 ANTHROPIC_BASE_URL/AUTH_TOKEN + CLAUDE_CONFIG_DIR;driver 只合入
@@ -51,6 +59,10 @@ export type HarnessConnection = {
   onExit(callback: (code: number | null) => void): () => void
   setModel?(modelId: string): Promise<void>
   setEffort?(effort: Effort): Promise<void>
+  /** 会话中切换权限档位(后续回合生效);缺省 = 该 harness 需新建会话才能换档 */
+  setPermissionProfile?(profile: PermissionProfile): Promise<void>
+  /** 兑现 hold 中的审批请求(approval_resolved 由 main 统一落盘);幂等,未知 id 忽略 */
+  resolveApproval?(id: string, decision: ApprovalDecision): void
 }
 
 export type HarnessDriver = {

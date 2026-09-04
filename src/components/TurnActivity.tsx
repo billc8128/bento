@@ -29,6 +29,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { ShiningText } from "@/components/ShiningText"
+import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
   buildPhases,
@@ -42,8 +43,8 @@ import {
   type PhaseRow,
 } from "@/core/activity"
 import { formatDuration, formatUsage } from "@/core/formatDuration"
-import type { HarnessUsage } from "@/core/events"
-import type { PlanItem, ToolCall } from "@/core/types"
+import type { ApprovalDecision, HarnessUsage } from "@/core/events"
+import type { ApprovalRequest, PlanItem, ToolCall } from "@/core/types"
 import type { StyleTraits } from "@/data/styles"
 
 const TOOL_ICON = {
@@ -301,14 +302,93 @@ function PlanRows({ plan }: { plan: PlanItem[] }) {
   )
 }
 
-/** 阶段栈中的一行:thinking/tools 走折叠阶段行,steer 是引导条,progress 是
+/** 审批行:pending = 可点决议卡(允许一次/总是允许/拒绝);已结算 = 一行静态记录。
+ * source 非 user 的结算(取消/关闭/协作自动)如实标注,不伪装成用户点的。 */
+function ApprovalRow({
+  approval,
+  onResolve,
+}: {
+  approval: ApprovalRequest
+  onResolve?: (id: string, decision: ApprovalDecision) => void
+}) {
+  if (approval.state === "pending") {
+    return (
+      <div className="trace-row rounded-lg border border-brand/40 bg-brand/5 px-3 py-2.5">
+        <div className="flex items-center gap-2">
+          <TriangleAlert className="size-3.5 shrink-0 text-brand" />
+          <span className="shrink-0 text-xs font-medium">需要审批</span>
+        </div>
+        <code className="mt-1.5 block truncate font-mono text-xs text-foreground/85">
+          {approval.title}
+        </code>
+        {approval.detail && (
+          <p className="mt-1 type-micro text-muted-foreground">{approval.detail}</p>
+        )}
+        <div className="mt-2 flex items-center gap-2">
+          {approval.options.map((option, i) => (
+            <Button
+              key={option.id}
+              type="button"
+              size="sm"
+              variant={option.id === "deny" ? "ghost" : i === 0 ? "default" : "secondary"}
+              className={cn("h-7 text-xs", option.id === "deny" && "text-destructive hover:text-destructive")}
+              onClick={() => onResolve?.(approval.id, option.id)}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+  const { decision, source } = approval.state
+  const decisionLabel = decision === "deny"
+    ? source === "unattended-auto"
+      ? "协作自动拒绝"
+      : source === "cancel"
+        ? "已随取消拒绝"
+        : source === "session-close"
+          ? "已随会话关闭拒绝"
+          : "已拒绝"
+    : decision === "allow_always"
+      ? "已总是允许"
+      : "已允许"
+  return (
+    <div className="trace-row flex h-7 items-center gap-2 px-1.5 text-xs">
+      {decision === "deny"
+        ? <TriangleAlert className="size-3.5 shrink-0 text-err" />
+        : <Check className="size-3.5 shrink-0 text-ok" />}
+      <span className="shrink-0 text-muted-foreground">审批</span>
+      <code className="min-w-0 truncate font-mono text-foreground/85">{approval.title}</code>
+      <span className="flex-1" />
+      <span className={cn("shrink-0 type-micro", decision === "deny" ? "text-err/80" : "text-muted-foreground/75")}>
+        {decisionLabel}
+      </span>
+    </div>
+  )
+}
+
+/** 阶段栈中的一行:thinking/tools 走折叠阶段行,approval 是审批卡,steer 是引导条,progress 是
  * 公开过程文字(比 thinking 亮一档;live 窗口内限三行)。 */
-function PhaseRowView({ row, livePhase, compact }: { row: PhaseRow; livePhase: boolean; compact: boolean }) {
+function PhaseRowView({
+  row,
+  livePhase,
+  compact,
+  onResolveApproval,
+}: {
+  row: PhaseRow
+  livePhase: boolean
+  compact: boolean
+  onResolveApproval?: (id: string, decision: ApprovalDecision) => void
+}) {
   if (row.kind === "thinking") {
     return <ThinkingPhaseRow text={row.text} label={phaseLabel(row, livePhase)} live={livePhase} />
   }
   if (row.kind === "tools") {
     return <ToolsPhaseRow tools={row.tools} label={phaseLabel(row, livePhase)} live={livePhase} />
+  }
+  if (row.kind === "approval") {
+    return <ApprovalRow approval={row.approval} onResolve={onResolveApproval} />
   }
   if (row.kind === "steer") {
     return (
@@ -334,6 +414,7 @@ export function TurnActivity({
   turn,
   live,
   shape,
+  onResolveApproval,
 }: {
   turn: LiveTurn & {
     durationMs?: number
@@ -343,6 +424,8 @@ export function TurnActivity({
   /** live = 回合运行中(Composer 左上);settled = 落定消息内的总折叠 trace */
   live: boolean
   shape: StyleTraits["tools"]
+  /** 审批卡片决议入口(live 视图);settled 回放一律静态,不传球 */
+  onResolveApproval?: (id: string, decision: ApprovalDecision) => void
 }) {
   const { activity } = turn
   const phases = buildPhases(activity)
@@ -362,7 +445,7 @@ export function TurnActivity({
       <div className="flex min-w-0 max-w-full flex-col gap-0.5">
         {plan.length > 0 && <PlanRows plan={plan} />}
         {phases.map((row) => (
-          <PhaseRowView key={row.id} row={row} livePhase={row.id === liveId} compact />
+          <PhaseRowView key={row.id} row={row} livePhase={row.id === liveId} compact onResolveApproval={onResolveApproval} />
         ))}
         {fallback && (
           <div className="-ml-1.5 flex w-full min-w-0 cursor-default items-center gap-2 overflow-hidden rounded-md px-1.5 py-1 text-sm font-medium text-foreground/70">

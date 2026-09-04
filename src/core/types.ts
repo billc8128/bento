@@ -2,7 +2,7 @@
  * 领域类型(无头 core)。本目录不允许 import 任何 UI。
  */
 
-import type { HarnessToolDiff, HarnessUsage } from "./events"
+import type { ApprovalDecision, ApprovalDecisionSource, HarnessToolDiff, HarnessUsage } from "./events"
 import type { MessageOrigin } from "./collaboration"
 
 export type Effort = "off" | "auto" | "low" | "medium" | "high" | "max"
@@ -57,6 +57,15 @@ export type ToolCall = {
   url?: string
 }
 
+/** 审批卡片:pending 时渲染为可点决议卡,结算后折叠为静态记录(回放语义) */
+export type ApprovalRequest = {
+  id: string
+  title: string
+  detail?: string
+  options: { id: ApprovalDecision; label: string }[]
+  state: "pending" | { decision: ApprovalDecision; source: ApprovalDecisionSource }
+}
+
 export type ActivityItem =
   | {
       id: string
@@ -72,6 +81,7 @@ export type ActivityItem =
   | { id: string; kind: "progress"; text: string }
   | { id: string; kind: "tool"; tool: ToolCall }
   | { id: string; kind: "steer"; text: string }
+  | { id: string; kind: "approval"; approval: ApprovalRequest }
 
 export type Message =
   | { id: string; role: "user"; text: string; attachments?: { name: string; kind: "image" | "file" }[]; origin?: MessageOrigin; clientMessageId?: string }

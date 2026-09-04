@@ -9,7 +9,10 @@ import { fileURLToPath } from "node:url"
 
 import { getDriver } from "./drivers/registry"
 import { SessionManager } from "./sessions"
+import { listPermissionRulesByProject, removePermissionRule } from "./permission-rules"
 import type { Effort, SessionScope } from "../src/core/types"
+import type { ApprovalDecision } from "../src/core/events"
+import type { PermissionProfile } from "../src/core/permission"
 import type { PromptInput } from "../src/core/types"
 import type { BentoAppId, UserAppInput } from "../src/core/apps"
 import { configureBinaryManager } from "./binaries/manager"
@@ -404,6 +407,7 @@ app.whenReady().then(async () => {
     providerId: string
     modelId: string
     effort?: Effort
+    permissionProfile?: PermissionProfile
   }) => {
     try {
       const { key, record } = sessions.createPendingSession(opts)
@@ -488,6 +492,27 @@ app.whenReady().then(async () => {
       return { error: String(err instanceof Error ? err.message : err) }
     }
   })
+  ipcMain.handle("session:set-permission-profile", async (_e, key: string, profile: PermissionProfile) => {
+    try {
+      return { record: await sessions.setPermissionProfile(key, profile) }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.handle("session:resolve-approval", async (_e, key: string, id: string, decision: ApprovalDecision) => {
+    try {
+      sessions.resolveApproval(key, id, decision)
+      return { ok: true }
+    } catch (err) {
+      return { error: String(err instanceof Error ? err.message : err) }
+    }
+  })
+  ipcMain.handle("permission-rules:list", () =>
+    listPermissionRulesByProject(sessions.listSessions().map((record) => record.cwd)),
+  )
+  ipcMain.handle("permission-rules:remove", (_e, cwd: string, harnessId: string, rule: string) => ({
+    ok: removePermissionRule(cwd, harnessId, rule),
+  }))
   ipcMain.handle("session:close", async (_e, key: string) => sessions.closeSession(key))
   ipcMain.handle("session:list", () =>
     sessions.listSessions().map((r) => ({

@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils"
 import { useTraits } from "@/lib/style-context"
 import { resolveActivity } from "@/core/activity"
 import type { LiveTurn } from "@/core/activity"
+import type { ApprovalDecision } from "@/core/events"
 import type { Message } from "@/core/types"
 import {
   CHAT_CONTENT_GUTTER,
@@ -173,6 +174,8 @@ type ChatViewProps = {
   pending?: boolean
   /** 当前运行回合的唯一 activity；在消息流中展开，落定后由消息自身接管。 */
   turn?: LiveTurn
+  /** 审批卡片决议入口(转发给 live TurnActivity) */
+  onResolveApproval?: (id: string, decision: ApprovalDecision) => void
   queued?: {
     text: string
     steerAvailable: boolean
@@ -182,7 +185,7 @@ type ChatViewProps = {
   }
 }
 
-export function ChatView({ messages, pending = true, turn, queued }: ChatViewProps) {
+export function ChatView({ messages, pending = true, turn, onResolveApproval, queued }: ChatViewProps) {
   const traits = useTraits()
   const rootRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -262,7 +265,7 @@ export function ChatView({ messages, pending = true, turn, queued }: ChatViewPro
               ) : (
                 <div key={m.id} className="flex min-w-0 flex-col gap-2.5">
                   {pending && m.id === "draft" && turn && (
-                    <TurnActivity live shape={traits.tools} turn={turn} />
+                    <TurnActivity live shape={traits.tools} turn={turn} onResolveApproval={onResolveApproval} />
                   )}
                   <AssistantMessage
                     m={m}
@@ -277,7 +280,7 @@ export function ChatView({ messages, pending = true, turn, queued }: ChatViewPro
         ))}
 
         {turn && !messages.some((message) => message.role === "assistant" && message.id === "draft") && (
-          <TurnActivity live shape={traits.tools} turn={turn} />
+          <TurnActivity live shape={traits.tools} turn={turn} onResolveApproval={onResolveApproval} />
         )}
 
         {queued && (

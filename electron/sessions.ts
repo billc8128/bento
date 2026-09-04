@@ -9,8 +9,11 @@ import os from "node:os"
 import path from "node:path"
 
 import type { HarnessEvent, HarnessUsage, LogRecord } from "../src/core/events"
+import type { ApprovalDecision, ApprovalDecisionSource } from "../src/core/events"
 import type { CollaborationSession, MessageOrigin, SessionRuntimeStatus } from "../src/core/collaboration"
 import { CollaborationError } from "../src/core/collaboration"
+import { DEFAULT_PERMISSION_PROFILE, type PermissionProfile } from "../src/core/permission"
+import { addPermissionRule, loadPermissionRules } from "./permission-rules"
 import type { Effort, PromptAttachment, PromptInput, SessionScope } from "../src/core/types"
 import { getDriver } from "./drivers/registry"
 import { assertHarnessCwd } from "./harness-runtime"
@@ -41,6 +44,8 @@ export type SessionRecord = {
   providerId?: string
   modelId?: string
   effort?: Effort
+  /** 权限档位;缺省(历史会话)按 DEFAULT_PERMISSION_PROFILE 处理 */
+  permissionProfile?: PermissionProfile
   capabilities?: HarnessCapabilities
   title: string
   createdAt: string
@@ -63,12 +68,16 @@ type LiveSession = {
   activeTurn: ActiveTurn | null
   /** 人类在运行中提交的一条可见后续消息；本轮结束后自动启动。 */
   queuedPrompt: QueuedPrompt | null
+  /** hold 中的审批请求 id;cancel/关闭/协作自动裁决时据此结算 */
+  pendingApprovals: Set<string>
 }
 
 /** 一次根 Prompt 的运行态:acceptedSeq 关联提交,completion 携带回合结果。 */
 type ActiveTurn = {
   acceptedSeq: number
   completion: Promise<TurnResult>
+  /** 协作 origin 的回合审批自动裁决(unattended),人类回合才排队等用户 */
+  origin?: MessageOrigin
 }
 
 type QueuedPrompt = {
@@ -213,6 +222,22 @@ export class SessionManager {
     if (event.type === "user_message") session.hasUserMessage = true
     session.record.updatedAt = record.at
     this.onEvent(session.record.key, record)
+    // 协作 origin 回合的审批不排队:按档位自动裁决(unattended),
+    // 避免协作调用方的 wait 超时被挂起传染。append 先于兑现,日志顺序干净。
+    if (event.type === "approval_request") {
+      session.pendingApprovals.add(event.id)
+      if (session.activeTurn?.origin?.kind === "session") {
+        this.resolveApprovalInternal(session, event.id, "deny", "unattended-auto")
+      }
+    }
+    // driver 回报的「总是允许」新规则:持久化到项目级 permissions.json。
+    // chat 会话的 cwd 是私有隔离目录,规则只留在会话内存,不落盘(写了也没人能发现)。
+    if (event.type === "metadata" && event.name === "permission/rule_added" && session.record.scope !== "chat") {
+      const toolName = (event.data as { toolName?: unknown } | undefined)?.toolName
+      if (typeof toolName === "string" && toolName) {
+        addPermissionRule(session.record.cwd, session.record.harnessId, toolName)
+      }
+    }
     // 只有真正"可读消息"才通知 message_appended;thought/tool/metadata/
     // turn_finished 不算,避免 next_message 被非正文事件误唤醒。
     if (
@@ -294,6 +319,11 @@ export class SessionManager {
           ...(record.providerId ? { providerId: record.providerId } : {}),
           ...(wireModelId ? { modelId: wireModelId } : {}),
           ...(record.effort ? { effort: record.effort } : {}),
+          permissionProfile: record.permissionProfile ?? DEFAULT_PERMISSION_PROFILE,
+          // 项目级「总是允许」规则注入(driver 红线不写文件,main 读写)
+          allowedTools: loadPermissionRules(record.cwd)
+            .filter((item) => item.harnessId === record.harnessId)
+            .map((item) => item.rule),
           ...(proxyEnv ? { proxyEnv } : {}),
           ...(appLease ? appStartOptions(record.harnessId as HarnessId, appLease) : {}),
         },
@@ -328,12 +358,15 @@ export class SessionManager {
       cancelRequested: false,
       activeTurn: null,
       queuedPrompt: null,
+      pendingApprovals: new Set(),
     }
     for (const event of pending) this.append(session, event)
 
     const connected = session
     connected.disposeExit = connection.onExit((code) => {
       if (this.live.get(record.key) === connected) {
+        // 进程退出与会话关闭同等:pending 审批先落盘结算,回放不留悬挂卡
+        this.settleApprovals(connected, "session-close")
         this.append(connected, {
           type: "notice",
           text: `harness 进程退出(${code ?? "signal"})`,
@@ -366,6 +399,7 @@ export class SessionManager {
     providerId: string
     modelId: string
     effort?: Effort
+    permissionProfile?: PermissionProfile
   }): SessionRecord {
     if (!opts.providerId?.trim() || !opts.modelId?.trim()) {
       throw new Error("新会话必须显式指定 providerId 与 modelId")
@@ -388,6 +422,7 @@ export class SessionManager {
       providerId: opts.providerId,
       modelId: opts.modelId,
       ...(opts.effort ? { effort: opts.effort } : {}),
+      ...(opts.permissionProfile ? { permissionProfile: opts.permissionProfile } : {}),
       title: opts.title ?? "新会话",
       createdAt: now,
       updatedAt: now,
@@ -406,6 +441,7 @@ export class SessionManager {
     providerId: string
     modelId: string
     effort?: Effort
+    permissionProfile?: PermissionProfile
   }) {
     const record = this.newRecord(opts)
     this.upsertRecord(record)
@@ -421,6 +457,7 @@ export class SessionManager {
     providerId: string
     modelId: string
     effort?: Effort
+    permissionProfile?: PermissionProfile
   }) {
     const record = this.newRecord(opts)
     let session: LiveSession
@@ -539,7 +576,11 @@ export class SessionManager {
             })
         }
       })
-    session.activeTurn = { acceptedSeq, completion }
+    session.activeTurn = {
+      acceptedSeq,
+      completion,
+      ...(opts.origin ? { origin: opts.origin } : {}),
+    }
     this.notifyCollaboration({ key, type: "turn_started", seq: acceptedSeq })
     return { acceptedSeq, completion }
   }
@@ -702,10 +743,40 @@ export class SessionManager {
     }
   }
 
+  /** 审批结算统一入口:先落盘 approval_resolved,再兑现 driver 的 hold(顺序保证
+   *  日志里 resolved 一定出现在后续回合事件之前)。幂等:未知 id 直接忽略。 */
+  private resolveApprovalInternal(
+    session: LiveSession,
+    id: string,
+    decision: ApprovalDecision,
+    source: ApprovalDecisionSource,
+  ) {
+    if (!session.pendingApprovals.has(id)) return
+    session.pendingApprovals.delete(id)
+    this.append(session, { type: "approval_resolved", id, decision, source })
+    session.connection.resolveApproval?.(id, decision)
+  }
+
+  private settleApprovals(session: LiveSession, source: ApprovalDecisionSource) {
+    for (const id of [...session.pendingApprovals]) {
+      this.resolveApprovalInternal(session, id, "deny", source)
+    }
+  }
+
+  /** 渲染端决议入口:用户在审批卡片上点了 允许一次/总是允许/拒绝 */
+  resolveApproval(key: string, id: string, decision: ApprovalDecision) {
+    const session = this.live.get(key)
+    if (!session) throw new Error("会话不在线,无法结算审批")
+    if (!session.pendingApprovals.has(id)) throw new Error("审批请求不存在或已结算")
+    this.resolveApprovalInternal(session, id, decision, "user")
+  }
+
   async cancel(key: string) {
     const session = this.live.get(key)
     if (!session) return
     session.cancelRequested = true
+    // cancel 竞态:hold 中的审批先按拒绝结算(落盘 + 兑现),再 interrupt
+    this.settleApprovals(session, "cancel")
     await session.connection.cancel()
   }
 
@@ -753,6 +824,17 @@ export class SessionManager {
     return session.record
   }
 
+  async setPermissionProfile(key: string, profile: PermissionProfile) {
+    const session = await this.ensureLive(key)
+    if (!session.connection.setPermissionProfile) {
+      throw new Error("当前 harness 的权限档位需新建会话生效")
+    }
+    await session.connection.setPermissionProfile(profile)
+    session.record.permissionProfile = profile
+    this.upsertRecord(session.record)
+    return session.record
+  }
+
   isLive(key: string) {
     return this.live.has(key)
   }
@@ -772,6 +854,8 @@ export class SessionManager {
     const session = this.live.get(key)
     if (!session) return
     this.live.delete(key)
+    // 会话关闭结算必须落盘:回放里不能留下永久 pending 的悬挂审批卡
+    this.settleApprovals(session, "session-close")
     // dispose 只释放活跃资源(routes),保留可恢复的隔离目录。
     session.disposeExit()
     session.connection.close()

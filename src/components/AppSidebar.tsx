@@ -83,7 +83,7 @@ import {
   toggleFolderPin,
   useFolderPreferences,
 } from "@/lib/folder-preferences"
-import { hasUnreadSessionMessage, isRunning, liveMeta, removeLive, renameLive, useLive } from "@/lib/live-store"
+import { hasUnreadSessionMessage, isRunning, liveMeta, removeLive, renameLive, useLive, hasPendingApproval } from "@/lib/live-store"
 import { togglePin, usePinnedSessions } from "@/lib/pinned-sessions"
 import { openSettings } from "@/lib/settings-store"
 import { useStatusGlyph } from "@/lib/status-glyph"
@@ -198,6 +198,8 @@ export function AppSidebar() {
     // 本地发送集合之外,main 侧 runtime working(协作唤醒)同样算 running
     const running = isRunning(key) || liveMeta(key)?.runtime === "working"
     const unread = hasUnreadSessionMessage(key)
+    // 审批 hold 优先级最高:回合卡在等用户,比"进行中"更需要被看见
+    const attention = hasPendingApproval(key)
     const isPinned = pinned.has(key)
     if (renaming === key) {
       return (
@@ -241,8 +243,9 @@ export function AppSidebar() {
               不靠压父级颜色(Codex 式) */}
           <span className="flex-1 truncate text-sm">{s.title}</span>
           {/* 状态指示样式由设置 → 主题 里的 StatusGlyph 决定 */}
-          {running && <StatusGlyph state="running" variant={statusGlyph} />}
-          {!running && unread && <StatusGlyph state="unread" variant={statusGlyph} />}
+          {attention && <StatusGlyph state="attention" variant={statusGlyph} />}
+          {!attention && running && <StatusGlyph state="running" variant={statusGlyph} />}
+          {!attention && !running && unread && <StatusGlyph state="unread" variant={statusGlyph} />}
           {/* 平时只露置顶标;hover 换成 时间 + pin + ⋯ 快捷操作 */}
           {!running && allowPin && isPinned && (
             <PinIcon className="size-3 text-muted-foreground group-hover/menu-item:hidden" />

@@ -7,6 +7,7 @@ import { HarnessIcon } from "@/components/HarnessIcon"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { HARNESSES, getHarness, type HarnessId } from "@/core/harness"
+import { PERMISSION_PROFILES, type PermissionProfile } from "@/core/permission"
 import {
   compactModelName,
   dedupeProviderModels,
@@ -35,6 +36,10 @@ type RuntimePickerProps = {
   onHarnessChange?: (harnessId: HarnessId) => void
   onEffortChange?: (effort: Effort) => void
   onDiscover?: (harnessId: HarnessId) => void
+  /** 权限档位;不传 = 该处不展示权限行 */
+  permissionProfile?: PermissionProfile
+  /** 缺省 = 当前不可换档(行内注明原因:codex 需新会话,pi 不支持) */
+  onPermissionChange?: (profile: PermissionProfile) => void
   session?: boolean
   modelLocked?: boolean
 }
@@ -42,7 +47,7 @@ type RuntimePickerProps = {
 const HARNESS_ORDER: HarnessId[] = ["pi", "codex", "claude-code", "kimi", "opencode", "omp", "hermes"]
 
 type UnifiedRow = { provider: ProviderView; model: ProviderModel }
-type PickerView = "root" | "harness" | "model" | "effort"
+type PickerView = "root" | "harness" | "model" | "effort" | "permission"
 
 export function RuntimePicker({
   selection,
@@ -51,6 +56,8 @@ export function RuntimePicker({
   onHarnessChange,
   onEffortChange,
   onDiscover,
+  permissionProfile,
+  onPermissionChange,
   session = false,
   modelLocked = false,
 }: RuntimePickerProps) {
@@ -80,6 +87,17 @@ export function RuntimePicker({
   const canTuneEffort = Boolean(
     selectedModel && harness.effortSelection && selectedModel.reasoning !== false && onEffortChange,
   )
+  // 权限档位:codex 是 OS 沙箱硬边界;claude/ACP 系是工具集近似(非硬边界);
+  // pi 暂无映射(等同放行)。会话中 codex 换档需新会话(thread 级一次性下发)。
+  const permissionLabel = PERMISSION_PROFILES.find((p) => p.id === permissionProfile)?.name ?? "标准"
+  const permissionNote = selection.harnessId === "pi"
+    ? "该 Harness 暂不支持权限档位(行为等同放行)"
+    : !onPermissionChange && session && selection.harnessId === "codex"
+      ? "Codex 换档需新建会话生效"
+      : selection.harnessId !== "codex"
+        ? "工具集近似,非硬边界;受限/标准档无 shell(Bash 类),需要请选放行"
+        : undefined
+  const canTunePermission = Boolean(onPermissionChange) && selection.harnessId !== "pi"
   const needle = query.trim().toLowerCase()
   const sections = useMemo(
     () => selectableProviders.flatMap((provider) => {
@@ -140,6 +158,11 @@ export function RuntimePicker({
     onEffortChange?.(effort)
     closePopover()
   }
+  const pickPermission = (profile: PermissionProfile) => {
+    if (!canTunePermission) return
+    onPermissionChange?.(profile)
+    closePopover()
+  }
   const onModelKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === "ArrowDown") {
       event.preventDefault()
@@ -185,7 +208,9 @@ export function RuntimePicker({
           : harness.efforts.length >= 4
             ? "h-56 w-72"
             : "h-44 w-72"
-        : ""
+        : view === "permission"
+          ? "h-56 w-72"
+          : ""
 
   return (
     <Popover
@@ -227,12 +252,16 @@ export function RuntimePicker({
         side="top"
         align="end"
         sideOffset={8}
-        className="runtime-popover relative h-[8.5rem] w-60 overflow-visible p-2"
+        className={cn(
+          "runtime-popover relative w-60 overflow-visible p-2",
+          permissionProfile ? "h-[11.5rem]" : "h-[8.5rem]",
+        )}
       >
         <div>
           {rootRow("Harness", harness.name, "harness")}
           {rootRow("模型", modelLabel, "model", modelLocked)}
           {rootRow("推理强度", canTuneEffort ? effortLabel : "—", "effort", !canTuneEffort)}
+          {permissionProfile && rootRow("权限", permissionLabel, "permission")}
         </div>
 
         {view !== "root" && (
@@ -294,6 +323,24 @@ export function RuntimePicker({
                   )
                 })}
               </div>
+            </div>
+          )}
+
+          {view === "permission" && (
+            <div className="flex h-full flex-col">
+              <div className="min-h-0 flex-1 overflow-y-auto p-2">
+                {PERMISSION_PROFILES.map((profile) => (
+                  <button key={profile.id} type="button" disabled={!canTunePermission} onClick={() => pickPermission(profile.id)} className="flex min-h-12 w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-default disabled:opacity-45">
+                    <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{profile.name}</span><span className="block truncate text-xs text-muted-foreground">{profile.desc}</span></span>
+                    {profile.id === permissionProfile && <Check className="size-4 shrink-0" />}
+                  </button>
+                ))}
+              </div>
+              {permissionNote && (
+                <p className="shrink-0 border-t border-border px-3 py-2 text-xs text-muted-foreground">
+                  {permissionNote}
+                </p>
+              )}
             </div>
           )}
           </div>

@@ -19,10 +19,34 @@ export function StatusGlyph({
   state,
   variant,
 }: {
-  state: "running" | "unread"
+  state: "running" | "unread" | "attention"
   variant: StatusGlyphVariant
 }) {
-  const label = state === "running" ? "进行中" : "有来自其它会话的新消息"
+  const label = state === "running"
+    ? "进行中"
+    : state === "attention"
+      ? "有待审批的请求"
+      : "有来自其它会话的新消息"
+  if (state === "attention") {
+    switch (variant) {
+      case "a":
+        return <span className="sg-a-attn" role="img" aria-label={label} />
+      case "b":
+        return <span className="sg-b-attn" role="img" aria-label={label}><i /></span>
+      case "c":
+        return <span className="sg-c-attn" role="img" aria-label={label}>待审批</span>
+      case "d":
+        return <span className="sg-d-attn" role="img" aria-label={label} />
+      case "f":
+        return (
+          <span className="sg-f-grid attn" role="img" aria-label={label}>
+            {F_CHEVRON.map((_, i) => (
+              <span key={i} className={i === 1 || i === 4 ? "blink" : i === 7 ? "hit" : undefined} />
+            ))}
+          </span>
+        )
+    }
+  }
   switch (variant) {
     case "a":
       return state === "running" ? (

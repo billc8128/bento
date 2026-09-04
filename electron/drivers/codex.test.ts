@@ -199,6 +199,120 @@ rl.on("line", (line) => {
     const connection = await codexDriver.start({ cwd: tempDir }, () => {})
     connection.close()
   })
+
+  it("权限档位:thread 基底 + turn/start 逐回合 policy 覆盖", async () => {
+    const starts: Record<string, unknown>[] = []
+    const turns: Record<string, unknown>[] = []
+    const createRpc: RpcFactory = async () => ({
+      request: async (method: string, params?: Record<string, unknown>) => {
+        if (method === "thread/start") {
+          starts.push(params ?? {})
+          return { thread: { id: "thr-profile" } }
+        }
+        if (method === "turn/start") {
+          turns.push(params ?? {})
+          queueMicrotask(() => {})
+          return { turn: { id: "turn-p", status: "inProgress" } }
+        }
+        return {}
+      },
+      notify: () => {}, onExit: () => () => {}, close: () => {},
+    } as unknown as CodexRpc)
+    for (const profile of ["restricted", "standard", "full", undefined] as const) {
+      const connection = await codexDriver.start(
+        { cwd: "/tmp", ...(profile ? { permissionProfile: profile } : {}) },
+        () => {},
+        { createRpc },
+      )
+      void connection.prompt("hi").catch(() => {})
+      await vi.waitFor(() => expect(turns.length).toBeGreaterThan(0))
+      connection.close()
+      turns.length = 0
+    }
+    // thread 基底:sandbox + approvalPolicy;不再下发 network config(turn 级接管)
+    expect(starts[0]).toMatchObject({ sandbox: "workspace-write", approvalPolicy: "never" })
+    expect(starts[1]).toMatchObject({ sandbox: "workspace-write", approvalPolicy: "on-request" })
+    expect(starts[2]).toMatchObject({ sandbox: "danger-full-access", approvalPolicy: "never" })
+    for (const start of starts) expect(start).not.toHaveProperty("config")
+  })
+
+  it("会话中切档:后续 turn/start 带新档位的 policy", async () => {
+    const turns: Record<string, unknown>[] = []
+    const createRpc: RpcFactory = async () => ({
+      request: async (method: string, params?: Record<string, unknown>) => {
+        if (method === "thread/start") return { thread: { id: "thr-switch" } }
+        if (method === "turn/start") {
+          turns.push(params ?? {})
+          return { turn: { id: "turn-s", status: "inProgress" } }
+        }
+        return {}
+      },
+      notify: () => {}, onExit: () => () => {}, close: () => {},
+    } as unknown as CodexRpc)
+    const connection = await codexDriver.start(
+      { cwd: "/tmp", permissionProfile: "restricted" },
+      () => {},
+      { createRpc },
+    )
+    void connection.prompt("one").catch(() => {})
+    await vi.waitFor(() => expect(turns.length).toBe(1))
+    await connection.setPermissionProfile?.("full")
+    void connection.prompt("two").catch(() => {})
+    await vi.waitFor(() => expect(turns.length).toBe(2))
+    expect(turns[0]).toMatchObject({
+      approvalPolicy: "never",
+      sandboxPolicy: { type: "workspaceWrite", networkAccess: false },
+    })
+    expect(turns[1]).toMatchObject({
+      approvalPolicy: "never",
+      sandboxPolicy: { type: "dangerFullAccess" },
+    })
+    connection.close()
+  })
+
+  it("审批 hold:requestApproval 挂起,resolveApproval 兑现决议", async () => {
+    const events: HarnessEvent[] = []
+    let serverRequest: ((method: string, params: Record<string, unknown>) => Promise<unknown>) | undefined
+    const createRpc: RpcFactory = async (_cwd, handlers) => {
+      serverRequest = handlers.onServerRequest
+      return {
+        request: async (method: string) => {
+          if (method === "thread/start") return { thread: { id: "thr-apr" } }
+          return {}
+        },
+        notify: () => {}, onExit: () => () => {}, close: () => {},
+      } as unknown as CodexRpc
+    }
+    const connection = await codexDriver.start({ cwd: "/tmp" }, (event) => events.push(event), { createRpc })
+
+    const pending = serverRequest!("item/commandExecution/requestApproval", {
+      command: ["rm", "-rf", "/tmp/x"],
+      reason: "需要删除目录",
+    })
+    // hold 期间请求事件已发出,带三个通用选项
+    await vi.waitFor(() => expect(events.some((e) => e.type === "approval_request")).toBe(true))
+    const request = events.find((e) => e.type === "approval_request")
+    expect(request).toMatchObject({
+      title: "rm -rf /tmp/x",
+      detail: "需要删除目录",
+      options: [
+        { id: "allow_once", label: "允许一次" },
+        { id: "allow_always", label: "本会话总是允许" },
+        { id: "deny", label: "拒绝" },
+      ],
+    })
+    // 决议兑现:allow_always → codex 的 acceptForSession
+    connection.resolveApproval?.((request as { id: string }).id, "allow_always")
+    await expect(pending).resolves.toEqual({ decision: "acceptForSession" })
+
+    // cancel 竞态:hold 中的审批立即 decline,不等 RPC 回包
+    const pending2 = serverRequest!("item/fileChange/requestApproval", { reason: "写工作区外" })
+    await vi.waitFor(() =>
+      expect(events.filter((e) => e.type === "approval_request").length).toBe(2))
+    void connection.cancel()
+    await expect(pending2).resolves.toEqual({ decision: "decline" })
+    connection.close()
+  })
 })
 
 describe("codexDriver usage 透传(TRACE_DATA_PLAN §7 P4)", () => {

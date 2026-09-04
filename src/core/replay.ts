@@ -260,6 +260,38 @@ function applyEvent(acc: Accumulator, event: HarnessEvent, seq: number, atMs: nu
     case "metadata":
       applyMetadata(acc, event, atMs)
       return
+    case "approval_request": {
+      // 审批是回合内嵌元素(同工具):pending 渲染为可点卡片
+      const draft = ensureDraft(acc, atMs)
+      closeThinking(draft, atMs)
+      flushProgress(draft, `progress-${seq}`)
+      draft.activity.push({
+        id: `approval-${event.id}`,
+        kind: "approval",
+        approval: {
+          id: event.id,
+          title: event.title,
+          ...(event.detail ? { detail: event.detail } : {}),
+          options: event.options,
+          state: "pending",
+        },
+      })
+      return
+    }
+    case "approval_resolved": {
+      // 结算即折叠为静态记录:实时由渲染端决议驱动,回放按此折叠,永不悬挂
+      const draft = acc.draft
+      const item = draft?.activity.find(
+        (entry) => entry.kind === "approval" && entry.approval.id === event.id,
+      )
+      if (item?.kind === "approval") {
+        item.approval = {
+          ...item.approval,
+          state: { decision: event.decision, source: event.source },
+        }
+      }
+      return
+    }
   }
 }
 

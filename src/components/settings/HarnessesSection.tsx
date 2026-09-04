@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react"
-import { RefreshCw } from "lucide-react"
+import { Check, RefreshCw } from "lucide-react"
 
 import { HarnessIcon } from "@/components/HarnessIcon"
 import { Button } from "@/components/ui/button"
 import { HARNESSES, type HarnessRuntimeStatus } from "@/core/harness"
+import { PERMISSION_PROFILES } from "@/core/permission"
+import { setDefaultPermissionProfile, useDefaultPermissionProfile } from "@/lib/permission-profile"
+import { cn } from "@/lib/utils"
 
 function sourceLabel(status: HarnessRuntimeStatus | undefined): string {
   if (!status) return "检测中…"
@@ -23,10 +26,17 @@ function localInstallNote(status: HarnessRuntimeStatus | undefined): string | nu
 export function HarnessesSection({ onAddModel }: { onAddModel: () => void }) {
   const [statuses, setStatuses] = useState<HarnessRuntimeStatus[]>([])
   const [loading, setLoading] = useState(true)
+  const defaultProfile = useDefaultPermissionProfile()
+  const [ruleGroups, setRuleGroups] = useState<
+    { cwd: string; rules: { harnessId: string; rule: string; createdAt: string }[] }[]
+  >([])
 
   const refresh = () => {
     setLoading(true)
     void window.bento?.listHarnessRuntimes().then(setStatuses).finally(() => setLoading(false))
+  }
+  const refreshRules = () => {
+    void window.bento?.listPermissionRules().then(setRuleGroups)
   }
 
   useEffect(() => {
@@ -36,11 +46,89 @@ export function HarnessesSection({ onAddModel }: { onAddModel: () => void }) {
     }).finally(() => {
       if (alive) setLoading(false)
     })
+    void window.bento?.listPermissionRules().then((groups) => {
+      if (alive) setRuleGroups(groups)
+    })
     return () => { alive = false }
   }, [])
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border">
+    <div className="flex flex-col gap-8">
+      <section>
+        <h2 className="text-sm font-medium">默认权限档位</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          新建会话继承该档位;只有 Codex 是 OS 沙箱强制的硬边界,其余 Harness 为工具集近似。
+        </p>
+        <div className="mt-3 flex flex-col gap-2">
+          {PERMISSION_PROFILES.map((profile) => {
+            const active = defaultProfile === profile.id
+            return (
+              <button
+                key={profile.id}
+                type="button"
+                onClick={() => setDefaultPermissionProfile(profile.id)}
+                className={cn(
+                  "flex items-center gap-3 rounded-xl border p-3 text-left transition-colors",
+                  active
+                    ? "border-brand ring-1 ring-brand/40"
+                    : "border-border hover:border-foreground/25",
+                )}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{profile.name}</span>
+                    {active && <Check className="size-4 shrink-0 text-brand" />}
+                  </div>
+                  <p className="type-micro mt-0.5 text-muted-foreground">{profile.desc}</p>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-sm font-medium">权限规则</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          审批时选「本会话总是允许」的工具会记到项目的 .bento/permissions.json,之后自动放行。
+        </p>
+        <div className="mt-3 flex flex-col gap-2">
+          {ruleGroups.length === 0 && (
+            <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
+              暂无规则
+            </p>
+          )}
+          {ruleGroups.map((group) => (
+            <div key={group.cwd} className="rounded-xl border border-border p-3">
+              <p className="truncate font-mono text-xs text-muted-foreground">{group.cwd}</p>
+              <div className="mt-2 flex flex-col gap-1">
+                {group.rules.map((item) => (
+                  <div key={`${item.harnessId}:${item.rule}`} className="flex items-center gap-2">
+                    <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-xs">
+                      {item.rule}
+                    </span>
+                    <span className="type-micro text-muted-foreground/70">{item.harnessId}</span>
+                    <span className="flex-1" />
+                    <button
+                      type="button"
+                      className="type-micro text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                      onClick={() => {
+                        void window.bento
+                          ?.removePermissionRule(group.cwd, item.harnessId, item.rule)
+                          .then(refreshRules)
+                      }}
+                    >
+                      删除
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <div className="overflow-hidden rounded-xl border border-border">
       <div className="flex h-12 items-center justify-between border-b border-border px-4">
         <span className="text-sm text-muted-foreground">会话使用 Bento 内置或受管版本</span>
         <div className="flex items-center gap-1.5">
@@ -74,6 +162,7 @@ export function HarnessesSection({ onAddModel }: { onAddModel: () => void }) {
             </div>
           )
         })}
+      </div>
       </div>
     </div>
   )
