@@ -23,6 +23,8 @@ export type Harness = {
   defaultEffort: Effort
   /** 是否已有可启动的 driver */
   live: boolean
+  /** 权限档位切换能力:创建会话前即可确定(driver 侧硬编码),用于门控权限控件 */
+  permissionSwitch: "none" | "live"
 }
 
 export type HarnessRuntimeStatus = {
@@ -41,6 +43,7 @@ export type HarnessRuntimeStatus = {
 export const HARNESSES: Harness[] = [
   {
     id: "codex",
+    permissionSwitch: "live",
     name: "Codex",
     short: "CDX",
     live: true,
@@ -50,6 +53,7 @@ export const HARNESSES: Harness[] = [
   },
   {
     id: "claude-code",
+    permissionSwitch: "live",
     name: "Claude Code",
     short: "CC",
     live: true,
@@ -59,6 +63,7 @@ export const HARNESSES: Harness[] = [
   },
   {
     id: "kimi",
+    permissionSwitch: "live",
     name: "Kimi Code",
     short: "KM",
     live: true,
@@ -68,6 +73,7 @@ export const HARNESSES: Harness[] = [
   },
   {
     id: "opencode",
+    permissionSwitch: "live",
     name: "OpenCode",
     short: "OC",
     live: true,
@@ -77,6 +83,7 @@ export const HARNESSES: Harness[] = [
   },
   {
     id: "pi",
+    permissionSwitch: "none",
     name: "Pi",
     short: "π",
     live: true,
@@ -86,6 +93,7 @@ export const HARNESSES: Harness[] = [
   },
   {
     id: "omp",
+    permissionSwitch: "live",
     name: "OMP",
     short: "OMP",
     live: true,
@@ -95,6 +103,7 @@ export const HARNESSES: Harness[] = [
   },
   {
     id: "hermes",
+    permissionSwitch: "live",
     name: "Hermes",
     short: "H",
     live: true,

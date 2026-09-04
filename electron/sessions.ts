@@ -339,7 +339,14 @@ export class SessionManager {
     }
 
     record.nativeSessionId = connection.nativeSessionId
+    // capabilities 随 app 版本演进(M2 给 codex 加了 permissionSwitch live):
+    // revive 时若与存档不同步,落盘刷新——否则 UI 按旧能力误报"需新建会话"。
+    const capabilitiesChanged =
+      JSON.stringify(record.capabilities) !== JSON.stringify(connection.capabilities)
     record.capabilities = connection.capabilities
+    if (capabilitiesChanged && this.listSessions().some((item) => item.key === record.key)) {
+      this.upsertRecord(record)
+    }
     const logPath = this.jsonlPath(record.key)
     session = {
       record,

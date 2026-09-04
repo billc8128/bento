@@ -215,7 +215,9 @@ export function ChatPane() {
               : undefined
           }
           onPermissionChange={
-            !running && live.capabilities?.permissionSwitch === "live"
+            // 权限切换能力看 harness 静态元数据,不看会话存档的 capabilities——
+            // 沉睡会话的 capabilities 是创建时快照,可能过期(M2 给 codex 加了热切)
+            !running && getHarness(live.harnessId).permissionSwitch === "live"
               ? (profile) => void setLivePermissionProfile(sessionId, profile)
               : undefined
           }
