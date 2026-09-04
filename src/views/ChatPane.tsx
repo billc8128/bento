@@ -6,6 +6,7 @@ import { MessageCircle, MoreHorizontal, X } from "lucide-react"
 import { ChatView } from "@/components/ChatView"
 import { Composer } from "@/components/Composer"
 import { Button } from "@/components/ui/button"
+import { FolderIcon } from "@/components/FolderIcon"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,7 +43,12 @@ import { liveTurnState } from "@/core/activity"
 import type { SessionScope } from "@/core/types"
 import { CHAT_CONTENT_GUTTER, type ComposerShape } from "@/data/styles"
 
-type HeaderInfo = { title: string; path: string; branch?: string }
+type HeaderInfo = { title: string; path: string; branch?: string; folder?: string }
+
+/** 项目目录名:pane 头部展示的文件夹名(路径最后一段) */
+function dirName(cwd: string): string {
+  return cwd.replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean).at(-1) ?? cwd
+}
 
 function PaneHeader({
   info,
@@ -64,7 +70,8 @@ function PaneHeader({
       className={cn(
         "app-window-drag flex shrink-0 items-center gap-2 [-webkit-app-region:drag]",
         minimal
-          ? cn("h-16 border-transparent", CHAT_CONTENT_GUTTER[composer])
+          // h-16 透明太飘:降到 h-12 + 淡底色细分线,和对话区柔和过渡
+          ? cn("h-12 border-b border-border/50 bg-muted/35", CHAT_CONTENT_GUTTER[composer])
           : "h-12 border-b px-4",
       )}
     >
@@ -75,6 +82,15 @@ function PaneHeader({
         >
           <MessageCircle className="size-3.5" />
           <span className="sr-only">Chat 会话</span>
+        </span>
+      )}
+      {/* 项目会话:文件夹名提到标题级(纯信息,不响应点击)——分栏布局下每个
+          pane 自己带项目上下文,minimal 模式再没有"这是哪个项目"的盲区 */}
+      {info.folder && (
+        <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
+          <FolderIcon className="size-4" />
+          <span className="max-w-32 truncate text-sm font-medium">{info.folder}</span>
+          <span aria-hidden className="mx-0.5 text-border">·</span>
         </span>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
@@ -153,6 +169,7 @@ export function ChatPane() {
           path: live.scope === "chat"
             ? (harness?.name ?? live.harnessId)
             : `${live.cwd} · ${harness?.name ?? live.harnessId}`,
+          ...(live.scope === "project" ? { folder: dirName(live.cwd) } : {}),
         }}
         minimal={minimal}
         composer={traits.composer}
