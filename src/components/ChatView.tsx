@@ -37,6 +37,55 @@ function AttachmentChip({ name, kind }: { name: string; kind: "image" | "file" }
 }
 
 // memo:流式 draft 每帧重建,历史消息引用稳定,只有新消息/草稿重渲染
+/** 长消息折叠阈值:8 行(text-sm + leading-relaxed ≈ 22.75px/行) */
+const LONG_MESSAGE_CLAMP = "max-h-[184px]"
+
+/** 用户长文本:先收 8 行 + 底部渐变提示,点击展开全文,再点收起。
+ * 注意遮罩只能挂在内层文字上——挂气泡外壳会把气泡底色一起溶掉。 */
+function ClampedText({ text, className, align = "start", buttonClassName }: {
+  text: string
+  className?: string
+  align?: "start" | "end"
+  buttonClassName?: string
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  const [long, setLong] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (el) setLong(el.scrollHeight > 184 + 4)
+  }, [text])
+  return (
+    <div className="flex min-w-0 flex-col">
+      <div
+        ref={ref}
+        onClick={() => long && setOpen(!open)}
+        className={cn(
+          className,
+          !open && LONG_MESSAGE_CLAMP,
+          !open && "overflow-hidden",
+          long && !open && "cursor-pointer [mask-image:linear-gradient(to_bottom,black_calc(100%-44px),transparent)]",
+        )}
+      >
+        {text}
+      </div>
+      {long && (
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className={cn(
+            "type-micro transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+            align === "end" ? "self-end" : "self-start",
+            buttonClassName ?? "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {open ? "收起" : "展开全文"}
+        </button>
+      )}
+    </div>
+  )
+}
+
 const UserMessage = memo(function UserMessage({ m, shape }: { m: UserMsg; shape: MessageShape }) {
   // 协作来源:envelope 不落 JSONL,这里只展示可信 origin,不当正文渲染
   const fromSession = m.origin?.kind === "session" ? m.origin.title : null
@@ -54,12 +103,19 @@ const UserMessage = memo(function UserMessage({ m, shape }: { m: UserMsg; shape:
           {fromSession ? `来自 ${fromSession}` : "你"}
         </span>
         <div className={cn(
-          "min-w-0 max-w-full wrap-anywhere border-l-2 pl-3 text-sm leading-relaxed",
+          "min-w-0 max-w-full border-l-2 pl-3 text-sm leading-relaxed",
           fromSession
             ? "rounded-r-lg border-secondary-foreground/25 bg-secondary px-3 py-2 text-secondary-foreground"
             : "border-primary/40",
         )}>
-          {m.text}
+          <ClampedText
+            text={m.text}
+            align="start"
+            className="wrap-anywhere"
+            buttonClassName={fromSession
+              ? "text-secondary-foreground/60 hover:text-secondary-foreground"
+              : undefined}
+          />
         </div>
         {m.attachments?.map((a) => (
           <AttachmentChip key={a.name} name={a.name} kind={a.kind} />
@@ -74,12 +130,19 @@ const UserMessage = memo(function UserMessage({ m, shape }: { m: UserMsg; shape:
     >
       {/* 气泡保持胶囊感:3xl(20px)接近旧 --radius 1rem 时代的 2xl 观感 */}
       <div className={cn(
-        "min-w-0 max-w-[75%] wrap-anywhere rounded-3xl rounded-br-lg px-4 py-2.5 text-sm leading-relaxed",
+        "min-w-0 max-w-[75%] rounded-3xl rounded-br-lg px-4 py-2.5 text-sm leading-relaxed",
         fromSession
           ? "bg-secondary text-secondary-foreground"
           : "bg-primary text-primary-foreground",
       )}>
-        {m.text}
+        <ClampedText
+          text={m.text}
+          align="end"
+          className="wrap-anywhere"
+          buttonClassName={fromSession
+            ? "text-secondary-foreground/60 hover:text-secondary-foreground"
+            : "text-primary-foreground/65 hover:text-primary-foreground"}
+        />
       </div>
       {fromSession && (
         <span className="type-micro font-mono text-muted-foreground">来自 {fromSession}</span>
