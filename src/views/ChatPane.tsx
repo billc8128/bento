@@ -76,13 +76,11 @@ function PaneHeader({
       )}
     >
       {scope === "chat" && (
-        <span
-          title="Chat 会话"
-          className="grid size-6 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground"
-        >
-          <MessageCircle className="size-3.5" />
-          <span className="sr-only">Chat 会话</span>
-        </span>
+        // 和文件夹图标同一待遇:裸图标,不带底色 chip(灰底看着像选中态)
+        <MessageCircle
+          className="size-4 shrink-0 text-muted-foreground"
+          aria-label="Chat 会话"
+        />
       )}
       {/* 项目会话:文件夹名提到标题级(纯信息,不响应点击)——分栏布局下每个
           pane 自己带项目上下文,minimal 模式再没有"这是哪个项目"的盲区 */}
