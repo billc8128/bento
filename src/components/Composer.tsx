@@ -309,6 +309,9 @@ export function Composer({
             }}
             placeholder={collapsed ? "描述你要做的事…" : `向 ${harness.name} 描述你要做的事…`}
             rows={collapsed ? 1 : 2}
+            // 收起态是单行胶囊:禁换行,空间不够时横向裁剪(同单行 input),
+            // 否则窄分栏下 placeholder 换行会被固定高度竖直切半
+            wrap={collapsed ? "off" : "soft"}
             // field-sizing-content(Textarea 默认)按内容长高;展开态预留两行高度,
             // 单行输入看起来太扁。收起态固定 48px 单行居中,py-3 对称 padding 居中文字
             className={cn(
@@ -325,7 +328,9 @@ export function Composer({
           {canCollapse && (
             <span
               className={cn(
-                "pointer-events-none absolute right-14 top-1/2 -translate-y-1/2 text-xs text-muted-foreground transition-opacity duration-200",
+                // max-w-28 + right-14:最左不超过 168px,始终在 textarea pr-44(176px)
+                // 保留区内,永不与输入文字重叠;超长模型名 truncate
+                "pointer-events-none absolute right-14 top-1/2 max-w-28 -translate-y-1/2 truncate text-xs text-muted-foreground transition-opacity duration-200",
                 collapsed ? "opacity-100" : "opacity-0",
               )}
             >
