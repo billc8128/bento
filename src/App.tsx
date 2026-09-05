@@ -92,7 +92,7 @@ export default function App() {
     root.dataset.style = style
     root.classList.toggle("dark", dark)
     // 液态玻璃:整窗 vibrancy 由主进程接管,离开该套系即撤销
-    window.bento?.setGlassVibrancy?.(style === "glass")
+    window.bento?.setGlassVibrancy?.(style === "glass", dark)
     try {
       localStorage.setItem("bento.style", style)
       localStorage.setItem("bento.dark", dark ? "1" : "0")

@@ -55,7 +55,7 @@ const api = {
   listSessions: () => ipcRenderer.invoke("session:list"),
   listHarnessRuntimes: () => ipcRenderer.invoke("harness-runtime:list"),
   systemUsername: () => ipcRenderer.invoke("system:username"),
-  setGlassVibrancy: (on: boolean) => ipcRenderer.send("theme:vibrancy", on),
+  setGlassVibrancy: (on: boolean, dark: boolean) => ipcRenderer.send("theme:vibrancy", { on, dark }),
   readEvents: (key: string) => ipcRenderer.invoke("session:events", key),
   listProviders: (options: {
     harnessId: HarnessId

@@ -681,6 +681,18 @@
     background: oklch(0.18 0 0 / 0.94);
 }
 
+/* 用户气泡也做成玻璃件:半透明 + 顶部镜面高光(不用 primary 实色) */
+:root[data-style="glass"] [data-message-origin="human"] > .bg-primary {
+    background: oklch(1 0 0 / 0.5);
+    color: oklch(0.21 0 0);
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.75), 0 1px 4px oklch(0 0 0 / 0.06);
+}
+:root[data-style="glass"].dark [data-message-origin="human"] > .bg-primary {
+    background: oklch(1 0 0 / 0.12);
+    color: oklch(0.96 0 0);
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.16), 0 2px 10px oklch(0 0 0 / 0.25);
+}
+
 /* 减少透明度的用户:退回实底,玻璃感全收 */
 @media (prefers-reduced-transparency: reduce) {
     :root[data-style="glass"] {

@@ -94,7 +94,7 @@ declare global {
       /** macOS 系统用户名:本地资料的默认显示名 */
       systemUsername(): Promise<string | null>
       /** 液态玻璃主题:整窗 NSVisualEffectView 开关(macOS) */
-      setGlassVibrancy(on: boolean): void
+      setGlassVibrancy(on: boolean, dark: boolean): void
       readEvents(key: string): Promise<LogRecord[]>
       listProviders(options: {
         harnessId: HarnessId

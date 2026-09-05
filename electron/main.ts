@@ -3,7 +3,7 @@
 import fixPath from "fix-path"
 import fs from "node:fs"
 import os from "node:os"
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, screen, shell, webContents, type OpenDialogOptions } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, safeStorage, screen, shell, webContents, type OpenDialogOptions } from "electron"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -424,10 +424,24 @@ app.whenReady().then(async () => {
     }
   })
   ipcMain.handle("harness-runtime:list", () => listHarnessRuntimeStatuses())
-  // 液态玻璃主题:整窗接 NSVisualEffectView;材质明暗跟随系统外观
-  ipcMain.on("theme:vibrancy", (event, on: unknown) => {
+  // 液态玻璃主题:整窗接 NSVisualEffectView。两个配套动作:
+  // 1. vibrancy 要透出桌面,窗口背景必须切成全透明(默认白底会盖住材质)
+  // 2. 材质明暗默认跟随系统外观,但玻璃的明暗是 app 内自选——用 themeSource
+  //    强制材质与所选一致,否则深主题的白字会落在系统亮材质上
+  ipcMain.on("theme:vibrancy", (event, payload: unknown) => {
     if (process.platform !== "darwin") return
-    BrowserWindow.fromWebContents(event.sender)?.setVibrancy(on === true ? "fullscreen-ui" : null)
+    const w = BrowserWindow.fromWebContents(event.sender)
+    if (!w) return
+    const { on, dark } = (payload ?? {}) as { on?: boolean; dark?: boolean }
+    if (on === true) {
+      nativeTheme.themeSource = dark ? "dark" : "light"
+      w.setBackgroundColor("#00000000")
+      w.setVibrancy("fullscreen-ui")
+    } else {
+      w.setVibrancy(null)
+      w.setBackgroundColor("#ffffff")
+      nativeTheme.themeSource = "system"
+    }
   })
   // 本地资料的默认显示名:macOS 系统用户名(无账户系统,纯装饰)
   ipcMain.handle("system:username", () => {
