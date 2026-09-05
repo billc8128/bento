@@ -12,7 +12,7 @@ const TICK_W = 8
 const TICK_W_MAX = 15
 const WAVE_SIGMA = 13
 const HOT_EDGE = 48
-const HIDE_DELAY = 220
+const HIDE_DELAY = 120
 
 export function PromptRail({ containerRef, messages }: {
   /** ChatView 最外层相对定位容器:热区监听、浮卡定位、消息元素查找都锚在它身上 */
@@ -86,23 +86,35 @@ export function PromptRail({ containerRef, messages }: {
       lastMouseRef.current = null
       scheduleHide()
     }
+    // 点到检索区以外的任何地方:立即收起,不等延迟
+    const onPointerDown = (e: PointerEvent) => {
+      if (!activeRef.current) return
+      const t = e.target as Node
+      if (railRef.current?.contains(t) || popRef.current?.contains(t)) return
+      hideNow()
+    }
     document.addEventListener("mousemove", onMove, true)
+    document.addEventListener("pointerdown", onPointerDown, true)
     document.documentElement.addEventListener("mouseleave", onLeave)
     return () => {
       document.removeEventListener("mousemove", onMove, true)
+      document.removeEventListener("pointerdown", onPointerDown, true)
       document.documentElement.removeEventListener("mouseleave", onLeave)
       window.clearTimeout(hideTimerRef.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  function hideNow() {
+    window.clearTimeout(hideTimerRef.current)
+    activeRef.current = false
+    setActive(false)
+    setHoverIdx(null)
+  }
+
   function scheduleHide() {
     window.clearTimeout(hideTimerRef.current)
-    hideTimerRef.current = window.setTimeout(() => {
-      activeRef.current = false
-      setActive(false)
-      setHoverIdx(null)
-    }, HIDE_DELAY)
+    hideTimerRef.current = window.setTimeout(hideNow, HIDE_DELAY)
   }
 
   /** 只滚浮卡列表;scrollIntoView 会把聊天区一起带动,不能用 */
@@ -225,7 +237,7 @@ export function PromptRail({ containerRef, messages }: {
     el.classList.remove("prompt-target-flash")
     void el.offsetWidth
     el.classList.add("prompt-target-flash")
-    scheduleHide()
+    hideNow()
   }
 
   if (prompts.length < 2) return null
