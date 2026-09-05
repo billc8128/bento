@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState } from "react"
-import { ChevronLeft, Cpu, Keyboard, Palette, Plug, SquareSplitHorizontal } from "lucide-react"
+import { ChevronLeft, Cpu, FlaskConical, Keyboard, Palette, Plug } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -18,13 +18,21 @@ import { HarnessesSection } from "./HarnessesSection"
 import { ProvidersSection } from "./ProvidersSection"
 import { ShortcutsSection } from "./ShortcutsSection"
 
-const SECTIONS: { id: SettingsSection; label: string; icon: typeof Plug }[] = [
+const SECTIONS: { id: SettingsSection; label: string; icon: typeof Plug; beta?: boolean }[] = [
   { id: "providers", label: "供应商", icon: Plug },
   { id: "harnesses", label: "运行环境", icon: Cpu },
   { id: "appearance", label: "主题", icon: Palette },
-  { id: "layout", label: "布局", icon: SquareSplitHorizontal },
+  { id: "layout", label: "实验室", icon: FlaskConical, beta: true },
   { id: "shortcuts", label: "快捷键", icon: Keyboard },
 ]
+
+function BetaBadge() {
+  return (
+    <span className="rounded border border-border px-1 py-px text-[10px] font-medium leading-tight text-muted-foreground">
+      Beta
+    </span>
+  )
+}
 
 export function SettingsPage() {
   const settings = useSettingsPage()
@@ -99,6 +107,7 @@ export function SettingsPage() {
           >
             <item.icon className="size-4 opacity-70" />
             {item.label}
+            {item.beta && <BetaBadge />}
           </button>
         ))}
       </nav>
@@ -106,7 +115,10 @@ export function SettingsPage() {
       <div className="min-w-0 flex-1">
         <ScrollArea className="h-full">
           <div className="mx-auto max-w-2xl px-8 pb-16 pt-10">
-            <h1 className="text-lg font-semibold">{active.label}</h1>
+            <h1 className="flex items-center gap-2 text-lg font-semibold">
+              {active.label}
+              {active.beta && <BetaBadge />}
+            </h1>
             <div className="mt-6">
               {section === "providers" && (
                 <ProvidersSection addProviderIntent={settings.addProvider} />
