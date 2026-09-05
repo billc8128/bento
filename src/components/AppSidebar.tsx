@@ -13,10 +13,8 @@ import {
   Pencil,
   PenSquare,
   Plus,
-  RotateCcw,
   Search,
   Settings,
-  SquareSplitHorizontal,
   Trash2,
 } from "lucide-react"
 
@@ -78,7 +76,7 @@ import {
 import { cn } from "@/lib/utils"
 import { useTraits } from "@/lib/style-context"
 import { useTheme } from "@/lib/theme-context"
-import { closeSession, openAppsView, openSession, resetLayout, setLayoutMode, useLayout } from "@/lib/layout-store"
+import { closeSession, openAppsView, openSession, useLayout } from "@/lib/layout-store"
 import { closeNewSession, requestNewSession, useNewSession } from "@/lib/new-session-store"
 import { NewProjectDialog } from "@/components/ProjectPicker"
 import {
@@ -135,7 +133,7 @@ function relativeTime(iso: string): string {
 
 export function AppSidebar() {
   const { sidebar: shape } = useTraits()
-  const { focusedSessionId, mode, appsFocused } = useLayout()
+  const { focusedSessionId, appsFocused } = useLayout()
   const { sessions: liveSessions } = useLive()
   const theme = useTheme()
   const pinned = usePinnedSessions()
@@ -669,19 +667,6 @@ export function AppSidebar() {
                   </DropdownMenuCheckboxItem>
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
-              {/* 布局:自由模式 opt-in(ARCHITECTURE.md §6.1),重置回默认 */}
-              <DropdownMenuCheckboxItem
-                checked={mode === "free"}
-                onCheckedChange={(v) => setLayoutMode(v ? "free" : "managed")}
-                className="gap-2 text-sm"
-              >
-                <SquareSplitHorizontal className="size-4 opacity-70" />
-                自由布局
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuItem className="gap-2 text-sm" onSelect={() => resetLayout()}>
-                <RotateCcw className="size-4 opacity-70" />
-                重置布局
-              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem className="gap-2 text-sm" onSelect={() => openSettings("providers")}>
                 <Settings className="size-4 opacity-70" />

@@ -16,8 +16,6 @@ import { liveMeta } from "@/lib/live-store"
 
 type PanelPosition = AddPanelOptions["position"]
 
-export type LayoutMode = "managed" | "free"
-
 export type LayoutSnapshot = {
   /** 已打开的会话 id(按面板顺序) */
   openSessionIds: string[]
@@ -27,18 +25,6 @@ export type LayoutSnapshot = {
   appsFocused: boolean
   /** 实际可见 Session 的瞬时空间邻接关系。 */
   adjacency: UiSessionAdjacency[]
-  mode: LayoutMode
-}
-
-const MODE_KEY = "bento.layoutMode"
-
-function loadMode(): LayoutMode {
-  try {
-    if (localStorage.getItem(MODE_KEY) === "free") return "free"
-  } catch {
-    /* ignore */
-  }
-  return "managed"
 }
 
 let api: DockviewApi | null = null
@@ -47,7 +33,6 @@ let snapshot: LayoutSnapshot = {
   focusedSessionId: null,
   appsFocused: false,
   adjacency: [],
-  mode: loadMode(),
 }
 
 const listeners = new Set<() => void>()
@@ -81,35 +66,10 @@ function sessionIdOf(panelId: string): string | null {
   return panelId.startsWith("chat:") ? panelId.slice(5) : null
 }
 
-let headerObserver: MutationObserver | null = null
-let headerHost: HTMLElement | null = null
-
-/** DockWorkspace 在 onReady 注册;卸载时传 null。
- *  dockview 8 组注册是异步的,事件与 rAF 都追不上(受管模式藏头会漏),
- *  用 MutationObserver 盯组节点进 DOM 的时机兜底 */
-export function attachDockApi(next: DockviewApi | null, container?: HTMLElement | null) {
+/** DockWorkspace 在 onReady 注册;卸载时传 null */
+export function attachDockApi(next: DockviewApi | null) {
   api = next
-  headerObserver?.disconnect()
-  headerObserver = null
-  headerHost = container ?? null
-  if (api && container) {
-    headerObserver = new MutationObserver(() => applyHeaderMode())
-    headerObserver.observe(container, { childList: true, subtree: true })
-  }
   refresh()
-}
-
-/** 受管模式隐藏所有组头。两条腿:dockview 状态 api(对已注册组)+
- *  DOM 直写(对注册滞后的组);dockview 自己的 setter 也是写同样的 inline style */
-function applyHeaderMode() {
-  if (!api) return
-  const hidden = snapshot.mode === "managed"
-  for (const g of api.groups) g.header.hidden = hidden
-  if (headerHost) {
-    for (const el of headerHost.querySelectorAll<HTMLElement>(".dv-tabs-and-actions-container")) {
-      el.style.display = hidden ? "none" : ""
-    }
-  }
 }
 
 /** 从 dockview 现状重算衍生状态。面板增删、焦点变化后由各变更路径调用 */
@@ -119,7 +79,6 @@ export function refresh() {
   let appsFocused = false
   let adjacency: UiSessionAdjacency[] = []
   if (api) {
-    applyHeaderMode()
     for (const p of api.panels) {
       const sid = sessionIdOf(p.id)
       if (sid) open.push(sid)
@@ -234,34 +193,6 @@ export function openAppsView() {
     ...(active ? { position: { referenceGroup: active.group } } : {}),
   })
   refresh()
-}
-
-export function setLayoutMode(mode: LayoutMode) {
-  if (snapshot.mode === mode) return
-  snapshot = { ...snapshot, mode }
-  try {
-    localStorage.setItem(MODE_KEY, mode)
-  } catch {
-    /* ignore */
-  }
-  // 模式切换立即作用于现有组头(refresh 内也有一份,这里保证不依赖后续事件)
-  if (api) for (const g of api.groups) g.header.hidden = mode === "managed"
-  emit()
-}
-
-/** 清掉持久化布局,回到默认单会话视图。由 DockWorkspace 监听执行 */
-export function resetLayout() {
-  try {
-    localStorage.removeItem("bento.layout")
-  } catch {
-    /* ignore */
-  }
-  resetRequested?.()
-}
-
-let resetRequested: (() => void) | null = null
-export function onResetRequest(fn: (() => void) | null) {
-  resetRequested = fn
 }
 
 // ---- 协作 UI(agent 面向的布局操作;仍只接 sessionId)----

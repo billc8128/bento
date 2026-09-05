@@ -1,8 +1,6 @@
 /**
- * 主区布局宿主(L3):dockview 接管,受管模式为默认(ARCHITECTURE.md §6.1)。
+ * 主区布局宿主(L3):dockview 完整停靠(标签页、拖拽重排、分组)。
  *
- * - 受管模式:隐藏标签头、禁浮动组。用户手势 = 拖分隔条、关面板、会话拖入分栏
- * - 自由模式:完整停靠(标签页、拖拽重排、浮动)
  * - 布局持久化:防抖写 localStorage,损坏/viewId 未注册回退默认布局
  * - 外部拖入:侧栏会话行带 application/x-bento-session,落点由 dockview 算
  */
@@ -22,7 +20,6 @@ import {
 import {
   attachDockApi,
   closeSession,
-  onResetRequest,
   openSession,
   openSessionAt,
   panelIdOf,
@@ -130,12 +127,10 @@ function isSessionDrag(e: DragEvent | PointerEvent): e is DragEvent {
 }
 
 export function DockWorkspace() {
-  const { mode, appsFocused } = useLayout()
+  const { appsFocused } = useLayout()
   const { initialized, sessions: liveSessions } = useLive()
   const newSession = useNewSession()
   const apiRef = useRef<DockviewApi | null>(null)
-  const hostRef = useRef<HTMLDivElement>(null)
-  const managed = mode === "managed"
 
   // Session index 真正加载后再清理恢复布局。不能在初始空数组阶段 prune，
   // 否则会把所有持久化 Panel 误判为已删除，再退化成单 Panel。
@@ -150,7 +145,7 @@ export function DockWorkspace() {
   function onReady(event: DockviewReadyEvent) {
     const api = event.api
     apiRef.current = api
-    attachDockApi(api, hostRef.current)
+    attachDockApi(api)
 
     const saved = loadLayout()
     if (saved) {
@@ -174,11 +169,6 @@ export function DockWorkspace() {
     api.onDidLayoutChange(() => refresh())
     api.onDidActivePanelChange(() => refresh())
 
-    onResetRequest(() => {
-      api.clear()
-      defaultLayout(api)
-    })
-
     refresh()
   }
 
@@ -187,9 +177,7 @@ export function DockWorkspace() {
     const sessionId = e.nativeEvent.dataTransfer?.getData(SESSION_MIME)
     if (!sessionId) return
 
-    let direction = positionToDirection(e.position)
-    // 受管模式没有标签页,落进组内(within)会叠在别的面板后面看不见——转成右分栏
-    if (managed && direction === "within") direction = "right"
+    const direction = positionToDirection(e.position)
 
     openSessionAt(
       sessionId,
@@ -200,18 +188,16 @@ export function DockWorkspace() {
   useEffect(() => {
     return () => {
       attachDockApi(null)
-      onResetRequest(null)
     }
   }, [])
 
   return (
-    <div ref={hostRef} className="relative h-full">
+    <div className="relative h-full">
       <DockviewReact
         components={COMPONENTS}
         theme={BENTO_THEME}
         onReady={onReady}
         onDidDrop={onDidDrop}
-        disableFloatingGroups={managed}
         hideBorders={false}
       />
       {/* 无会话自动 onboarding;已有会话时点「新对话」覆盖到同一完整起始页。

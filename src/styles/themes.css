@@ -569,7 +569,7 @@
     --dv-separator-border: var(--border);
     --dv-paneview-header-border-color: var(--border);
 
-    /* 标签头(仅自由布局模式可见) */
+    /* 标签头(会话分栏的标签页头) */
     --dv-tabs-and-actions-container-background-color: var(--app-chrome);
     --dv-tabs-and-actions-container-height: 32px;
     --dv-tabs-and-actions-container-font-size: 12px;
