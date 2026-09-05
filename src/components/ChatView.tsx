@@ -9,6 +9,7 @@ import {
 
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Markdown } from "@/components/Markdown"
+import { PromptRail } from "@/components/PromptRail"
 import { TurnActivity } from "@/components/TurnActivity"
 import { cn } from "@/lib/utils"
 import { useTraits } from "@/lib/style-context"
@@ -93,6 +94,7 @@ const UserMessage = memo(function UserMessage({ m, shape }: { m: UserMsg; shape:
   if (shape === "plain")
     return (
       <div
+        data-message-id={m.id}
         data-message-origin={fromSession ? "session" : "human"}
         className="flex flex-col items-start gap-1.5"
       >
@@ -125,6 +127,7 @@ const UserMessage = memo(function UserMessage({ m, shape }: { m: UserMsg; shape:
 
   return (
     <div
+      data-message-id={m.id}
       data-message-origin={fromSession ? "session" : "human"}
       className="flex min-w-0 flex-col items-end gap-1.5"
     >
@@ -256,6 +259,7 @@ type ChatViewProps = {
 
 export function ChatView({ messages, pending = true, turn, onResolveApproval, queued, cwd }: ChatViewProps) {
   const traits = useTraits()
+  const boxRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const stuckRef = useRef(true)
@@ -326,7 +330,7 @@ export function ChatView({ messages, pending = true, turn, onResolveApproval, qu
   }, [lastMessageId])
 
   return (
-    <div className="relative min-h-0 flex-1">
+    <div ref={boxRef} className="relative min-h-0 flex-1">
     <ScrollArea ref={rootRef} className="chat-scroll-area h-full min-h-0">
       <div
         ref={contentRef}
@@ -402,6 +406,7 @@ export function ChatView({ messages, pending = true, turn, onResolveApproval, qu
         )}
       </div>
     </ScrollArea>
+    <PromptRail containerRef={boxRef} messages={messages} />
     {!following && (
       <button
         type="button"

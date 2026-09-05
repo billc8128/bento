@@ -155,6 +155,13 @@
 .shadow-pop { box-shadow: var(--app-shadow-pop); }
 .shadow-float { box-shadow: var(--app-shadow-float); }
 
+/* 快速检索条(PromptRail)跳转落点的一圈呼吸阴影 */
+@keyframes prompt-target-flash {
+  0% { box-shadow: 0 0 0 8px color-mix(in oklch, var(--primary) 10%, transparent); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.prompt-target-flash { animation: prompt-target-flash 1.4s ease-out; border-radius: 14px; }
+
 /* 项目已选择时的 hover：内层轻微下沉，保持外层结构和 composer 轮廓不动。 */
 .project-picker-depression {
   background: transparent;
