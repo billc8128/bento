@@ -110,6 +110,11 @@ export async function loadProviderCatalog(harnessId: HarnessId, cwd: string) {
   await fetchProviders(harnessId, cwd, false)
 }
 
+/** 渲染外读某 harness 目录的当前快照(刷新后统计新增模型用);不触发加载/发现。 */
+export function providerCatalogSnapshot(harnessId: HarnessId, cwd: string): ProviderView[] {
+  return stateOf(keyOf(harnessId, cwd)).providers
+}
+
 /**
  * 单 harness 一次性发现守卫:进行中跳过;已发现过(含失败)且非 refresh 跳过;
  * refresh 允许重跑。current 与错峰后台的 rest 走同一纪律。

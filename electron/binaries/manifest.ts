@@ -23,12 +23,12 @@ export type BinaryManifestEntry = {
  */
 export const BINARY_MANIFEST: Record<ManagedBinaryName, BinaryManifestEntry> = {
   codex: {
-    version: "0.149.1",
+    version: "0.153.4",
     overrideEnv: "BENTO_CODEX_PATH",
     platforms: {
       "darwin-arm64": {
-        url: "https://github.com/openai/codex/releases/download/rust-v0.149.1/codex-aarch64-apple-darwin.tar.gz",
-        sha256: "ed60f475c6dda6044c2c00fd7f33273cc3f3f98900ccd1204bfdf2fe935f3405",
+        url: "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-aarch64-apple-darwin.tar.gz",
+        sha256: "8cf911ea676523bfb2121ec561848d2aba564890ad536db4d8a3353f2b9850b1",
         archive: "tar.gz",
         archiveEntry: "codex-aarch64-apple-darwin",
         executable: "codex",
@@ -36,12 +36,12 @@ export const BINARY_MANIFEST: Record<ManagedBinaryName, BinaryManifestEntry> = {
     },
   },
   "codex-code-mode-host": {
-    version: "0.149.1",
+    version: "0.153.4",
     overrideEnv: "BENTO_CODEX_CODE_MODE_HOST_PATH",
     platforms: {
       "darwin-arm64": {
-        url: "https://github.com/openai/codex/releases/download/rust-v0.149.1/codex-code-mode-host-aarch64-apple-darwin.tar.gz",
-        sha256: "aae1c0c9459700a2e897adadd647351140ae7933ad73bd8d3af6505c69a4f3fd",
+        url: "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-code-mode-host-aarch64-apple-darwin.tar.gz",
+        sha256: "45a9b0fdf53b98b85a6bb91e175dd90e961328a7a14fb50a40902205199df1df",
         archive: "tar.gz",
         archiveEntry: "codex-code-mode-host-aarch64-apple-darwin",
         executable: "codex-code-mode-host",

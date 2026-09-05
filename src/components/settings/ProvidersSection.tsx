@@ -27,7 +27,7 @@ import {
   useCustomProviders,
   type CustomProviderEntry,
 } from "@/lib/custom-provider-store"
-import { applyProviderModelVisibility, useAllProviderCatalogs } from "@/lib/provider-store"
+import { applyProviderModelVisibility, providerCatalogSnapshot, useAllProviderCatalogs } from "@/lib/provider-store"
 import { useLocalImportSources } from "@/lib/local-import"
 import { consumeAddProviderIntent } from "@/lib/settings-store"
 import { toast } from "@/lib/toast"
@@ -437,8 +437,10 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
     }
   }
 
-  async function refreshCustom(source: Extract<ProviderSource, { kind: "custom" }>) {
-    if (!window.bento) return
+  /** 自定义供应商:按 runtime 候选地址逐个拉模型列表,合并新增项。
+   *  返回新增数或失败原因;toast/错误展示由 refreshSelectedGroup 统一收口。 */
+  async function refreshCustom(source: Extract<ProviderSource, { kind: "custom" }>): Promise<{ added: number } | { error: string }> {
+    if (!window.bento) return { error: "仅桌面版可用" }
     const config = toConfig(source.entry)
     const candidates = CUSTOM_HARNESSES.flatMap((harness) => {
       const runtime = config.runtimes[harness]
@@ -482,26 +484,54 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
         ]
       }
       const result = await saveCustomProvider(config)
-      if (result.error) setError(result.error)
-      else toast.success(added > 0 ? `已刷新,新增 ${added} 个模型` : "模型列表已是最新")
-    } else {
-      setError(failures[0] ?? "无法获取模型列表,请在编辑中检查模型列表地址或手动维护。")
+      if (result.error) return { error: result.error }
+      return { added }
     }
+    return { error: failures[0] ?? "无法获取模型列表,请在编辑中检查模型列表地址或手动维护。" }
   }
 
   async function refreshSelectedGroup() {
     if (!selectedGroup) return
     setRefreshing(true)
     setError(null)
+    const beforeIds = new Set(models.map((model) => model.id))
     const harnesses = new Set(selectedGroup.sources
       .filter((source): source is Extract<ProviderSource, { kind: "builtin" }> => source.kind === "builtin")
       .map((source) => source.view.harnessIds[0]!))
-    await Promise.all([
+    const customResults = await Promise.all([
+      // builtin:refresh=true 绕过全部缓存强制重新发现
       ...[...harnesses].map((harnessId) => discoverCatalog(harnessId, true)),
       ...selectedGroup.sources
         .filter((source): source is Extract<ProviderSource, { kind: "custom" }> => source.kind === "custom")
         .map(refreshCustom),
     ])
+    // 反馈收口:builtin 从刷新后的 store 快照 diff 新增数、读发现失败;
+    // custom 用 refreshCustom 的返回。任一部分失败都如实展示,不谎报成功。
+    let added = 0
+    const failures: string[] = []
+    for (const harnessId of harnesses) {
+      for (const provider of providerCatalogSnapshot(harnessId, "")) {
+        if (!selectedGroup.sources.some((source) => source.id === provider.id)) continue
+        if (provider.modelDiscovery === "failed") {
+          failures.push(provider.discoveryError ?? "模型发现失败")
+          continue
+        }
+        for (const list of Object.values(provider.models)) {
+          for (const model of list ?? []) {
+            if (!beforeIds.has(model.id)) added += 1
+          }
+        }
+      }
+    }
+    for (const result of customResults) {
+      if (result && typeof result === "object" && "added" in result) added += result.added
+      if (result && typeof result === "object" && "error" in result) failures.push(result.error)
+    }
+    if (failures.length > 0) {
+      setError(failures[0])
+    } else if (harnesses.size > 0 || customResults.length > 0) {
+      toast.success(added > 0 ? `已刷新,新增 ${added} 个模型` : "模型列表已是最新")
+    }
     setRefreshing(false)
   }
 
@@ -635,9 +665,16 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
                   </div>
                 </div>
                 {builtinSource ? (
-                  <Button variant={builtinSource.connected ? "outline" : "default"} disabled={connecting} onClick={() => void toggleBuiltinAuth(builtinSource)}>
-                    {connecting && <Loader2 className="animate-spin" />}{builtinSource.connected ? "断开" : "登录"}
-                  </Button>
+                  <>
+                    {builtinSource.connected && (
+                      <Button variant="outline" disabled={refreshing} onClick={() => void refreshSelectedGroup()}>
+                        <RefreshCw className={cn(refreshing && "animate-spin")} />刷新模型
+                      </Button>
+                    )}
+                    <Button variant={builtinSource.connected ? "outline" : "default"} disabled={connecting} onClick={() => void toggleBuiltinAuth(builtinSource)}>
+                      {connecting && <Loader2 className="animate-spin" />}{builtinSource.connected ? "断开" : "登录"}
+                    </Button>
+                  </>
                 ) : customSource ? (
                   <Button variant="outline" disabled={refreshing} onClick={() => void refreshSelectedGroup()}>
                     <RefreshCw className={cn(refreshing && "animate-spin")} />刷新模型
