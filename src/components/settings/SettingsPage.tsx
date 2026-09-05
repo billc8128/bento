@@ -5,10 +5,11 @@
  */
 
 import { useEffect, useState } from "react"
-import { ChevronLeft, Cpu, FlaskConical, Keyboard, Palette, Plug } from "lucide-react"
+import { ChevronLeft, FlaskConical, Keyboard, KeyRound, Palette } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { HorseIcon } from "@/components/HorseIcon"
 import { closeSettings, openSettings, useSettingsPage, type SettingsSection } from "@/lib/settings-store"
 import { cn } from "@/lib/utils"
 
@@ -18,9 +19,9 @@ import { HarnessesSection } from "./HarnessesSection"
 import { ProvidersSection } from "./ProvidersSection"
 import { ShortcutsSection } from "./ShortcutsSection"
 
-const SECTIONS: { id: SettingsSection; label: string; icon: typeof Plug; beta?: boolean }[] = [
-  { id: "providers", label: "供应商", icon: Plug },
-  { id: "harnesses", label: "Harness", icon: Cpu },
+const SECTIONS: { id: SettingsSection; label: string; icon: React.ComponentType<{ className?: string }>; beta?: boolean }[] = [
+  { id: "providers", label: "供应商", icon: KeyRound },
+  { id: "harnesses", label: "Harness", icon: HorseIcon },
   { id: "appearance", label: "外观", icon: Palette },
   { id: "layout", label: "实验室", icon: FlaskConical, beta: true },
   { id: "shortcuts", label: "快捷键", icon: Keyboard },
