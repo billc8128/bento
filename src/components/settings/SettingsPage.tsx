@@ -20,8 +20,8 @@ import { ShortcutsSection } from "./ShortcutsSection"
 
 const SECTIONS: { id: SettingsSection; label: string; icon: typeof Plug; beta?: boolean }[] = [
   { id: "providers", label: "供应商", icon: Plug },
-  { id: "harnesses", label: "运行环境", icon: Cpu },
-  { id: "appearance", label: "主题", icon: Palette },
+  { id: "harnesses", label: "Harness", icon: Cpu },
+  { id: "appearance", label: "外观", icon: Palette },
   { id: "layout", label: "实验室", icon: FlaskConical, beta: true },
   { id: "shortcuts", label: "快捷键", icon: Keyboard },
 ]

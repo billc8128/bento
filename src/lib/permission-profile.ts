@@ -1,4 +1,4 @@
-/** 默认权限档位偏好:新建会话时继承,localStorage 持久化(设置 → 运行环境 可改)。 */
+/** 默认权限档位偏好:新建会话时继承,localStorage 持久化(设置 → Harness 可改)。 */
 
 import { useSyncExternalStore } from "react"
 

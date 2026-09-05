@@ -261,7 +261,7 @@ export function AppSidebar() {
           {/* 会话行不带图标:标题落文字轴(pl-11 = 44px),层级靠错落缩进表达,
               不靠压父级颜色(Codex 式) */}
           <span className="flex-1 truncate text-sm">{s.title}</span>
-          {/* 状态指示样式由设置 → 主题 里的 StatusGlyph 决定 */}
+          {/* 状态指示样式由设置 → 外观 里的 StatusGlyph 决定 */}
           {attention && <StatusGlyph state="attention" variant={statusGlyph} />}
           {!attention && running && <StatusGlyph state="running" variant={statusGlyph} />}
           {!attention && !running && unread && <StatusGlyph state="unread" variant={statusGlyph} />}
