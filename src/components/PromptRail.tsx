@@ -41,7 +41,6 @@ export function PromptRail({ containerRef, messages }: {
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   const hideTimerRef = useRef(0)
   const activeRef = useRef(false)
-  const popHoverRef = useRef(false)
 
   const getViewport = () =>
     containerRef.current?.querySelector<HTMLDivElement>('[data-slot="scroll-area-viewport"]') ?? null
@@ -49,33 +48,49 @@ export function PromptRail({ containerRef, messages }: {
   const findMsgEl = (id: string) =>
     containerRef.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(id)}"]`) ?? null
 
-  // ---------- 浮现/隐藏:无覆盖层,靠容器 mousemove 里算右缘距离,
-  // 免得热区 div 盖住气泡右缘的「展开全文」等可点元素 ----------
-  useEffect(() => {
+  // ---------- 浮现/隐藏:document 级监听,任何移动/滚动都重新评估。
+  // 只挂容器会漏:鼠标移去 composer 等兄弟元素、或 pop 滑动盖住静止鼠标
+  // (mouseenter 不触发)时,容器收不到事件,组件就卡死在展开态。
+  // 不用覆盖层热区,免得盖住气泡右缘的「展开全文」等可点元素 ----------
+  const lastMouseRef = useRef<{ x: number; y: number } | null>(null)
+
+  const evaluate = (x: number, y: number) => {
     const el = containerRef.current
     if (!el) return
-    const onMove = (e: MouseEvent) => {
-      const r = el.getBoundingClientRect()
-      if (r.right - e.clientX <= HOT_EDGE) {
-        window.clearTimeout(hideTimerRef.current)
-        if (!activeRef.current) {
-          activeRef.current = true
-          setActive(true)
-          const cur = listRef.current?.querySelector<HTMLElement>("[data-current='1']")
-          if (cur) scrollListTo(cur)
-        }
-      } else if (!popHoverRef.current) {
-        scheduleHide()
+    const r = el.getBoundingClientRect()
+    const inHot = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom && r.right - x <= HOT_EDGE
+    // 几何判断鼠标是否在浮卡上,不依赖 mouseenter——浮卡滑动盖住
+    // 静止鼠标时 enter 不触发,光靠事件标志会永远收不起来
+    const pop = popRef.current
+    const pr = activeRef.current && pop ? pop.getBoundingClientRect() : null
+    const overPop = !!pr && x >= pr.left && x <= pr.right && y >= pr.top && y <= pr.bottom
+    if (inHot || overPop) {
+      window.clearTimeout(hideTimerRef.current)
+      if (!activeRef.current) {
+        activeRef.current = true
+        setActive(true)
+        const cur = listRef.current?.querySelector<HTMLElement>("[data-current='1']")
+        if (cur) scrollListTo(cur)
       }
+    } else {
+      scheduleHide()
+    }
+  }
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      lastMouseRef.current = { x: e.clientX, y: e.clientY }
+      evaluate(e.clientX, e.clientY)
     }
     const onLeave = () => {
-      if (!popHoverRef.current) scheduleHide()
+      lastMouseRef.current = null
+      scheduleHide()
     }
-    el.addEventListener("mousemove", onMove)
-    el.addEventListener("mouseleave", onLeave)
+    document.addEventListener("mousemove", onMove, true)
+    document.documentElement.addEventListener("mouseleave", onLeave)
     return () => {
-      el.removeEventListener("mousemove", onMove)
-      el.removeEventListener("mouseleave", onLeave)
+      document.removeEventListener("mousemove", onMove, true)
+      document.documentElement.removeEventListener("mouseleave", onLeave)
       window.clearTimeout(hideTimerRef.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -117,8 +132,14 @@ export function PromptRail({ containerRef, messages }: {
       setCurrentIdx(idx)
     }
     compute()
-    viewport.addEventListener("scroll", compute, { passive: true })
-    return () => viewport.removeEventListener("scroll", compute)
+    // 滚动会改变鼠标与热区的相对关系(鼠标不动但内容在动),重新评估一次
+    const onScroll = () => {
+      compute()
+      const m = lastMouseRef.current
+      if (m) evaluate(m.x, m.y)
+    }
+    viewport.addEventListener("scroll", onScroll, { passive: true })
+    return () => viewport.removeEventListener("scroll", onScroll)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promptsKey])
 
@@ -214,7 +235,10 @@ export function PromptRail({ containerRef, messages }: {
       <div
         ref={railRef}
         onMouseMove={(e) => wave(e.clientY)}
-        onMouseLeave={waveReset}
+        onMouseLeave={() => {
+          waveReset()
+          scheduleHide()
+        }}
         className={cn(
           "absolute top-1/2 right-1.5 z-10 flex w-[22px] -translate-y-1/2 cursor-pointer flex-col items-end py-3 transition-all duration-200",
           active ? "translate-x-0 opacity-100" : "translate-x-1.5 opacity-0",
@@ -242,8 +266,8 @@ export function PromptRail({ containerRef, messages }: {
 
       <div
         ref={popRef}
-        onMouseEnter={() => { popHoverRef.current = true }}
-        onMouseLeave={() => { popHoverRef.current = false; scheduleHide() }}
+        onMouseEnter={() => window.clearTimeout(hideTimerRef.current)}
+        onMouseLeave={() => scheduleHide()}
         className={cn(
           "absolute right-8 z-20 flex max-h-[calc(100%-24px)] w-[248px] flex-col overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-pop transition-[opacity,transform,top] duration-200",
           active ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-2 opacity-0",
