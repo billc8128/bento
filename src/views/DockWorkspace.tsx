@@ -1,7 +1,8 @@
 /**
- * 主区布局宿主(L3):dockview 接管,受管布局(ARCHITECTURE.md §6.1)。
+ * 主区布局宿主(L3):dockview 接管,默认受管布局(ARCHITECTURE.md §6.1)。
  *
- * - 无标签页头、禁浮动组。用户手势 = 拖分隔条、关面板、会话拖入分栏
+ * - 受管(默认):隐藏标签头、禁浮动组。用户手势 = 拖分隔条、关面板、会话拖入分栏
+ * - 标签页模式(设置页开启):组头可见,会话/应用可叠放,浏览器式切换
  * - 布局持久化:防抖写 localStorage,损坏/viewId 未注册回退默认布局
  * - 外部拖入:侧栏会话行带 application/x-bento-session,落点由 dockview 算
  */
@@ -128,11 +129,12 @@ function isSessionDrag(e: DragEvent | PointerEvent): e is DragEvent {
 }
 
 export function DockWorkspace() {
-  const { appsFocused } = useLayout()
+  const { mode, appsFocused } = useLayout()
   const { initialized, sessions: liveSessions } = useLive()
   const newSession = useNewSession()
   const apiRef = useRef<DockviewApi | null>(null)
   const hostRef = useRef<HTMLDivElement>(null)
+  const managed = mode === "managed"
 
   // Session index 真正加载后再清理恢复布局。不能在初始空数组阶段 prune，
   // 否则会把所有持久化 Panel 误判为已删除，再退化成单 Panel。
@@ -181,7 +183,7 @@ export function DockWorkspace() {
 
     let direction = positionToDirection(e.position)
     // 受管布局没有标签页,落进组内(within)会叠在别的面板后面看不见——转成右分栏
-    if (direction === "within") direction = "right"
+    if (managed && direction === "within") direction = "right"
 
     openSessionAt(
       sessionId,
@@ -202,7 +204,7 @@ export function DockWorkspace() {
         theme={BENTO_THEME}
         onReady={onReady}
         onDidDrop={onDidDrop}
-        disableFloatingGroups={true}
+        disableFloatingGroups={managed}
         hideBorders={false}
       />
       {/* 无会话自动 onboarding;已有会话时点「新对话」覆盖到同一完整起始页。

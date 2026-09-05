@@ -16,6 +16,8 @@ import { liveMeta } from "@/lib/live-store"
 
 type PanelPosition = AddPanelOptions["position"]
 
+export type LayoutMode = "managed" | "free"
+
 export type LayoutSnapshot = {
   /** 已打开的会话 id(按面板顺序) */
   openSessionIds: string[]
@@ -25,6 +27,19 @@ export type LayoutSnapshot = {
   appsFocused: boolean
   /** 实际可见 Session 的瞬时空间邻接关系。 */
   adjacency: UiSessionAdjacency[]
+  /** managed(默认)= 无标签头受管布局;free = 标签页模式,组头可见可叠放 */
+  mode: LayoutMode
+}
+
+const MODE_KEY = "bento.layoutMode"
+
+function loadMode(): LayoutMode {
+  try {
+    if (localStorage.getItem(MODE_KEY) === "free") return "free"
+  } catch {
+    /* ignore */
+  }
+  return "managed"
 }
 
 let api: DockviewApi | null = null
@@ -33,6 +48,7 @@ let snapshot: LayoutSnapshot = {
   focusedSessionId: null,
   appsFocused: false,
   adjacency: [],
+  mode: loadMode(),
 }
 
 const listeners = new Set<() => void>()
@@ -78,20 +94,21 @@ export function attachDockApi(next: DockviewApi | null, container?: HTMLElement 
   headerObserver = null
   headerHost = container ?? null
   if (api && container) {
-    headerObserver = new MutationObserver(() => hideGroupHeaders())
+    headerObserver = new MutationObserver(() => applyHeaderMode())
     headerObserver.observe(container, { childList: true, subtree: true })
   }
   refresh()
 }
 
-/** 受管布局不显示组头(标签页)。两条腿:dockview 状态 api(对已注册组)+
+/** 组头(标签页)显隐跟随模式。两条腿:dockview 状态 api(对已注册组)+
  *  DOM 直写(对注册滞后的组);dockview 自己的 setter 也是写同样的 inline style */
-function hideGroupHeaders() {
+function applyHeaderMode() {
   if (!api) return
-  for (const g of api.groups) g.header.hidden = true
+  const hidden = snapshot.mode === "managed"
+  for (const g of api.groups) g.header.hidden = hidden
   if (headerHost) {
     for (const el of headerHost.querySelectorAll<HTMLElement>(".dv-tabs-and-actions-container")) {
-      el.style.display = "none"
+      el.style.display = hidden ? "none" : ""
     }
   }
 }
@@ -103,7 +120,7 @@ export function refresh() {
   let appsFocused = false
   let adjacency: UiSessionAdjacency[] = []
   if (api) {
-    hideGroupHeaders()
+    applyHeaderMode()
     for (const p of api.panels) {
       const sid = sessionIdOf(p.id)
       if (sid) open.push(sid)
@@ -191,6 +208,20 @@ export function closeSession(sessionId: string) {
   if (snapshot.openSessionIds.length <= 1) return
   api.removePanel(panel)
   refresh()
+}
+
+/** 标签页模式开关(设置页)。模式切换立即作用于现有组头,
+ *  refresh 内也有一份,这里保证不依赖后续事件 */
+export function setLayoutMode(mode: LayoutMode) {
+  if (snapshot.mode === mode) return
+  snapshot = { ...snapshot, mode }
+  try {
+    localStorage.setItem(MODE_KEY, mode)
+  } catch {
+    /* ignore */
+  }
+  if (api) for (const g of api.groups) g.header.hidden = mode === "managed"
+  emit()
 }
 
 /** 应用面板的固定 id:单例,一点即活 */

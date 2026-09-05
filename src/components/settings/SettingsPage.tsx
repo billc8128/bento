@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState } from "react"
-import { ChevronLeft, Cpu, Keyboard, Palette, Plug } from "lucide-react"
+import { ChevronLeft, Cpu, Keyboard, Palette, Plug, SquareSplitHorizontal } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -13,6 +13,7 @@ import { closeSettings, openSettings, useSettingsPage, type SettingsSection } fr
 import { cn } from "@/lib/utils"
 
 import { AppearanceSection } from "./AppearanceSection"
+import { LayoutSection } from "./LayoutSection"
 import { HarnessesSection } from "./HarnessesSection"
 import { ProvidersSection } from "./ProvidersSection"
 import { ShortcutsSection } from "./ShortcutsSection"
@@ -21,6 +22,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: typeof Plug }[] = [
   { id: "providers", label: "供应商", icon: Plug },
   { id: "harnesses", label: "运行环境", icon: Cpu },
   { id: "appearance", label: "主题", icon: Palette },
+  { id: "layout", label: "布局", icon: SquareSplitHorizontal },
   { id: "shortcuts", label: "快捷键", icon: Keyboard },
 ]
 
@@ -116,6 +118,7 @@ export function SettingsPage() {
                 }} />
               )}
               {section === "appearance" && <AppearanceSection />}
+              {section === "layout" && <LayoutSection />}
               {section === "shortcuts" && <ShortcutsSection />}
             </div>
           </div>
