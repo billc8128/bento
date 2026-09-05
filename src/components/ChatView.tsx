@@ -414,9 +414,10 @@ export function ChatView({ messages, pending = true, turn, onResolveApproval, qu
         title="回到最新"
         onClick={() => scrollToLatest("smooth")}
         className={cn(
-          "absolute right-4 z-20 grid size-8 place-items-center rounded-full border border-border bg-card shadow-pop hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-          // 贴住输入区上沿,别浮在正文中间挡视线
-          traits.composer === "floating" ? "bottom-44" : "bottom-3",
+          "absolute left-1/2 z-20 grid size-8 -translate-x-1/2 place-items-center rounded-full border border-border bg-card shadow-pop hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+          // 居中贴住输入区上沿:右缘是检索条的热区,别再叠在那;
+          // floating 的渐变留白 -top-12,按钮压在输入卡上沿即可
+          traits.composer === "floating" ? "bottom-40" : "bottom-3",
         )}
       >
         <ArrowDown className="size-4" />
