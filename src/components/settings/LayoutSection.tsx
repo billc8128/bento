@@ -3,7 +3,7 @@
  * 开关状态在 layout-store,全局唯一入口——不放侧栏菜单,低频设置归这里。
  */
 
-import { Checkbox } from "@/components/ui/checkbox"
+import { Switch } from "@/components/ui/switch"
 import { setLayoutMode, useLayout } from "@/lib/layout-store"
 
 export function LayoutSection() {
@@ -19,9 +19,9 @@ export function LayoutSection() {
             关闭则回到受管布局,分栏靠侧栏拖拽。
           </span>
         </div>
-        <Checkbox
+        <Switch
           checked={mode === "free"}
-          onCheckedChange={(v) => setLayoutMode(v === true ? "free" : "managed")}
+          onCheckedChange={(v) => setLayoutMode(v ? "free" : "managed")}
           aria-label="标签页模式"
         />
       </div>
