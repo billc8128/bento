@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url"
 import * as acp from "@agentclientprotocol/sdk"
 
 import { managedBinary, managedUvxBinary } from "../binaries/manager"
-import { resolveHarnessRuntime } from "../harness-runtime"
+import { HERMES_AGENT_VERSION, resolveHarnessRuntime } from "../harness-runtime"
 import { resolveRealPath } from "../realpath"
 import { harnessUsage } from "./usage"
 import { translateAcpUpdate } from "./acp-translator"
@@ -105,7 +105,7 @@ async function harnessCommand(id: AcpDriverId): Promise<SpawnSpec> {
     async () => id === "hermes"
       ? {
           cmd: await managedUvxBinary(),
-          args: ["--python", "3.12", "--from", "hermes-agent[acp]==0.19.0", "hermes-acp"],
+          args: ["--python", "3.12", "--from", `hermes-agent[acp]==${HERMES_AGENT_VERSION}`, "hermes-acp"],
         }
       : { cmd: await managedBinary(id), args: ["acp"] },
   )

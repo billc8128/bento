@@ -3,24 +3,16 @@ import { Check, RefreshCw } from "lucide-react"
 
 import { HarnessIcon } from "@/components/HarnessIcon"
 import { Button } from "@/components/ui/button"
-import { HARNESSES, type HarnessRuntimeStatus } from "@/core/harness"
+import { Switch } from "@/components/ui/switch"
+import { HARNESSES, getHarness, type HarnessRuntimeStatus } from "@/core/harness"
 import { PERMISSION_PROFILES } from "@/core/permission"
+import { setHarnessEnabled, useHarnessPreferences } from "@/lib/harness-preferences"
 import { setDefaultPermissionProfile, useDefaultPermissionProfile } from "@/lib/permission-profile"
 import { cn } from "@/lib/utils"
 
 function sourceLabel(status: HarnessRuntimeStatus | undefined): string {
-  if (!status) return "检测中…"
-  // source 是首选执行来源(override → managed/bundled);managed 首次使用时按需下载。
-  if (status.source === "override") return status.version ? `指定路径 · ${status.version}` : "指定路径"
-  if (status.source === "bundled") return status.version ? `Bento 内置 · ${status.version}` : "Bento 内置"
-  if (status.source === "managed") return status.version ? `Bento 受管 · ${status.version}` : "Bento 受管 · 首次使用时安装"
-  return "未安装"
-}
-
-function localInstallNote(status: HarnessRuntimeStatus | undefined): string | null {
-  const install = status?.localInstall
-  if (!install) return null
-  return `本机另有安装${install.version ? ` ${install.version}` : ""},未使用`
+  // 版本透传:override 探测、managed 取 manifest pin、bundled 取内嵌包版本
+  return status?.version ?? "检测中…"
 }
 
 /** 板块骨架:标题 + 一行说明 + 内容,全页统一节奏 */
@@ -46,6 +38,7 @@ export function HarnessesSection() {
   const [statuses, setStatuses] = useState<HarnessRuntimeStatus[]>([])
   const [loading, setLoading] = useState(true)
   const defaultProfile = useDefaultPermissionProfile()
+  const { isEnabled } = useHarnessPreferences()
   const [ruleGroups, setRuleGroups] = useState<
     { cwd: string; rules: { harnessId: string; rule: string; createdAt: string }[] }[]
   >([])
@@ -75,7 +68,7 @@ export function HarnessesSection() {
     <div className="flex flex-col gap-8">
       <Section
         title="运行环境"
-        desc="会话使用 Bento 内置或受管版本,首次使用时自动安装。"
+        desc="会话始终使用 Bento 管理的版本,首次使用时自动安装;关闭后新建会话不可选。"
         action={
           <Button variant="ghost" size="icon" className="size-8" onClick={refresh} disabled={loading}>
             <RefreshCw className={loading ? "animate-spin" : ""} />
@@ -86,7 +79,6 @@ export function HarnessesSection() {
         <div className="flex flex-col divide-y divide-border rounded-xl border border-border">
           {HARNESSES.map((harness) => {
             const status = statuses.find((item) => item.harnessId === harness.id)
-            const note = localInstallNote(status)
             return (
               <div key={harness.id} className="flex items-center gap-3 px-4 py-3">
                 <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted">
@@ -94,13 +86,15 @@ export function HarnessesSection() {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium">{harness.name}</span>
-                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                  <span className="mt-0.5 block truncate font-mono text-xs text-muted-foreground">
                     {sourceLabel(status)}
                   </span>
                 </span>
-                {note && (
-                  <span className="shrink-0 text-xs text-muted-foreground/70">{note}</span>
-                )}
+                <Switch
+                  checked={isEnabled(harness.id)}
+                  onCheckedChange={(v) => setHarnessEnabled(harness.id, v)}
+                  aria-label={`启用 ${harness.name}`}
+                />
               </div>
             )
           })}
@@ -138,12 +132,12 @@ export function HarnessesSection() {
       </Section>
 
       <Section
-        title="权限规则"
-        desc="审批时选「本会话总是允许」的工具会记到项目的 .bento/permissions.json,之后自动放行。"
+        title="自动放行规则"
+        desc="工具审批时选过「本会话总是允许」的命令会记到这里,之后在该项目里不再询问;规则写在项目的 .bento/permissions.json。逐条可删,删后恢复逐次询问。"
       >
         {ruleGroups.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
-            暂无规则
+            暂无规则——审批弹窗里选「本会话总是允许」后会出现在这里
           </p>
         ) : (
           <div className="flex flex-col gap-2">
@@ -156,7 +150,9 @@ export function HarnessesSection() {
                       <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-xs">
                         {item.rule}
                       </span>
-                      <span className="type-micro text-muted-foreground/70">{item.harnessId}</span>
+                      <span className="type-micro text-muted-foreground/70">
+                        {getHarness(item.harnessId).name}
+                      </span>
                       <span className="flex-1" />
                       <button
                         type="button"

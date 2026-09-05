@@ -1,9 +1,9 @@
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { ArrowUp, Folder, Loader2, MessageCircle, X } from "lucide-react"
 
 import { WelcomeHero } from "@/components/WelcomeHero"
 import { ProjectPicker } from "@/components/ProjectPicker"
-import { RuntimePicker } from "@/components/RuntimePicker"
+import { RuntimePicker, HARNESS_ORDER } from "@/components/RuntimePicker"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { DEFAULT_HARNESS_ID, getHarness, type HarnessId } from "@/core/harness"
@@ -15,6 +15,7 @@ import {
   providersForModelPicker,
 } from "@/core/provider"
 import type { Effort, SessionScope } from "@/core/types"
+import { useHarnessPreferences } from "@/lib/harness-preferences"
 import { closeNewSession } from "@/lib/new-session-store"
 import { useDefaultPermissionProfile } from "@/lib/permission-profile"
 import { loadRecentCwds, saveRecentCwd } from "@/lib/recent-cwds"
@@ -53,6 +54,14 @@ export function NewSessionView({
   const [error, setError] = useState<string | null>(null)
 
   const harness = getHarness(harnessId)
+  // 设置里关掉的 Harness 不能用于新会话:当前选中项被关时回落到第一个启用的
+  const { isEnabled } = useHarnessPreferences()
+  useEffect(() => {
+    if (!isEnabled(harnessId)) {
+      const fallback = HARNESS_ORDER.find((id) => isEnabled(id))
+      if (fallback) setHarnessId(fallback)
+    }
+  }, [harnessId, isEnabled])
   const providerCatalog = useAllProviderCatalogs(scope === "project" ? cwd : "")
   const selectableProviders = useMemo(
     () => providersForModelPicker(providerCatalog.providers, harnessId)

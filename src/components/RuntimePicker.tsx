@@ -19,6 +19,7 @@ import {
 } from "@/core/provider"
 import { EFFORTS, type Effort } from "@/core/types"
 import { openSettings } from "@/lib/settings-store"
+import { useHarnessPreferences } from "@/lib/harness-preferences"
 import { useLocalImportSources } from "@/lib/local-import"
 import { cn } from "@/lib/utils"
 
@@ -44,7 +45,7 @@ type RuntimePickerProps = {
   modelLocked?: boolean
 }
 
-const HARNESS_ORDER: HarnessId[] = ["pi", "codex", "claude-code", "kimi", "opencode", "omp", "hermes"]
+export const HARNESS_ORDER: HarnessId[] = ["pi", "codex", "claude-code", "kimi", "opencode", "omp", "hermes"]
 
 type UnifiedRow = { provider: ProviderView; model: ProviderModel }
 type PickerView = "root" | "harness" | "model" | "effort" | "permission"
@@ -68,7 +69,11 @@ export function RuntimePicker({
   const rowRefs = useRef(new Map<number, HTMLButtonElement>())
 
   const harness = getHarness(selection.harnessId)
-  const harnessOptions = HARNESS_ORDER.map((id) => HARNESSES.find((item) => item.id === id)!)
+  const { isEnabled } = useHarnessPreferences()
+  // 设置里关掉的 Harness 不可选;当前选中的保留展示(存量会话/进行中会话不受开关影响)
+  const harnessOptions = HARNESS_ORDER
+    .map((id) => HARNESSES.find((item) => item.id === id)!)
+    .filter((item) => isEnabled(item.id) || item.id === selection.harnessId)
   const selectableProviders = useMemo(() => {
     const available = providersForModelPicker(providers, selection.harnessId)
     // 活跃会话把当前 provider 置顶去重(其模型无条件保留),其余按 canonical 去重。

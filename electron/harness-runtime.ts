@@ -1,9 +1,11 @@
 import { execFile } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 
 import type { HarnessId, HarnessRuntimeStatus } from "../src/core/harness"
+import { BINARY_MANIFEST, type ManagedBinaryName } from "./binaries/manifest"
 
 const execFileAsync = promisify(execFile)
 
@@ -121,6 +123,64 @@ async function executableVersion(executable: string): Promise<string | undefined
   }
 }
 
+/** hermes 的 uvx pin 版本,acp 驱动拼 --from 参数与状态上报共用同一处。 */
+export const HERMES_AGENT_VERSION = "0.19.0"
+
+/** 从包内入口向上找最近的 package.json 拿版本(exports 封了 ./package.json 直读) */
+function bundledPackageVersion(spec: string): string | undefined {
+  try {
+    let dir = path.dirname(fileURLToPath(import.meta.resolve(spec)))
+    for (;;) {
+      const pkgPath = path.join(dir, "package.json")
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as { name?: string; version?: string }
+        if (pkg.name && spec.startsWith(pkg.name)) return pkg.version
+      } catch {
+        /* 继续向上 */
+      }
+      const parent = path.dirname(dir)
+      if (parent === dir) return undefined
+      dir = parent
+    }
+  } catch {
+    return undefined
+  }
+}
+
+// claude-code 的 bundled CLI 是 SDK 包内嵌的 cli.js,包版本 ≠ CLI 版本,
+// 真实版本只能问 CLI 本身;探测一次后缓存。
+let claudeCliVersion: Promise<string | undefined> | null = null
+function bundledClaudeVersion(): Promise<string | undefined> {
+  if (!claudeCliVersion) {
+    try {
+      const cli = fileURLToPath(import.meta.resolve("@anthropic-ai/claude-agent-sdk"))
+      const cliPath = path.join(path.dirname(cli), "cli.js")
+      claudeCliVersion = execFileAsync(process.execPath, [cliPath, "--version"], {
+        timeout: 5_000,
+        maxBuffer: 64 * 1024,
+      }).then(
+        ({ stdout, stderr }) => `${stdout}${stderr}`.trim().split(/\r?\n/, 1)[0] || undefined,
+        () => undefined,
+      )
+    } catch {
+      claudeCliVersion = Promise.resolve(undefined)
+    }
+  }
+  return claudeCliVersion
+}
+
+/** managed/bundled 的确定性版本:manifest pin / 内嵌包,不猜 PATH。 */
+function preferredRuntimeVersion(harnessId: HarnessId): string | undefined | Promise<string | undefined> {
+  const fallback = DEFINITIONS[harnessId].fallback
+  if (fallback === "managed") {
+    if (harnessId === "hermes") return HERMES_AGENT_VERSION
+    return BINARY_MANIFEST[harnessId as ManagedBinaryName]?.version
+  }
+  if (harnessId === "pi") return bundledPackageVersion("@earendil-works/pi-coding-agent/rpc-entry")
+  if (harnessId === "claude-code") return bundledClaudeVersion()
+  return undefined
+}
+
 /**
  * 上报**首选执行来源**(override → managed/bundled 的解析优先级),不是"实际执行":
  * managed 后续解析失败仍可能退 PATH。PATH 本机安装只是 localInstall 附注,
@@ -143,6 +203,7 @@ export async function harnessRuntimeStatus(harnessId: HarnessId): Promise<Harnes
   return {
     harnessId,
     source: definition.fallback,
+    version: await preferredRuntimeVersion(harnessId),
     usable: definition.fallback !== "missing",
     fallbackAvailable: definition.pathFallback && local !== null,
     ...(local ? { localInstall: { path: local.path, version: await executableVersion(local.path) } } : {}),
