@@ -417,7 +417,7 @@ export function ChatView({ messages, pending = true, turn, onResolveApproval, qu
           "absolute left-1/2 z-20 grid size-8 -translate-x-1/2 place-items-center rounded-full border border-border bg-card shadow-pop hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
           // 居中贴住输入区上沿:右缘是检索条的热区,别再叠在那;
           // floating 的渐变留白 -top-12,按钮压在输入卡上沿即可
-          traits.composer === "floating" ? "bottom-40" : "bottom-3",
+          traits.composer === "floating" ? "bottom-36" : "bottom-3",
         )}
       >
         <ArrowDown className="size-4" />
