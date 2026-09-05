@@ -269,7 +269,7 @@ export function PromptRail({ containerRef, messages }: {
         onMouseEnter={() => window.clearTimeout(hideTimerRef.current)}
         onMouseLeave={() => scheduleHide()}
         className={cn(
-          "absolute right-8 z-20 flex max-h-[calc(100%-24px)] w-[248px] flex-col overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-pop transition-[opacity,transform,top] duration-200",
+          "absolute right-8 z-20 flex max-h-[min(480px,calc(100%-24px))] w-[248px] flex-col overflow-hidden rounded-xl border border-border bg-popover/90 text-popover-foreground shadow-pop backdrop-blur-md transition-[opacity,transform,top] duration-200",
           active ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-2 opacity-0",
         )}
         style={{ top: popTop }}
@@ -285,8 +285,17 @@ export function PromptRail({ containerRef, messages }: {
               type="button"
               data-current={i === currentIdx ? "1" : undefined}
               onClick={() => jumpTo(p)}
+              onMouseEnter={() => {
+                setHoverIdx(i)
+                const t = tickRefs.current[i]
+                if (t) t.style.width = `${TICK_W_MAX}px`
+              }}
+              onMouseLeave={() => {
+                setHoverIdx(null)
+                waveReset()
+              }}
               className={cn(
-                "flex w-full items-baseline gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors",
+                "flex w-full items-baseline gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted",
                 i === hoverIdx && "bg-muted",
                 p.collab ? "text-muted-foreground" : "text-foreground",
                 i === currentIdx && "font-medium",
