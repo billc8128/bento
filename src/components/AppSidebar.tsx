@@ -209,8 +209,10 @@ export function AppSidebar() {
     // 起始页覆盖层打开时,它是唯一的"当前位置":压掉会话行的焦点高亮,
     // 否则点新对话后与底层焦点会话双高亮(真实事故)
     const active = key === focusedSessionId && !newSessionOpen
-    // 本地发送集合之外,main 侧 runtime working(协作唤醒)同样算 running
-    const running = isRunning(key) || liveMeta(key)?.runtime === "working"
+    // 本地发送集合之外,main 侧 runtime working(协作唤醒)同样算 running;
+    // blocked(挂起审批)turn 未结束,也算 running——attention 图标另有最高优先级。
+    const runtime = liveMeta(key)?.runtime
+    const running = isRunning(key) || runtime === "working" || runtime === "blocked"
     const unread = hasUnreadSessionMessage(key)
     // 审批 hold 优先级最高:回合卡在等用户,比"进行中"更需要被看见
     const attention = hasPendingApproval(key)

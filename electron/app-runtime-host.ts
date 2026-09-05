@@ -323,11 +323,11 @@ export class AppRuntimeHost {
     }))
 
     server.registerTool("session_list", {
-      description: "列出全部可协作 Session;默认跨项目,含 sleeping。",
+      description: "列出全部可协作 Session;默认跨项目,含 sleeping。runtime 语义:working=正在推进;blocked=挂起审批等用户介入(对调用方视为 settled);done=回合完成但用户尚未查看;idle=就绪;sleeping=未加载。",
       inputSchema: {
         scope: z.enum(["chat", "project"]).optional(),
         cwd: z.string().optional(),
-        runtime: z.enum(["sleeping", "idle", "working"]).optional(),
+        runtime: z.enum(["sleeping", "idle", "working", "done", "blocked"]).optional(),
       },
     }, wrap(async (args) => {
       const input: SessionListInput = {}
@@ -353,7 +353,7 @@ export class AppRuntimeHost {
     })))
 
     server.registerTool("session_create", {
-      description: "创建协作者 Session；同 Harness 继承调用者配置，跨 Harness 自动使用该 Harness 最近或默认的可执行模型。派发长任务建议 wait:true 等首轮 settled；若返回 prompt=accepted 且无 reply，是超时但任务仍在跑，应继续 session_wait 或先 session_read 看进展。",
+      description: "创建协作者 Session；同 Harness 继承调用者配置，跨 Harness 自动使用该 Harness 最近或默认的可执行模型。派发长任务建议 wait:true 等首轮 settled；若返回 prompt=accepted 且无 reply，是超时但任务仍在跑，应继续 session_wait 或先 session_read 看进展；省略 timeoutMs 为无限等。wait:true 时 prompt=failed 且 error.code=session_prompt_stalled 表示发送后目标无响应。",
       inputSchema: {
         title: z.string().optional(),
         prompt: z.string().optional(),
@@ -372,7 +372,7 @@ export class AppRuntimeHost {
     }, wrap(async (args) => requireService().create(caller, args as never)))
 
     server.registerTool("session_send", {
-      description: "向目标 Session 发送消息;working 目标返回 session_busy,第一版不排队。wait:true 等本轮 settled 并带回 reply;超时返回 status=accepted(任务仍在跑),不是失败,可继续 session_wait。",
+      description: "向目标 Session 发送消息。working 返回 session_busy,blocked(等用户审批)返回 session_blocked,均不排队。wait:true 等本轮 settled 并带回 reply;wait:true 且发送后 5s 内目标无任何活动返回 session_prompt_stalled(消息已送达,目标可能未真正处理,应 session_read/ui_state 检查);省略 timeoutMs 为无限等,显式超时返回 status=accepted(任务仍在跑),不是失败。",
       inputSchema: {
         targetSessionId: z.string(),
         text: z.string(),
@@ -382,7 +382,7 @@ export class AppRuntimeHost {
     }, wrap(async (args) => requireService().send(caller, args as never)))
 
     server.registerTool("session_read", {
-      description: "读取目标 Session 的脱敏消息历史(afterSeq 游标 + limit)。",
+      description: "读取目标 Session 的脱敏消息历史(afterSeq 游标 + limit)。纯读取:不会把目标的 done(未读)标记为已看,只有用户在 UI 聚焦该 Session 才算看过。",
       inputSchema: {
         targetSessionId: z.string(),
         afterSeq: z.number().int().nonnegative().optional(),
@@ -430,10 +430,10 @@ export class AppRuntimeHost {
     }, wrap(async (args) => requireService().uiFocus(caller, { sessionId: String(args.sessionId) })))
 
     server.registerTool("session_wait", {
-      description: "等待目标 Session 状态(settled/working/next_message)。监督协作者进度的标准做法;超时不 cancel 目标,且返回 matched=timeout + 目标当前状态——这是中性结果,表示仍在跑,可再次调用继续等。",
+      description: "等待目标 Session 状态(settled/working/next_message/blocked)。监督协作者进度的标准做法;跟的是生命周期不是单个 turn。settled 含 blocked——目标挂起审批会立即唤醒你去处理。省略 timeoutMs 为无限等(直到匹配或目标删除);显式超时返回 matched=timeout + 目标当前状态,这是中性结果,表示仍在跑,可再次调用继续等。",
       inputSchema: {
         targetSessionId: z.string(),
-        until: z.enum(["working", "settled", "next_message"]).optional(),
+        until: z.enum(["working", "settled", "next_message", "blocked"]).optional(),
         afterSeq: z.number().int().nonnegative().optional(),
         timeoutMs: z.number().int().positive().max(1_800_000).optional(),
       },

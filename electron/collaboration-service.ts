@@ -81,6 +81,14 @@ export type SessionBackend = {
     afterSeq: number,
     timeoutMs: number,
   ): Promise<{ session: CollaborationSession; matched: SessionWaitResult["matched"] }>
+  /** herdr agent_prompt_stalled:提交后短时间内必须观察到目标任何活动,
+   * 超时抛 timeout(由 service 转成 session_prompt_stalled)。可选:fake/降级实现
+   * 没有活动流时省略,等待路径跳过 stall 检测。 */
+  waitForActivity?(
+    targetSessionId: string,
+    afterSeq: number,
+    timeoutMs: number,
+  ): Promise<void>
 }
 
 export type CollaborationCatalog = {
@@ -99,7 +107,12 @@ export type CollaborationCatalog = {
   }): Promise<CollaborationSelection | null>
 }
 
-const DEFAULT_TIMEOUT_MS = 120_000
+/** 省略 timeoutMs = 无限等(herdr 同语义),直到匹配/目标删除;显式传值受
+ *  MCP schema 上限(1800s)约束。setTimeout 的 Infinity 钳制在 sessions.ts 内处理。 */
+const DEFAULT_TIMEOUT_MS = Number.POSITIVE_INFINITY
+
+/** stall 检测窗口(herdr 的 5s 惯例):wait 提交后这么久没有任何活动 = 可能没启动。 */
+const STALL_TIMEOUT_MS = 5_000
 
 export class CollaborationService {
   constructor(
@@ -208,9 +221,13 @@ export class CollaborationService {
       }
       return { session, prompt, ui }
     } catch (error) {
+      // 目标状态类错误透传真实 code(busy/blocked/stalled),其余归为首个 Prompt 失败。
       const code =
-        error instanceof CollaborationError && error.code === "session_busy"
-          ? "session_busy"
+        error instanceof CollaborationError &&
+        (error.code === "session_busy" ||
+          error.code === "session_blocked" ||
+          error.code === "session_prompt_stalled")
+          ? error.code
           : "session_created_prompt_failed"
       return {
         session,
@@ -449,7 +466,9 @@ export class CollaborationService {
     }
     const caller = this.requireCaller(callerSessionId)
     const target = this.requireTarget(input.targetSessionId)
-    // 目标正在运行:直接拒绝,不隐式排队,也不落到 backend。
+    // 目标在等用户审批/输入(herdr agent_blocked):显式拒绝,消息进去了也只会
+    // 挂在审批后面,调用方应先叫人处理。working 同理拒绝,不隐式排队。
+    if (target.runtime === "blocked") throw new CollaborationError("session_blocked")
     if (target.runtime === "working") throw new CollaborationError("session_busy")
     const origin: MessageOrigin = {
       kind: "session",
@@ -474,6 +493,22 @@ export class CollaborationService {
     timeoutMs: number | undefined,
     afterSeq: number,
   ): Promise<{ settled: boolean; reply?: SessionMessage }> {
+    // herdr agent_prompt_stalled(--wait 语义):提交后短窗口内目标必须产生活动,
+    // 否则报 stalled 而不是让调用方空等——消息已送达,turn 仍在,可检查后重发。
+    if (this.backend.waitForActivity) {
+      const stallWindow = Math.min(
+        STALL_TIMEOUT_MS,
+        Number.isFinite(timeoutMs) ? (timeoutMs as number) : STALL_TIMEOUT_MS,
+      )
+      try {
+        await this.backend.waitForActivity(targetSessionId, afterSeq, stallWindow)
+      } catch (error) {
+        if (error instanceof CollaborationError && error.code === "timeout") {
+          throw new CollaborationError("session_prompt_stalled")
+        }
+        throw error
+      }
+    }
     try {
       await this.backend.waitForSession(
         targetSessionId,

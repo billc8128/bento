@@ -187,7 +187,8 @@ describe("SessionCollaborationBackend", () => {
     // 后台 rejection 被吸收,不产生 unhandled rejection
     deferreds[1].reject(new Error("boom"))
     await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(manager.runtimeStatus(key)).toBe("idle")
+    // 无焦点完成 = done(有结果未看)
+    expect(manager.runtimeStatus(key)).toBe("done")
   })
 
   it("read:user/assistant/notice 转 SessionMessage;afterSeq/limit/truncated/includeTools 与脱敏", async () => {
@@ -248,10 +249,10 @@ describe("SessionCollaborationBackend", () => {
     emitEvent({ type: "agent_message_chunk", text: "partial" })
     await expect(nextPromise).resolves.toMatchObject({ matched: "next_message" })
 
-    // settled:精确等本次 acceptedSeq 的 turn completion
+    // settled:精确等本次 acceptedSeq 的 turn completion;无焦点完成 → runtime=done
     const settledPromise = backend.waitForSession(key, "settled", 0, 2_000)
     deferreds[0].resolve({ stopReason: "end_turn", usage: { cost: 0.02 } })
-    await expect(settledPromise).resolves.toMatchObject({ matched: "settled", session: { runtime: "idle" } })
+    await expect(settledPromise).resolves.toMatchObject({ matched: "settled", session: { runtime: "done" } })
   })
 
   it("wait settled 在 idle target 上立即返回;timeout 产生稳定错误码", async () => {
@@ -523,5 +524,89 @@ describe("SessionCollaborationBackend wait 边界", () => {
     emitEvent({ type: "agent_message_chunk", text: "回答" })
     await expect(next).resolves.toMatchObject({ matched: "next_message" })
     expect(resolved).toBe(true)
+  })
+})
+
+describe("SessionCollaborationBackend blocked/activity(herdr 对齐)", () => {
+  const APPROVAL: HarnessEvent = {
+    type: "approval_request",
+    id: "apr-1",
+    title: "rm -rf /tmp/x",
+    options: [{ id: "allow_once", label: "允许一次" }],
+  }
+
+  it("until blocked:挂起审批立即匹配;审批结算不误唤醒;until 等待被 approval_changed 唤醒", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-backend-blocked-"))
+    const { driver, emitEvent, deferreds } = scriptedDriver()
+    const { manager, backend } = setup(tempDir, driver)
+    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "m" })
+
+    // 人类 origin 的 turn(无 origin):审批会 hold 住等用户
+    const turn = await manager.startPrompt(key, "干活")
+    const blockedWait = backend.waitForSession(key, "blocked", 0, 5_000)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    emitEvent(APPROVAL)
+    await expect(blockedWait).resolves.toMatchObject({ matched: "blocked" })
+    expect(manager.runtimeStatus(key)).toBe("blocked")
+
+    // settled 视 blocked 为已落定:立即返回,不等 turn 真正结束
+    await expect(backend.waitForSession(key, "settled", 0, 5_000)).resolves.toMatchObject({
+      matched: "settled",
+      session: { runtime: "blocked" },
+    })
+
+    // 审批被结算后:until blocked 不能再匹配(已在持有中的等待不应被 resolved 事件唤醒)
+    manager.resolveApproval(key, "apr-1", "allow_once")
+    expect(manager.runtimeStatus(key)).toBe("working")
+    deferreds[0].resolve({ stopReason: "end_turn" })
+    await turn.completion
+  })
+
+  it("until blocked:已 blocked 的目标立即返回;目标删除立即 not_found", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-backend-blocked2-"))
+    const { driver, emitEvent, deferreds } = scriptedDriver()
+    const { manager, backend } = setup(tempDir, driver)
+    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "m" })
+
+    const turn = await manager.startPrompt(key, "干活")
+    emitEvent(APPROVAL)
+    await expect(backend.waitForSession(key, "blocked", 0, 5_000)).resolves.toMatchObject({
+      matched: "blocked",
+    })
+    await manager.removeSession(key)
+    await expect(backend.waitForSession(key, "blocked", 0, 2_000)).rejects.toMatchObject({
+      code: "session_not_found",
+    })
+    deferreds[0].resolve({ stopReason: "end_turn" })
+    await turn.completion.catch(() => {})
+  })
+
+  it("waitForActivity:chunk 活动唤醒;完全静默抛 timeout(由 service 译成 stalled);probe 命中已落盘事件", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-backend-activity-"))
+    const { driver, emitEvent } = scriptedDriver()
+    const { manager, backend } = setup(tempDir, driver)
+    const { key } = await manager.createSession({ harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "m" })
+
+    const turn = await backend.sendToSession(key, { originalText: "go", wireText: "go", origin: ORIGIN })
+
+    // 静默:超时
+    await expect(backend.waitForActivity(key, turn.acceptedSeq, 30)).rejects.toMatchObject({
+      code: "timeout",
+    })
+
+    // 活动:chunk 唤醒(走注册后 notify 路径)
+    const waiting = backend.waitForActivity(key, turn.acceptedSeq, 5_000)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    emitEvent({ type: "agent_message_chunk", text: "hi" })
+    await expect(waiting).resolves.toBeUndefined()
+
+    // probe:事件已在注册前落盘,同步命中
+    await expect(backend.waitForActivity(key, turn.acceptedSeq, 5_000)).resolves.toBeUndefined()
+
+    // 目标删除:not_found
+    await manager.removeSession(key)
+    await expect(backend.waitForActivity(key, 0, 2_000)).rejects.toMatchObject({
+      code: "session_not_found",
+    })
   })
 })

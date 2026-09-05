@@ -523,6 +523,10 @@ app.whenReady().then(async () => {
   )
   ipcMain.on("collaboration:ui-state", (_e, presence: unknown) => {
     uiBridge?.report(presence)
+    // 焦点同步给 SessionManager:done(未读)投影的唯一"已看"来源;
+    // 非法 payload 由 bridge 忽略,这里同样只做宽松提取。
+    const focused = (presence as { focusedSessionId?: unknown } | null)?.focusedSessionId
+    sessions.noteUiFocus(typeof focused === "string" ? focused : null)
   })
   ipcMain.handle("session:rename", (_e, key: string, title: string) => {
     try {

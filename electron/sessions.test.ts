@@ -944,7 +944,8 @@ describe("SessionManager 协作切片(active turn / origin / wait)", () => {
     expect(manager.runtimeStatus(key)).toBe("working")
     deferreds[0].resolve({ stopReason: "end_turn" })
     await expect(completion).resolves.toMatchObject({ stopReason: "end_turn" })
-    expect(manager.runtimeStatus(key)).toBe("idle")
+    // 无焦点的回合完成 = done(有结果未看);noteUiFocus 后才回到 idle
+    expect(manager.runtimeStatus(key)).toBe("done")
 
     // 现有 prompt API:无 origin 时事件不带 origin 字段,等待 completion
     const plainPromise = manager.prompt(key, "人类输入")
@@ -998,7 +999,8 @@ describe("SessionManager 协作切片(active turn / origin / wait)", () => {
     expect(emitted.some(
       (record) => record.kind === "event" && (record.payload as HarnessEvent).type === "turn_finished",
     )).toBe(true)
-    expect(manager.runtimeStatus(key)).toBe("idle")
+    // 无焦点完成 = done
+    expect(manager.runtimeStatus(key)).toBe("done")
     // 落定后 waitForTurn 立即 resolve
     await expect(manager.waitForTurn(key, acceptedSeq, 100)).resolves.toBeUndefined()
   })
@@ -1246,5 +1248,116 @@ describe("SessionManager 权限规则注入与回报", () => {
     ) as { rules: Array<{ harnessId: string; rule: string }> }
     expect(onDisk.rules.map((r) => `${r.harnessId}:${r.rule}`))
       .toEqual(["kimi:Bash", "kimi:Edit"])
+  })
+})
+
+describe("SessionManager done/blocked 投影(herdr 对齐)", () => {
+  function approvalCapableDriver() {
+    let emitEvent: (event: HarnessEvent) => void = () => {}
+    const deferreds: Array<{ resolve: (v: unknown) => void; reject: (e: unknown) => void }> = []
+    const driver: HarnessDriver = {
+      id: "kimi",
+      async start(_options, emit) {
+        emitEvent = emit
+        return {
+          nativeSessionId: "proj-native",
+          capabilities: { modelSwitch: "none", effortSwitch: "none" },
+          prompt: async () => new Promise((resolve, reject) => deferreds.push({ resolve, reject })),
+          cancel: async () => {},
+          close: () => {},
+          onExit: () => () => {},
+          resolveApproval: () => {},
+        }
+      },
+    }
+    return { driver, deferreds, emit: (e: HarnessEvent) => emitEvent(e) }
+  }
+
+  it("blocked:挂起审批优先于 working;结算后回到 working;pendingApprovalCount 同步", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-proj-blocked-"))
+    const { driver, deferreds, emit } = approvalCapableDriver()
+    const { manager } = collabManager(tempDir, driver)
+    const { key } = await manager.createSession({
+      harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "model",
+    })
+
+    const turn = await manager.startPrompt(key, "干活")
+    expect(manager.runtimeStatus(key)).toBe("working")
+    emit({
+      type: "approval_request", id: "apr-1", title: "rm -rf",
+      options: [{ id: "allow_once", label: "允许一次" }],
+    })
+    expect(manager.pendingApprovalCount(key)).toBe(1)
+    expect(manager.runtimeStatus(key)).toBe("blocked")
+    expect(manager.collaborationSession(key)).toMatchObject({ runtime: "blocked" })
+
+    manager.resolveApproval(key, "apr-1", "allow_once")
+    expect(manager.pendingApprovalCount(key)).toBe(0)
+    expect(manager.runtimeStatus(key)).toBe("working")
+    deferreds[0].resolve({ stopReason: "end_turn" })
+    await turn.completion
+  })
+
+  it("done:无焦点完成标 unseen;noteUiFocus 清除;焦点中完成保持 idle;读取不清除", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-proj-done-"))
+    const { driver, deferreds } = approvalCapableDriver()
+    const { manager } = collabManager(tempDir, driver)
+    const { key } = await manager.createSession({
+      harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "model",
+    })
+    // 新建且从未有焦点上报:idle
+    expect(manager.runtimeStatus(key)).toBe("idle")
+
+    // 无焦点完成回合 → done
+    const first = await manager.startPrompt(key, "任务一")
+    deferreds[0].resolve({ stopReason: "end_turn" })
+    await first.completion
+    expect(manager.runtimeStatus(key)).toBe("done")
+
+    // 读取(MCP session_read 同路径)不清除未看
+    manager.readEvents(key)
+    expect(manager.runtimeStatus(key)).toBe("done")
+    // noteUiFocus(null)(无焦点上报)也不清除
+    manager.noteUiFocus(null)
+    expect(manager.runtimeStatus(key)).toBe("done")
+
+    // 焦点落入 → idle
+    manager.noteUiFocus(key)
+    expect(manager.runtimeStatus(key)).toBe("idle")
+
+    // 焦点中完成回合 → 保持 idle
+    const second = await manager.startPrompt(key, "任务二")
+    deferreds[1].resolve({ stopReason: "end_turn" })
+    await second.completion
+    expect(manager.runtimeStatus(key)).toBe("idle")
+
+    // 焦点移到别处后完成 → done;协作 origin 的 user_message 也标 unseen
+    manager.noteUiFocus("some-other-session")
+    const origin: MessageOrigin = { kind: "session", sessionId: "caller-1", title: "c", harnessId: "pi" }
+    const third = await manager.startPrompt(key, "协作任务", { origin })
+    // turn 进行中:working 优先于 unseen
+    expect(manager.runtimeStatus(key)).toBe("working")
+    deferreds[2].resolve({ stopReason: "end_turn" })
+    await third.completion
+    expect(manager.runtimeStatus(key)).toBe("done")
+  })
+
+  it("无限等:waitForTurn/waitForCollaborationState 传 Infinity 不设定时器,事件正常唤醒", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-proj-inf-"))
+    const { driver, deferreds } = approvalCapableDriver()
+    const { manager } = collabManager(tempDir, driver)
+    const { key } = await manager.createSession({
+      harnessId: "kimi", cwd: tempDir, providerId: "user-kimi", modelId: "model",
+    })
+
+    const turn = await manager.startPrompt(key, "长任务")
+    const waiting = manager.waitForTurn(key, turn.acceptedSeq, Number.POSITIVE_INFINITY)
+    const stateWait = manager.waitForCollaborationState(
+      key, (e) => e.type === "turn_settled", Number.POSITIVE_INFINITY,
+    )
+    deferreds[0].resolve({ stopReason: "end_turn" })
+    await turn.completion
+    await expect(waiting).resolves.toBeUndefined()
+    await expect(stateWait).resolves.toMatchObject({ type: "turn_settled" })
   })
 })

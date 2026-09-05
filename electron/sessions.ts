@@ -70,6 +70,8 @@ type LiveSession = {
   queuedPrompt: QueuedPrompt | null
   /** hold 中的审批请求 id;cancel/关闭/协作自动裁决时据此结算 */
   pendingApprovals: Set<string>
+  /** 有结果/新工作但用户尚未查看(焦点落入才清除);协作投影的 done 态原料 */
+  unseen: boolean
 }
 
 /** 一次根 Prompt 的运行态:acceptedSeq 关联提交,completion 携带回合结果。 */
@@ -129,10 +131,11 @@ function promptInput(value: string | PromptInput): PromptInput {
   return { text, attachments }
 }
 
-/** 协作层状态事件(main 内);waitForCollaborationState 的通知源。 */
+/** 协作层状态事件(main 内);waitForCollaborationState 的通知源。
+ *  activity: 任何事件落盘(stall 检测用);approval_changed: 审批挂起/结算。 */
 export type CollaborationStateEvent = {
   key: string
-  type: "turn_started" | "turn_settled" | "message_appended" | "session_sleeping" | "session_removed"
+  type: "turn_started" | "turn_settled" | "message_appended" | "session_sleeping" | "session_removed" | "approval_changed" | "activity"
   seq?: number
 }
 
@@ -251,6 +254,21 @@ export class SessionManager {
         seq: record.seq,
       })
     }
+    // 审批挂起/结算都可能改变 blocked 投影,等待 until:"blocked" 的 waiter 需要它。
+    if (event.type === "approval_request" || event.type === "approval_resolved") {
+      this.notifyCollaboration({ key: session.record.key, type: "approval_changed" })
+    }
+    // done 态原料(与 renderer live-store 未读规则同构):协作消息到达或回合结束
+    // 时目标不在焦点,标记"有内容未看";焦点落入(noteUiFocus)才清除。
+    if (
+      session.record.key !== this.focusedSessionKey &&
+      (event.type === "turn_finished" ||
+        (event.type === "user_message" && event.origin?.kind === "session"))
+    ) {
+      session.unseen = true
+    }
+    // stall 检测等场景需要"目标是否有任何活动";每条落盘事件都发,waiter 极少,开销可忽略。
+    this.notifyCollaboration({ key: session.record.key, type: "activity", seq: record.seq })
     return record.seq
   }
 
@@ -366,6 +384,7 @@ export class SessionManager {
       activeTurn: null,
       queuedPrompt: null,
       pendingApprovals: new Set(),
+      unseen: false,
     }
     for (const event of pending) this.append(session, event)
 
@@ -637,7 +656,7 @@ export class SessionManager {
 
   /** 精确等待:只等同一 Session 且 acceptedSeq 匹配的 active turn;seq 不匹配
    * 或无 active turn 说明目标 turn 已 settled,立即返回。其它 Session 的完成
-   * 绝不能唤醒本等待。超时只终止等待,不 cancel 目标。 */
+   * 绝不能唤醒本等待。超时只终止等待,不 cancel 目标。timeoutMs=Infinity 无限等。 */
   async waitForTurn(key: string, acceptedSeq: number, timeoutMs = 30_000): Promise<void> {
     const turn = this.live.get(key)?.activeTurn
     if (!turn || turn.acceptedSeq !== acceptedSeq) return
@@ -649,11 +668,14 @@ export class SessionManager {
         clearTimeout(timer)
         resolve()
       }
-      const timer = setTimeout(() => {
-        if (settled) return
-        settled = true
-        reject(new CollaborationError("timeout"))
-      }, timeoutMs)
+      // Infinity(无限等)不设 timer;setTimeout(Infinity) 会被钳成立即触发。
+      const timer = Number.isFinite(timeoutMs)
+        ? setTimeout(() => {
+            if (settled) return
+            settled = true
+            reject(new CollaborationError("timeout"))
+          }, timeoutMs)
+        : undefined
       turn.completion.then(finish, finish)
     })
   }
@@ -681,15 +703,18 @@ export class SessionManager {
         resolve: (event: CollaborationStateEvent) => {
           const index = this.collaborationWaiters.indexOf(waiter)
           if (index >= 0) this.collaborationWaiters.splice(index, 1)
-          clearTimeout(timer)
+          if (timer) clearTimeout(timer)
           resolve(event)
         },
       }
-      const timer = setTimeout(() => {
-        const index = this.collaborationWaiters.indexOf(waiter)
-        if (index >= 0) this.collaborationWaiters.splice(index, 1)
-        reject(new CollaborationError("timeout"))
-      }, timeoutMs)
+      // Infinity(无限等)不设 timer;setTimeout(Infinity) 会被钳成立即触发。
+      const timer = Number.isFinite(timeoutMs)
+        ? setTimeout(() => {
+            const index = this.collaborationWaiters.indexOf(waiter)
+            if (index >= 0) this.collaborationWaiters.splice(index, 1)
+            reject(new CollaborationError("timeout"))
+          }, timeoutMs)
+        : undefined
       this.collaborationWaiters.push(waiter)
       // 先注册,后 probe:probe 命中即同步完成;之后的 notify 走 waiter。
       const probed = probe?.()
@@ -716,16 +741,40 @@ export class SessionManager {
     this.collaborationWaiters = [...keep, ...this.collaborationWaiters]
   }
 
+  /** renderer 最近一次上报的焦点 Session(UiCommandBridge presence 同步);
+   *  null = 无焦点/无窗口。append 据此判定 done 态的 unseen。 */
+  focusedSessionKey: string | null = null
+
+  /** presence 上报入口:记录焦点并把它标记为已看(只有焦点落入才算"看过",
+   *  MCP session_read 等 CLI 读取绝不清除——herdr 同语义)。 */
+  noteUiFocus(key: string | null) {
+    this.focusedSessionKey = key
+    if (key) {
+      const session = this.live.get(key)
+      if (session) session.unseen = false
+    }
+  }
+
   /** 当前 active turn 的 acceptedSeq;无运行中 turn 返回 null。 */
   activeTurnSeq(key: string): number | null {
     return this.live.get(key)?.activeTurn?.acceptedSeq ?? null
   }
 
-  /** 协作 runtime 投影:sleeping/idle/working。 */
+  /** hold 中的审批数;协作 blocked 投影与 until:"blocked" 的 probe 用。 */
+  pendingApprovalCount(key: string): number {
+    return this.live.get(key)?.pendingApprovals.size ?? 0
+  }
+
+  /** 协作 runtime 投影:sleeping/blocked/working/done/idle。
+   *  blocked 优先于 working:审批 hold 期间 turn 不再自行推进,对协作调用方
+   *  属于 settled(herdr 把 blocked 归入 settled 默认集);UI 侧把 blocked
+   *  当 running 渲染(turn 还活着)。 */
   runtimeStatus(key: string): SessionRuntimeStatus {
     const session = this.live.get(key)
     if (!session) return "sleeping"
-    return session.activeTurn ? "working" : "idle"
+    if (session.pendingApprovals.size > 0) return "blocked"
+    if (session.activeTurn) return "working"
+    return session.unseen ? "done" : "idle"
   }
 
   /** CollaborationSession 投影;不存在返回 null。 */

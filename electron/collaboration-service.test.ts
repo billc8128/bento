@@ -293,6 +293,55 @@ describe("CollaborationService", () => {
     ).rejects.toMatchObject({ code: "session_busy" })
   })
 
+  it("send 目标 blocked(挂起审批)返回 session_blocked,不落到 backend", async () => {
+    const target = session({ id: "s-blocked", runtime: "blocked" })
+    const impl = backend([caller, target])
+    const service = new CollaborationService(impl)
+    await expect(
+      service.send("s-caller", { targetSessionId: "s-blocked", text: "hi" }),
+    ).rejects.toMatchObject({ code: "session_blocked" })
+    expect(impl.sent).toHaveLength(0)
+  })
+
+  it("wait 省略 timeoutMs 时给 backend 无限等(Infinity)", async () => {
+    const impl = backend([caller, session({ id: "s-b" })])
+    const seen: number[] = []
+    const original = impl.waitForSession.bind(impl)
+    impl.waitForSession = (target, until, afterSeq, timeoutMs) => {
+      seen.push(timeoutMs)
+      return original(target, until, afterSeq, timeoutMs)
+    }
+    const service = new CollaborationService(impl)
+    await service.wait("s-caller", { targetSessionId: "s-b" })
+    await service.wait("s-caller", { targetSessionId: "s-b", timeoutMs: 30_000 })
+    expect(seen).toEqual([Number.POSITIVE_INFINITY, 30_000])
+  })
+
+  it("send(wait:true) 在 stall 窗口内目标无活动返回 session_prompt_stalled", async () => {
+    const impl = backend([caller, session({ id: "s-b" })])
+    impl.waitForActivity = async () => {
+      throw new CollaborationError("timeout")
+    }
+    const service = new CollaborationService(impl)
+    await expect(
+      service.send("s-caller", { targetSessionId: "s-b", text: "hi", wait: true }),
+    ).rejects.toMatchObject({ code: "session_prompt_stalled" })
+    // wait:false 不做 stall 检测,直接 accepted
+    const sent = await service.send("s-caller", { targetSessionId: "s-b", text: "hi" })
+    expect(sent.status).toBe("accepted")
+  })
+
+  it("create(wait:true) 的 stall 透传 session_prompt_stalled,不谎报 settled", async () => {
+    const impl = backend([caller])
+    impl.waitForActivity = async () => {
+      throw new CollaborationError("timeout")
+    }
+    const service = new CollaborationService(impl)
+    const result = await service.create("s-caller", { prompt: "go", wait: true })
+    expect(result.prompt).toBe("failed")
+    expect(result.error?.code).toBe("session_prompt_stalled")
+  })
+
   it("send 携带结构化 origin 与 envelope", async () => {
     const impl = backend([caller, session({ id: "s-b" })])
     const service = new CollaborationService(impl)

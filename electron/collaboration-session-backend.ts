@@ -30,6 +30,9 @@ const RESUME_SUCCESS_NOTICES = new Set([
   "会话已恢复(Codex thread/resume),上下文延续",
 ])
 
+/** stall 检测窗口(herdr 的 5s 惯例):提交后这么久没有任何活动 = 可能没启动。 */
+const STALL_TIMEOUT_MS = 5_000
+
 export class SessionCollaborationBackend implements SessionBackend {
   /** sendToSession 记录的最近一次提交,settled wait 用它精确等本次 turn。 */
   private readonly lastTurns = new Map<string, number>()
@@ -142,6 +145,30 @@ export class SessionCollaborationBackend implements SessionBackend {
         }
       })
     return { acceptedSeq }
+  }
+
+  /** herdr agent_prompt_stalled 对齐(--wait 语义):提交被接受后 STALL_TIMEOUT_MS
+   * 内必须观察到目标产生任何 harness 事件(含 turn_finished),否则说明目标可能
+   * 没真正开始处理(死 harness/卡住的 UI),让调用方拿 stalled 错误而不是空等。 */
+  async waitForActivity(
+    targetSessionId: string,
+    afterSeq: number,
+    timeoutMs: number,
+  ): Promise<void> {
+    const state = await this.awaitState(targetSessionId, timeoutMs,
+      (event) =>
+        event.type === "session_removed" ||
+        (event.type === "activity" && (event.seq ?? 0) > afterSeq),
+      () => {
+        // probe:极快的 turn 可能在注册前就已落盘事件
+        const session = this.manager.collaborationSession(targetSessionId)
+        if (!session) return { key: targetSessionId, type: "session_removed" }
+        return session.lastSeq > afterSeq
+          ? { key: targetSessionId, type: "activity", seq: session.lastSeq }
+          : undefined
+      },
+    )
+    if (state.type === "session_removed") throw new CollaborationError("session_not_found")
   }
 
   readSessionMessages(
@@ -303,7 +330,33 @@ export class SessionCollaborationBackend implements SessionBackend {
       return { session: this.requireSession(targetSessionId), matched: "next_message" }
     }
 
-    // settled:仅当登记的 seq 与当前 active turn 完全一致才走精确 completion;
+    // blocked:等目标出现挂起审批/提问(需要人类介入)。approval_changed 在挂起与
+    // 结算时都触发,accept 必须复核数量,否则"审批被结算"会误唤醒。
+    if (until === "blocked") {
+      if (this.manager.pendingApprovalCount(targetSessionId) > 0) {
+        return { session: current, matched: "blocked" }
+      }
+      const event = await this.awaitState(targetSessionId, timeoutMs,
+        (state) =>
+          state.type === "session_removed" ||
+          (state.type === "approval_changed" &&
+            this.manager.pendingApprovalCount(targetSessionId) > 0),
+        () => {
+          if (!this.manager.collaborationSession(targetSessionId)) {
+            return { key: targetSessionId, type: "session_removed" }
+          }
+          return this.manager.pendingApprovalCount(targetSessionId) > 0
+            ? { key: targetSessionId, type: "approval_changed" }
+            : undefined
+        },
+      )
+      if (event.type === "session_removed") throw new CollaborationError("session_not_found")
+      return { session: this.requireSession(targetSessionId), matched: "blocked" }
+    }
+
+    // settled:blocked(挂起审批)与 idle/done 一样属于 settled——目标不再自行推进,
+    // 调用方应立即被唤醒去处理,而不是等 turn 真正结束(herdr 同语义)。
+    // 仅当登记的 seq 与当前 active turn 完全一致才走精确 completion;
     // 否则(turn 是 human 发起/登记已清)退化为 turn_settled 事件,绝不用旧 seq。
     if (current.runtime !== "working") return { session: current, matched: "settled" }
     const registeredSeq = this.lastTurns.get(targetSessionId)
@@ -358,4 +411,4 @@ export class SessionCollaborationBackend implements SessionBackend {
   }
 }
 
-type SessionWaitResultLike = "working" | "settled" | "next_message"
+type SessionWaitResultLike = "working" | "settled" | "next_message" | "blocked"

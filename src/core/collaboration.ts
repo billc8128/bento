@@ -13,7 +13,15 @@ export type WorkspaceRef =
   | { scope: "chat" }
   | { scope: "project"; cwd: string }
 
-export type SessionRuntimeStatus = "sleeping" | "idle" | "working"
+/**
+ * 协作 runtime 投影(herdr 语义对齐):
+ * - sleeping: 运行时未加载(进程不在线,可 revive)
+ * - working: 有 active turn 且无挂起审批,正在推进
+ * - blocked: 有挂起审批/提问,等人类介入;对调用方视为 settled(不再自行推进)
+ * - done: 回合已完成但用户尚未查看(focus 才算查看;MCP session_read 不算)
+ * - idle: 就绪且无未读
+ */
+export type SessionRuntimeStatus = "sleeping" | "idle" | "working" | "done" | "blocked"
 
 export type UiPlacement = "auto" | "right" | "down"
 
@@ -302,15 +310,16 @@ export const MAX_READ_LIMIT = 50
 
 export type SessionWaitInput = {
   targetSessionId: string
-  until?: "working" | "settled" | "next_message"
+  until?: "working" | "settled" | "next_message" | "blocked"
   afterSeq?: number
+  /** 省略 = 无限等(直到匹配或目标删除);显式传值受 schema 上限约束。 */
   timeoutMs?: number
 }
 
 export type SessionWaitResult = {
   session: CollaborationSession
   /** timeout 是中性结果:目标仍在工作,不是失败——agent 可继续等或先 read 看进展 */
-  matched: "working" | "settled" | "next_message" | "timeout"
+  matched: "working" | "settled" | "next_message" | "blocked" | "timeout"
   lastSeq: number
 }
 
@@ -321,6 +330,8 @@ export type CollaborationErrorCode =
   | "self_target"
   | "session_not_found"
   | "session_busy"
+  | "session_blocked"
+  | "session_prompt_stalled"
   | "session_unavailable"
   | "workspace_not_found"
   | "selection_unavailable"
@@ -335,6 +346,8 @@ const DEFAULT_MESSAGES: Record<CollaborationErrorCode, string> = {
   self_target: "目标不能是调用 Session 自身",
   session_not_found: "目标 Session 不存在或已删除",
   session_busy: "目标 Session 正在运行中,请稍后再试",
+  session_blocked: "目标 Session 正在等待用户审批或输入,请先处理后再发送",
+  session_prompt_stalled: "消息已送达,但 5s 内未观察到目标任何活动;目标可能未真正开始处理,建议 session_read 或 ui_state 检查",
   session_unavailable: "目标 Session 无法恢复运行时",
   workspace_not_found: "引用的 Workspace 不存在",
   selection_unavailable: "指定的 Provider/Model 当前不可执行",

@@ -45,8 +45,10 @@ export type LiveSessionRecord = {
   createdAt: string
   updatedAt: string
   live: boolean
-  /** main 侧 runtime 投影;协作唤醒的侧栏 running 判定用 */
-  runtime?: "sleeping" | "idle" | "working"
+  /** main 侧 runtime 投影;协作唤醒的侧栏 running 判定用。
+   *  blocked = 挂起审批等用户介入(turn 还活着,UI 按 running 渲染);
+   *  done = 回合完成但用户未查看。 */
+  runtime?: "sleeping" | "idle" | "working" | "done" | "blocked"
 }
 
 declare global {

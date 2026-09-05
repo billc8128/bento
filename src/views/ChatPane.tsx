@@ -158,8 +158,9 @@ export function ChatPane() {
     )
   }
 
-  // 本地发送集合之外,main runtime working(后台协作任务)也显示生成态
-  const running = isRunning(sessionId) || live.runtime === "working"
+  // 本地发送集合之外,main runtime working(后台协作任务)也显示生成态;
+  // blocked(挂起审批)turn 还活着,同样按 running 渲染,审批卡片另有提示。
+  const running = isRunning(sessionId) || live.runtime === "working" || live.runtime === "blocked"
   const harness = getHarness(live.harnessId as HarnessId)
   const messages = liveMessages(sessionId)
   const queued = queuedPrompt(sessionId)
