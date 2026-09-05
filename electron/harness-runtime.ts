@@ -158,6 +158,9 @@ function bundledClaudeVersion(): Promise<string | undefined> {
       claudeCliVersion = execFileAsync(process.execPath, [cliPath, "--version"], {
         timeout: 5_000,
         maxBuffer: 64 * 1024,
+        // 关键:execPath 是 Bento(Electron)本体,不带 RUN_AS_NODE 会以完整
+        // app 形态启动且不退——Dock 多一个图标、进程常驻
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
       }).then(
         ({ stdout, stderr }) => `${stdout}${stderr}`.trim().split(/\r?\n/, 1)[0] || undefined,
         () => undefined,
