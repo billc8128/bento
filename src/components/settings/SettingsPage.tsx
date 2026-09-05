@@ -10,7 +10,7 @@ import { ChevronLeft, FlaskConical, Keyboard, KeyRound, Palette } from "lucide-r
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { HorseIcon } from "@/components/HorseIcon"
-import { closeSettings, openSettings, useSettingsPage, type SettingsSection } from "@/lib/settings-store"
+import { closeSettings, useSettingsPage, type SettingsSection } from "@/lib/settings-store"
 import { cn } from "@/lib/utils"
 
 import { AppearanceSection } from "./AppearanceSection"
@@ -124,12 +124,7 @@ export function SettingsPage() {
               {section === "providers" && (
                 <ProvidersSection addProviderIntent={settings.addProvider} />
               )}
-              {section === "harnesses" && (
-                <HarnessesSection onAddModel={() => {
-                  setSection("providers")
-                  openSettings("providers", { addProvider: true })
-                }} />
-              )}
+              {section === "harnesses" && <HarnessesSection />}
               {section === "appearance" && <AppearanceSection />}
               {section === "layout" && <LayoutSection />}
               {section === "shortcuts" && <ShortcutsSection />}
