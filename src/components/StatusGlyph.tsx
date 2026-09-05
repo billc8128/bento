@@ -1,5 +1,5 @@
 /**
- * 会话状态指示:五套可切换样式(设置 → 主题),覆盖 进行中 / 未读 两个状态。
+ * 会话状态指示:四套可切换样式(设置 → 外观),覆盖 进行中 / 未读 两个状态。
  * 色彩语义:琥珀(--color-brand)= 进行中,绿(--app-ok)= 完成/新消息。
  * 样式全部在 index.css 的 .sg-* 类上,D 变体的能量条绝对定位、相对会话行。
  */
@@ -33,8 +33,6 @@ export function StatusGlyph({
         return <span className="sg-a-attn" role="img" aria-label={label} />
       case "b":
         return <span className="sg-b-attn" role="img" aria-label={label}><i /></span>
-      case "c":
-        return <span className="sg-c-attn" role="img" aria-label={label}>待审批</span>
       case "d":
         return <span className="sg-d-attn" role="img" aria-label={label} />
       case "f":
@@ -62,15 +60,6 @@ export function StatusGlyph({
         </svg>
       ) : (
         <span className="sg-b-unread" role="img" aria-label={label}><i /></span>
-      )
-    case "c":
-      return state === "running" ? (
-        <span className="sg-c-status" role="img" aria-label={label}>
-          <span className="sg-c-shimmer">工作中</span>
-          <span className="sg-c-ticker"><b /><b /><b /></span>
-        </span>
-      ) : (
-        <span className="sg-c-unread" role="img" aria-label={label}><i />新回复</span>
       )
     case "d":
       return state === "running" ? (

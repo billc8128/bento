@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState } from "react"
-import { ChevronLeft, FlaskConical, Keyboard, KeyRound, Palette } from "lucide-react"
+import { ChevronLeft, CircleUserRound, FlaskConical, Keyboard, KeyRound, Palette } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -13,6 +13,7 @@ import { HorseIcon } from "@/components/HorseIcon"
 import { closeSettings, useSettingsPage, type SettingsSection } from "@/lib/settings-store"
 import { cn } from "@/lib/utils"
 
+import { AccountSection } from "./AccountSection"
 import { AppearanceSection } from "./AppearanceSection"
 import { LayoutSection } from "./LayoutSection"
 import { HarnessesSection } from "./HarnessesSection"
@@ -20,6 +21,7 @@ import { ProvidersSection } from "./ProvidersSection"
 import { ShortcutsSection } from "./ShortcutsSection"
 
 const SECTIONS: { id: SettingsSection; label: string; icon: React.ComponentType<{ className?: string }>; beta?: boolean }[] = [
+  { id: "account", label: "账户", icon: CircleUserRound },
   { id: "providers", label: "供应商", icon: KeyRound },
   { id: "harnesses", label: "Harness", icon: HorseIcon },
   { id: "appearance", label: "外观", icon: Palette },
@@ -76,7 +78,7 @@ export function SettingsPage() {
   const active = SECTIONS.find((item) => item.id === section) ?? SECTIONS[0]
 
   return (
-    <div className="fixed inset-0 z-40 flex bg-background text-foreground">
+    <div data-overlay-page className="fixed inset-0 z-40 flex bg-background text-foreground">
       {window.bento && (
         <div
           aria-hidden
@@ -121,6 +123,7 @@ export function SettingsPage() {
               {active.beta && <BetaBadge />}
             </h1>
             <div className="mt-6">
+              {section === "account" && <AccountSection />}
               {section === "providers" && (
                 <ProvidersSection addProviderIntent={settings.addProvider} />
               )}

@@ -40,6 +40,9 @@ export type HarnessRuntimeStatus = {
   localInstall?: { path: string; version?: string }
 }
 
+/** 选择器里的规范排序(pi 在最前,是开箱即用的默认) */
+export const HARNESS_ORDER: HarnessId[] = ["pi", "codex", "claude-code", "kimi", "opencode", "omp", "hermes"]
+
 export const HARNESSES: Harness[] = [
   {
     id: "codex",

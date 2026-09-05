@@ -6,7 +6,7 @@ import { Check, ChevronDown, ChevronRight, Search } from "lucide-react"
 import { HarnessIcon } from "@/components/HarnessIcon"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { HARNESSES, getHarness, type HarnessId } from "@/core/harness"
+import { HARNESSES, HARNESS_ORDER, getHarness, type HarnessId } from "@/core/harness"
 import { PERMISSION_PROFILES, type PermissionProfile } from "@/core/permission"
 import {
   compactModelName,
@@ -45,7 +45,6 @@ type RuntimePickerProps = {
   modelLocked?: boolean
 }
 
-export const HARNESS_ORDER: HarnessId[] = ["pi", "codex", "claude-code", "kimi", "opencode", "omp", "hermes"]
 
 type UnifiedRow = { provider: ProviderView; model: ProviderModel }
 type PickerView = "root" | "harness" | "model" | "effort" | "permission"

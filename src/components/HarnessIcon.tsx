@@ -57,7 +57,17 @@ export function HarnessIcon({ id, className, ...props }: HarnessIconProps) {
       aria-hidden
       {...props}
     >
-      <img src={ASSETS[id]} alt="" draggable={false} className="size-full object-contain" />
+      {/* codex/claude 的 SVG 是 currentColor,但 <img> 不继承颜色,恒为黑;
+          kimi 是深底 PNG——深色模式下反白。opencode/omp 自带亮字形,不用动 */}
+      <img
+        src={ASSETS[id]}
+        alt=""
+        draggable={false}
+        className={cn(
+          "size-full object-contain",
+          (id === "codex" || id === "claude-code" || id === "kimi") && "dark:invert",
+        )}
+      />
     </span>
   )
 }

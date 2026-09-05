@@ -2,18 +2,16 @@
 
 import { useSyncExternalStore } from "react"
 
-export type StatusGlyphVariant = "a" | "b" | "c" | "d" | "f"
+export type StatusGlyphVariant = "a" | "b" | "d" | "f"
 
 export const STATUS_GLYPH_VARIANTS: readonly {
   id: StatusGlyphVariant
   name: string
-  desc: string
 }[] = [
-  { id: "b", name: "微型进度环", desc: "圆弧旋转,「在工作」语义最清晰" },
-  { id: "a", name: "呼吸光环", desc: "双层光环扩散 + 圆点呼吸缩放" },
-  { id: "c", name: "状态文字", desc: "流光文字 + 三点跳动,信息最直白" },
-  { id: "d", name: "行内能量条", desc: "行底扫过光带 + 左缘呼吸竖线,最安静" },
-  { id: "f", name: "像素状态机", desc: "3×3 像素阵波前扫动,最有性格" },
+  { id: "b", name: "微型进度环" },
+  { id: "a", name: "呼吸光环" },
+  { id: "d", name: "行内能量条" },
+  { id: "f", name: "像素状态机" },
 ]
 
 const STORAGE_KEY = "bento.status-glyph"

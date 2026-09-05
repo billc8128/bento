@@ -181,6 +181,11 @@ function preferredRuntimeVersion(harnessId: HarnessId): string | undefined | Pro
   return undefined
 }
 
+/** 启动后闲时预热 claude 内嵌 CLI 版本探测,设置页首开即命中缓存。 */
+export function warmHarnessRuntimeVersions(): void {
+  void bundledClaudeVersion()
+}
+
 /**
  * 上报**首选执行来源**(override → managed/bundled 的解析优先级),不是"实际执行":
  * managed 后续解析失败仍可能退 PATH。PATH 本机安装只是 localInstall 附注,
@@ -206,7 +211,9 @@ export async function harnessRuntimeStatus(harnessId: HarnessId): Promise<Harnes
     version: await preferredRuntimeVersion(harnessId),
     usable: definition.fallback !== "missing",
     fallbackAvailable: definition.pathFallback && local !== null,
-    ...(local ? { localInstall: { path: local.path, version: await executableVersion(local.path) } } : {}),
+    // localInstall 不再探测 --version:UI 已不展示本机安装信息,
+    // 每次打开设置页 spawn 7 个二进制纯属浪费;路径保留(应急兜底判定用)
+    ...(local ? { localInstall: { path: local.path } } : {}),
   }
 }
 

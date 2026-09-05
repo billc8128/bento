@@ -369,18 +369,6 @@
 .sg-b-unread i { width: 7px; height: 7px; border-radius: 50%; background: var(--app-ok); animation: sg-b-pop 400ms cubic-bezier(0.34, 1.56, 0.64, 1); }
 @keyframes sg-b-pop { from { transform: scale(0); } to { transform: scale(1); } }
 
-/* C · 状态文字 */
-.sg-c-status { flex: none; display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--color-brand); }
-.sg-c-shimmer { background: linear-gradient(100deg, var(--color-brand) 35%, var(--sg-peak, #ffd27a) 50%, var(--color-brand) 65%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: sg-c-shimmer 1.6s linear infinite; }
-@keyframes sg-c-shimmer { to { background-position: -200% 0; } }
-.sg-c-ticker { display: inline-flex; gap: 2px; }
-.sg-c-ticker b { width: 3px; height: 3px; border-radius: 50%; background: var(--color-brand); animation: sg-c-tick 1.2s ease-in-out infinite; }
-.sg-c-ticker b:nth-child(2) { animation-delay: 0.2s; }
-.sg-c-ticker b:nth-child(3) { animation-delay: 0.4s; }
-@keyframes sg-c-tick { 0%, 100% { transform: translateY(0); opacity: 0.4; } 40% { transform: translateY(-3px); opacity: 1; } }
-.sg-c-unread { flex: none; display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--app-ok); }
-.sg-c-unread i { width: 5px; height: 5px; border-radius: 50%; background: var(--app-ok); }
-
 /* D · 行内能量条(绝对定位,相对侧栏会话行;占位与 pl-11/pr-5 文字轴一致) */
 .sg-d-edge { position: absolute; left: 34px; top: 7px; bottom: 7px; width: 2px; border-radius: 1px; background: var(--color-brand); animation: sg-d-edge 1.8s ease-in-out infinite; pointer-events: none; }
 .sg-d-sweep { position: absolute; left: 44px; right: 20px; bottom: 2px; height: 2px; border-radius: 1px; background: linear-gradient(90deg, transparent, var(--color-brand) 30%, var(--color-brand) 70%, transparent); background-size: 45% 100%; background-repeat: no-repeat; animation: sg-d-sweep 1.5s cubic-bezier(0.45, 0, 0.55, 1) infinite; pointer-events: none; }
@@ -400,7 +388,6 @@
 @media (prefers-reduced-motion: reduce) {
   .sg-a-dot i, .sg-a-dot::before, .sg-a-dot::after,
   .sg-b-ring .arc, .sg-b-unread i,
-  .sg-c-shimmer, .sg-c-ticker b,
   .sg-d-edge, .sg-d-sweep,
   .sg-f-grid span { animation: none !important; }
 }
@@ -410,8 +397,6 @@
 .sg-b-attn { width: 14px; height: 14px; display: grid; place-items: center; flex: none; }
 .sg-b-attn i { width: 8px; height: 8px; border-radius: 3px; background: var(--color-brand); animation: sg-b-attn 1.4s ease-in-out infinite; }
 @keyframes sg-b-attn { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.78); opacity: 0.55; } }
-.sg-c-attn { flex: none; font-size: 11px; font-weight: 500; color: var(--color-brand); animation: sg-c-attn 1.4s ease-in-out infinite; }
-@keyframes sg-c-attn { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 .sg-d-attn { position: absolute; left: 34px; top: 7px; bottom: 7px; width: 2px; border-radius: 1px; background: var(--color-brand); animation: sg-d-attn 1s ease-in-out infinite; pointer-events: none; }
 @keyframes sg-d-attn { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 /* F 的 attention:! 竖线两格闪烁、底点常驻(运行态是波前,待审批是叹号) */
@@ -421,5 +406,5 @@
 @keyframes sg-f-bang { 0%, 100% { opacity: 1; } 50% { opacity: 0.12; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .sg-a-attn, .sg-b-attn i, .sg-c-attn, .sg-d-attn, .sg-f-grid.attn span { animation: none !important; }
+  .sg-a-attn, .sg-b-attn i, .sg-d-attn, .sg-f-grid.attn span { animation: none !important; }
 }

@@ -72,8 +72,24 @@ export type Style = {
 export const STYLES = [
   {
     id: "graphite",
-    name: "石墨单色",
+    name: "浅色模式",
     desc: "石墨灰阶 · 琥珀点睛 · 悬浮输入",
+    tone: "light",
+    layout: { sidebar: { default: 204, min: 196, max: 304 } },
+    traits: {
+      sidebar: "flush",
+      message: "bubble-user",
+      composer: "floating",
+      header: "minimal",
+      tools: "flat",
+      width: "wide",
+      dialog: "centered",
+    },
+  },
+  {
+    id: "glass",
+    name: "液态玻璃",
+    desc: "整窗 vibrancy · 玻璃层叠 · 明暗双色",
     tone: "light",
     layout: { sidebar: { default: 204, min: 196, max: 304 } },
     traits: {

@@ -14,6 +14,7 @@ import { Toaster } from "@/components/Toaster"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { TraitsProvider } from "@/lib/style-context"
 import { ThemeProvider, type Theme } from "@/lib/theme-context"
+import { initProfileDefault } from "@/lib/profile-store"
 import { useIsMobile } from "@/hooks/use-mobile"
 import {
   registerSidebarPanel,
@@ -68,6 +69,8 @@ export default function App() {
   const compact = useIsMobile()
   // 协作 UI 桥:main→renderer 的 show/hide/focus 命令 + presence 上报(Phase 2)
   useEffect(() => initCollaborationUi(), [])
+  // 本地资料:首次启动用系统用户名做默认显示名
+  useEffect(() => initProfileDefault(), [])
   const workspaceToolsOpen = useWorkspaceToolsOpen()
   const workspaceToolsStarted = useWorkspaceToolsStarted()
   const browserRevealId = useWorkspaceBrowserReveal()
@@ -88,6 +91,8 @@ export default function App() {
     const root = document.documentElement
     root.dataset.style = style
     root.classList.toggle("dark", dark)
+    // 液态玻璃:整窗 vibrancy 由主进程接管,离开该套系即撤销
+    window.bento?.setGlassVibrancy?.(style === "glass")
     try {
       localStorage.setItem("bento.style", style)
       localStorage.setItem("bento.dark", dark ? "1" : "0")

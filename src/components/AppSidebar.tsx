@@ -3,18 +3,15 @@ import {
   Blocks,
   ChevronDown,
   ChevronUp,
-  ChevronsUpDown,
   FolderPlus,
-  Keyboard,
   MessageCircle,
   Moon,
   MoreHorizontal,
-  Palette,
+  Sun,
   Pencil,
   PenSquare,
   Plus,
   Search,
-  Settings,
   Trash2,
 } from "lucide-react"
 
@@ -28,7 +25,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { BentoLogo } from "@/components/BentoLogo"
 import { Button } from "@/components/ui/button"
 import {
@@ -45,16 +42,9 @@ import {
 } from "@/components/ui/collapsible"
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { FolderIcon } from "@/components/FolderIcon"
@@ -75,9 +65,10 @@ import {
 } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
 import { useTraits } from "@/lib/style-context"
-import { useTheme } from "@/lib/theme-context"
 import { closeSession, openAppsView, openSession, useLayout } from "@/lib/layout-store"
 import { closeNewSession, requestNewSession, useNewSession } from "@/lib/new-session-store"
+import { useTheme } from "@/lib/theme-context"
+import { profileInitial, useProfile } from "@/lib/profile-store"
 import { NewProjectDialog } from "@/components/ProjectPicker"
 import {
   hideFolder,
@@ -91,7 +82,7 @@ import { togglePin, usePinnedSessions } from "@/lib/pinned-sessions"
 import { openSettings } from "@/lib/settings-store"
 import { useStatusGlyph } from "@/lib/status-glyph"
 import { SESSION_MIME } from "@/views/DockWorkspace"
-import { STYLES, type SidebarShape, type StyleId } from "@/data/styles"
+import type { SidebarShape } from "@/data/styles"
 
 /** 外层包裹:浮岛要靠四周留白才浮得起来 */
 const FRAME: Record<SidebarShape, string> = {
@@ -134,8 +125,9 @@ function relativeTime(iso: string): string {
 export function AppSidebar() {
   const { sidebar: shape } = useTraits()
   const { focusedSessionId, appsFocused } = useLayout()
-  const { sessions: liveSessions } = useLive()
+  const profile = useProfile()
   const theme = useTheme()
+  const { sessions: liveSessions } = useLive()
   const pinned = usePinnedSessions()
   const folderPreferences = useFolderPreferences()
   const statusGlyph = useStatusGlyph()
@@ -237,10 +229,10 @@ export function AppSidebar() {
     }
     return (
       <SidebarMenuItem key={key}>
-        {/* harness 小标比文件夹图标列(left-5)再错进一档(left-6),树状错落而不是
-            一条直线;标题保持文字轴(pl-11)不动 */}
+        {/* harness 小标比文件夹图标列(left-5)再错进一档(left-6),树状错落表达层级;
+            尺寸与文件夹图标同为 16px,错落只在位置不在大小 */}
         <span className="pointer-events-none absolute left-6 top-1/2 -translate-y-1/2 opacity-70">
-          <HarnessIcon id={s.harnessId as HarnessId} className="size-3.5" />
+          <HarnessIcon id={s.harnessId as HarnessId} className="size-4" />
         </span>
         <SidebarMenuButton
           isActive={active}
@@ -609,75 +601,33 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-        <SidebarFooter className="gap-1 px-3 pb-3">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <SidebarMenuButton className="h-auto gap-2.5 px-2 py-1.5">
-                <Avatar size="sm">
-                  <AvatarFallback className="type-micro bg-primary/15 font-semibold text-sidebar-foreground">
-                    DV
-                  </AvatarFallback>
-                </Avatar>
-                <span className="flex min-w-0 flex-1 flex-col items-start gap-0">
-                  <span className="truncate text-xs font-medium">dev</span>
-                  <span className="type-micro truncate text-muted-foreground">
-                    dev@bento.local
-                  </span>
-                </span>
-                <ChevronsUpDown className="size-3.5 shrink-0 opacity-50" />
-              </SidebarMenuButton>
-            </DropdownMenuTrigger>
-            {/* 菜单不宽过侧栏本体(220px),不然弹出会盖到正文区 */}
-            <DropdownMenuContent side="top" align="start" className="w-51">
-              <DropdownMenuLabel className="flex flex-col gap-0 text-xs">
-                <span className="font-medium text-foreground">dev</span>
-                <span className="type-micro font-normal text-muted-foreground">
-                  dev@bento.local
-                </span>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {/* 主题切换收进账户菜单——主题是用户偏好,不是原型对比工具 */}
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger className="gap-2 text-sm">
-                  <Palette className="size-4 opacity-70" />
-                  <span className="flex-1">主题</span>
-                  <span className="type-micro text-muted-foreground">
-                    {STYLES.find((s) => s.id === theme.style)?.name}
-                  </span>
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="w-44">
-                  <DropdownMenuRadioGroup
-                    value={theme.style}
-                    onValueChange={(v) => theme.setStyle(v as StyleId)}
-                  >
-                    {STYLES.map((s) => (
-                      <DropdownMenuRadioItem key={s.id} value={s.id} className="text-sm">
-                        {s.name}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuCheckboxItem
-                    checked={theme.dark}
-                    onCheckedChange={theme.setDark}
-                    className="gap-2 text-sm"
-                  >
-                    <Moon className="size-4 opacity-70" />
-                    深色模式
-                  </DropdownMenuCheckboxItem>
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="gap-2 text-sm" onSelect={() => openSettings("providers")}>
-                <Settings className="size-4 opacity-70" />
-                设置
-              </DropdownMenuItem>
-              <DropdownMenuItem className="gap-2 text-sm" onSelect={() => openSettings("shortcuts")}>
-                <Keyboard className="size-4 opacity-70" />
-                快捷键
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+        <SidebarFooter className="px-3 pb-3">
+          {/* 底栏是一个整体:hover 整行一起亮;明暗切换与设置是行内嵌的两个小钮 */}
+          <div className="flex items-center rounded-lg transition-colors hover:bg-sidebar-accent">
+            <button
+              type="button"
+              onClick={() => openSettings("account")}
+              className="flex h-auto min-w-0 flex-1 items-center gap-2.5 rounded-l-lg px-2 py-1.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              <Avatar size="sm">
+                {profile.avatar && <AvatarImage src={profile.avatar} />}
+                <AvatarFallback className="type-micro bg-primary/15 font-semibold text-sidebar-foreground">
+                  {profile.avatar ? null : profileInitial(profile.name)}
+                </AvatarFallback>
+              </Avatar>
+              <span className="min-w-0 flex-1 truncate text-left text-xs font-medium">
+                {profile.name}
+              </span>
+            </button>
+            <button
+              type="button"
+              title={theme.dark ? "切换到浅色模式" : "切换到深色模式"}
+              onClick={() => theme.setDark(!theme.dark)}
+              className="mr-0.5 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              {theme.dark ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
+            </button>
+          </div>
         </SidebarFooter>
       </Sidebar>
 

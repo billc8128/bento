@@ -210,7 +210,7 @@ export function DockWorkspace() {
       {/* 无会话自动 onboarding;已有会话时点「新对话」覆盖到同一完整起始页。
           「新对话」是显式意图,始终优先;仅自动 onboarding 给聚焦的应用面板让位 */}
       {(newSession.open || (liveSessions.length === 0 && !appsFocused)) && (
-        <div className="absolute inset-0 z-20">
+        <div data-overlay-page className="absolute inset-0 z-20">
           <NewSessionView
             key={newSession.revision}
             closable={liveSessions.length > 0}

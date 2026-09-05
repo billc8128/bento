@@ -84,9 +84,9 @@ export function HarnessesSection() {
                 <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted">
                   <HarnessIcon id={harness.id} className="size-4.5" />
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium">{harness.name}</span>
-                  <span className="mt-0.5 block truncate font-mono text-xs text-muted-foreground">
+                <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                  <span className="text-sm font-medium">{harness.name}</span>
+                  <span className="truncate font-mono text-xs text-muted-foreground">
                     {sourceLabel(status)}
                   </span>
                 </span>

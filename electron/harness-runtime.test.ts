@@ -35,12 +35,13 @@ describe("Harness runtime resolution", () => {
     process.env.PATH = tempDir
 
     expect(localHarnessExecutable("hermes")).toEqual({ path: hermes, source: "local" })
-    // 上报的是首选执行来源(managed),PATH 安装只是附注,会话不使用它
+    // 上报的是首选执行来源(managed),PATH 安装只是附注,会话不使用它;
+    // 附注不探测版本(UI 不展示,spawn --version 白花时间)
     await expect(harnessRuntimeStatus("hermes")).resolves.toMatchObject({
       source: "managed",
       usable: true,
       fallbackAvailable: true,
-      localInstall: { path: hermes, version: "Hermes 9.9.9" },
+      localInstall: { path: hermes },
     })
   })
 

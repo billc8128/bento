@@ -29,7 +29,7 @@ import { builtinProvidersForHarness } from "./builtin-providers"
 import { runOAuthLogin } from "./oauth-runner"
 import { LocalProviderScanner } from "./provider-import"
 import type { LocalProviderCandidate } from "../src/core/provider-preset"
-import { listHarnessRuntimeStatuses } from "./harness-runtime"
+import { listHarnessRuntimeStatuses, warmHarnessRuntimeVersions } from "./harness-runtime"
 import { ModelVisibilityStore } from "./model-visibility"
 import { ProviderModelCache } from "./provider-model-cache"
 import { KimiBentoConfigAdapter } from "./session-config/kimi"
@@ -55,6 +55,11 @@ import { AgentSelectionCatalog } from "./collaboration-catalog"
 
 // GUI app 不继承 login shell 的 PATH,打包后 spawn kimi/opencode 会 ENOENT。
 // fix-path 用 login shell 修 PATH;常见 bin 目录再兜一层(存在才加)
+// dev 下顺手开 CDP:vite-plugin-electron 只起一个窗口,验证脚本经 9876 驱动它,
+// 不必再单开一个带调试端口的实例(Dock 双窗口的来源)
+if (!app.isPackaged) {
+  app.commandLine.appendSwitch("remote-debugging-port", "9876")
+}
 if (app.isPackaged) {
   fixPath()
   const extraDirs = [".local/bin", ".kimi-code/bin", ".opencode/bin", ".cargo/bin"].map((p) =>
@@ -254,6 +259,8 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  // 闲时预热 harness 版本探测(claude 内嵌 CLI 要 spawn 一次),设置页首开即读缓存
+  warmHarnessRuntimeVersions()
   const sendWorkspaceEvent = (ownerId: number, channel: string, payload: unknown) => {
     const contents = webContents.fromId(ownerId)
     if (contents && !contents.isDestroyed()) contents.send(channel, payload)
@@ -417,6 +424,19 @@ app.whenReady().then(async () => {
     }
   })
   ipcMain.handle("harness-runtime:list", () => listHarnessRuntimeStatuses())
+  // 液态玻璃主题:整窗接 NSVisualEffectView;材质明暗跟随系统外观
+  ipcMain.on("theme:vibrancy", (event, on: unknown) => {
+    if (process.platform !== "darwin") return
+    BrowserWindow.fromWebContents(event.sender)?.setVibrancy(on === true ? "fullscreen-ui" : null)
+  })
+  // 本地资料的默认显示名:macOS 系统用户名(无账户系统,纯装饰)
+  ipcMain.handle("system:username", () => {
+    try {
+      return os.userInfo().username
+    } catch {
+      return null
+    }
+  })
   ipcMain.handle("session:prompt", async (_e, key: string, input: PromptInput) => {
     try {
       const res = await sessions.prompt(key, input)

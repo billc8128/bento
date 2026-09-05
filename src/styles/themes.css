@@ -423,32 +423,32 @@
 }
 
 :root.dark, :root[data-style="graphite"].dark {
-    --background: oklch(0.205 0 0);
+    --background: oklch(0.24 0 0);
     --foreground: oklch(0.985 0 0);
-    --card: oklch(0.165 0 0);
+    --card: oklch(0.20 0 0);
     --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
+    --popover: oklch(0.24 0 0);
     --popover-foreground: oklch(0.985 0 0);
     --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
+    --primary-foreground: oklch(0.24 0 0);
+    --secondary: oklch(0.29 0 0);
     --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
+    --muted: oklch(0.29 0 0);
     --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.371 0 0);
+    --accent: oklch(0.36 0 0);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.702 0.19 22.16);
-    --border: oklch(0.275 0 0);
-    --input: oklch(0.269 0 0);
+    --border: oklch(0.31 0 0);
+    --input: oklch(0.29 0 0);
     --ring: var(--app-brand);
 
-    --sidebar: oklch(0.269 0 0);
+    --sidebar: oklch(0.285 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
     --sidebar-primary: oklch(0.922 0 0);
-    --sidebar-primary-foreground: oklch(0.205 0 0);
-    --sidebar-accent: oklch(0.32 0 0);
+    --sidebar-primary-foreground: oklch(0.24 0 0);
+    --sidebar-accent: oklch(0.34 0 0);
     --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(0.31 0 0);
+    --sidebar-border: oklch(0.33 0 0);
     --sidebar-ring: var(--app-brand);
 
     --app-brand: oklch(0.8 0.145 75);
@@ -457,7 +457,7 @@
     --app-ok: oklch(0.75 0.11 155);
     --app-warn: oklch(0.8 0.12 85);
     --app-err: oklch(0.702 0.19 22.16);
-    --app-chrome: oklch(0.24 0 0);
+    --app-chrome: oklch(0.265 0 0);
 }
 
 /* === E. indigo — 靛蓝暗夜 =============================================== */
@@ -560,6 +560,145 @@
     --app-warn: oklch(0.8 0.13 85);
     --app-err: oklch(0.702 0.19 22.16);
     --app-chrome: oklch(0.17 0 0);
+}
+
+/* === F. glass — 液态玻璃 ============================================== */
+/* 亮 = 方案 D,暗 = 方案 E。材质由 Electron vibrancy(fullscreen-ui)提供,
+ * CSS 只做半透层与镜面高光;vibrancy 材质的明暗跟随系统外观。
+ * 玻璃纪律:字略重、边框只做发丝光、彩色只给状态与品牌点睛。 */
+
+:root[data-style="glass"] {
+    --app-font-sans: -apple-system, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --app-font-heading: -apple-system, "SF Pro Display", "PingFang SC", sans-serif;
+    --app-font-mono: ui-monospace, "SF Mono", "Geist Mono Variable", Menlo, monospace;
+    --app-type-caption-size: 12px;
+    --app-type-caption-line: 16px;
+    --app-type-ui-size: 14px;
+    --app-type-ui-line: 20px;
+    --app-type-body-size: 16px;
+    --app-type-body-line: 24px;
+    --app-type-micro-size: 11px;
+    --app-type-micro-line: 14px;
+    --app-type-display-size: clamp(28px, 3vw, 36px);
+    --app-type-display-line: 1.15;
+    --app-type-display-weight: 500;
+    --app-type-display-tracking: -0.025em;
+    --app-weight-normal: 400;
+    --app-weight-medium: 500;
+    --app-weight-semibold: 600;
+    --app-content-max: 44rem;
+    --app-onboarding-max: 44rem;
+    --app-onboarding-title-gap: 3rem;
+    --app-onboarding-composer-height: 10rem;
+    --app-project-row-height: 4rem;
+    --radius: 0.75rem;
+
+    /* 整窗透明,材质由 vibrancy 提供;卡片/弹层是叠在玻璃上的半透层 */
+    --background: transparent;
+    --foreground: oklch(0.21 0 0);
+    --card: oklch(1 0 0 / 0.55);
+    --card-foreground: oklch(0.21 0 0);
+    --popover: oklch(1 0 0 / 0.88);
+    --popover-foreground: oklch(0.21 0 0);
+    --primary: oklch(0.21 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(1 0 0 / 0.4);
+    --secondary-foreground: oklch(0.24 0 0);
+    --muted: oklch(1 0 0 / 0.35);
+    --muted-foreground: oklch(0.42 0 0);
+    --accent: oklch(1 0 0 / 0.5);
+    --accent-foreground: oklch(0.24 0 0);
+    --destructive: oklch(0.583 0.239 28.494);
+    /* 边框是玻璃上的发丝光,不是分隔线 */
+    --border: oklch(1 0 0 / 0.4);
+    --input: oklch(1 0 0 / 0.4);
+    --ring: var(--app-brand);
+
+    --sidebar: oklch(1 0 0 / 0.16);
+    --sidebar-foreground: oklch(0.21 0 0);
+    --sidebar-primary: oklch(0.21 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    /* 选中态:更厚一级的玻璃胶囊 */
+    --sidebar-accent: oklch(1 0 0 / 0.55);
+    --sidebar-accent-foreground: oklch(0.18 0 0);
+    --sidebar-border: oklch(1 0 0 / 0.3);
+    --sidebar-ring: var(--app-brand);
+
+    --app-brand: oklch(0.72 0.15 72);
+    --app-brand-foreground: oklch(0.98 0.01 72);
+
+    --app-ok: oklch(0.55 0.13 155);
+    --app-warn: oklch(0.62 0.12 80);
+    --app-err: oklch(0.583 0.239 28.494);
+    --app-chrome: oklch(1 0 0 / 0.28);
+}
+
+:root[data-style="glass"].dark {
+    --background: transparent;
+    --foreground: oklch(0.94 0 0);
+    --card: oklch(1 0 0 / 0.09);
+    --card-foreground: oklch(0.94 0 0);
+    --popover: oklch(0.22 0 0 / 0.9);
+    --popover-foreground: oklch(0.94 0 0);
+    --primary: oklch(0.94 0 0);
+    --primary-foreground: oklch(0.18 0 0);
+    --secondary: oklch(1 0 0 / 0.1);
+    --secondary-foreground: oklch(0.96 0 0);
+    --muted: oklch(1 0 0 / 0.09);
+    --muted-foreground: oklch(0.75 0 0);
+    --accent: oklch(1 0 0 / 0.14);
+    --accent-foreground: oklch(0.96 0 0);
+    --destructive: oklch(0.702 0.19 22.16);
+    --border: oklch(1 0 0 / 0.14);
+    --input: oklch(1 0 0 / 0.14);
+    --ring: var(--app-brand);
+
+    --sidebar: oklch(0.16 0 0 / 0.4);
+    --sidebar-foreground: oklch(0.94 0 0);
+    --sidebar-primary: oklch(0.94 0 0);
+    --sidebar-primary-foreground: oklch(0.18 0 0);
+    --sidebar-accent: oklch(1 0 0 / 0.13);
+    --sidebar-accent-foreground: oklch(1 0 0);
+    --sidebar-border: oklch(1 0 0 / 0.12);
+    --sidebar-ring: var(--app-brand);
+
+    --app-brand: oklch(0.8 0.145 75);
+    --app-brand-foreground: oklch(0.2 0.04 70);
+
+    --app-ok: oklch(0.78 0.14 155);
+    --app-warn: oklch(0.82 0.12 85);
+    --app-err: oklch(0.702 0.19 22.16);
+    --app-chrome: oklch(0.14 0 0 / 0.5);
+}
+
+/* Electron 开着 vibrancy 时 backdrop-filter 不渲染(Chromium 合成器与原生
+ * 材质层冲突),玻璃主题的所有覆盖层都不能依赖模糊,用不透明度保可读。
+ * 材质感由原生 vibrancy 层提供,不需要 CSS 再模糊。 */
+:root[data-style="glass"] [data-overlay-page] {
+    background: oklch(0.97 0 0 / 0.94);
+}
+:root[data-style="glass"].dark [data-overlay-page] {
+    background: oklch(0.18 0 0 / 0.94);
+}
+
+/* 减少透明度的用户:退回实底,玻璃感全收 */
+@media (prefers-reduced-transparency: reduce) {
+    :root[data-style="glass"] {
+        --background: oklch(0.96 0 0);
+        --card: oklch(0.995 0 0);
+        --popover: oklch(1 0 0);
+        --sidebar: oklch(0.94 0 0);
+        --sidebar-accent: oklch(0.9 0 0);
+        --app-chrome: oklch(0.95 0 0);
+    }
+    :root[data-style="glass"].dark {
+        --background: oklch(0.2 0 0);
+        --card: oklch(0.24 0 0);
+        --popover: oklch(0.26 0 0);
+        --sidebar: oklch(0.26 0 0);
+        --sidebar-accent: oklch(0.32 0 0);
+        --app-chrome: oklch(0.24 0 0);
+    }
 }
 
 /* === dockview 主题桥:--dv-* 全部映射到 L0 token,切主题自动跟随 ========== */
