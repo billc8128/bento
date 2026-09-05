@@ -66,10 +66,34 @@ function sessionIdOf(panelId: string): string | null {
   return panelId.startsWith("chat:") ? panelId.slice(5) : null
 }
 
-/** DockWorkspace 在 onReady 注册;卸载时传 null */
-export function attachDockApi(next: DockviewApi | null) {
+let headerObserver: MutationObserver | null = null
+let headerHost: HTMLElement | null = null
+
+/** DockWorkspace 在 onReady 注册;卸载时传 null。
+ *  dockview 8 组注册是异步的,事件与 rAF 都追不上(藏头会漏),
+ *  用 MutationObserver 盯组节点进 DOM 的时机兜底 */
+export function attachDockApi(next: DockviewApi | null, container?: HTMLElement | null) {
   api = next
+  headerObserver?.disconnect()
+  headerObserver = null
+  headerHost = container ?? null
+  if (api && container) {
+    headerObserver = new MutationObserver(() => hideGroupHeaders())
+    headerObserver.observe(container, { childList: true, subtree: true })
+  }
   refresh()
+}
+
+/** 受管布局不显示组头(标签页)。两条腿:dockview 状态 api(对已注册组)+
+ *  DOM 直写(对注册滞后的组);dockview 自己的 setter 也是写同样的 inline style */
+function hideGroupHeaders() {
+  if (!api) return
+  for (const g of api.groups) g.header.hidden = true
+  if (headerHost) {
+    for (const el of headerHost.querySelectorAll<HTMLElement>(".dv-tabs-and-actions-container")) {
+      el.style.display = "none"
+    }
+  }
 }
 
 /** 从 dockview 现状重算衍生状态。面板增删、焦点变化后由各变更路径调用 */
@@ -79,6 +103,7 @@ export function refresh() {
   let appsFocused = false
   let adjacency: UiSessionAdjacency[] = []
   if (api) {
+    hideGroupHeaders()
     for (const p of api.panels) {
       const sid = sessionIdOf(p.id)
       if (sid) open.push(sid)

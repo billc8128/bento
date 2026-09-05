@@ -50,8 +50,9 @@ export function initCollaborationUi(): void {
     bento.reportCollaborationUiState({
       visibleSessionIds: snap.adjacency.map((entry) => entry.sessionId),
       focusedSessionId: snap.focusedSessionId,
-      // 布局只剩自由停靠一档,layoutMode 契约字段保留(对端校验枚举),恒为 free
-      layoutMode: "free",
+      // 布局只剩受管一档(无标签页、禁浮动),layoutMode 契约字段保留
+      //(对端校验枚举),恒报 managed
+      layoutMode: "managed",
       adjacency: snap.adjacency,
     })
   }
