@@ -308,6 +308,23 @@ export function ChatView({ messages, pending = true, turn, onResolveApproval, qu
     }
   }, [])
 
+  // 人类发送永远跳回最新(聊天惯例:自己发了消息就是要看回复),并把跟随
+  // 重新粘上;协作来源的 user 消息(origin=session)不抢滚动,沿用贴底跟随。
+  // 注意:messages 是 live-store 原地变更的稳定引用,不能当依赖——只能依赖末条 id。
+  const lastIdRef = useRef<string | null>(null)
+  const lastMessageId = messages.length > 0 ? messages[messages.length - 1].id : null
+  useEffect(() => {
+    if (!lastMessageId) return
+    const prev = lastIdRef.current
+    lastIdRef.current = lastMessageId
+    // 初次挂载/同一条不处理;挂载时的贴底由上面的 stick 负责
+    if (prev === null || prev === lastMessageId) return
+    const last = messages[messages.length - 1]
+    if (last?.role === "user" && !last.origin) scrollToLatest()
+    // 乐观上屏转正换 id 位置不变,二次触发幂等
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastMessageId])
+
   return (
     <div className="relative min-h-0 flex-1">
     <ScrollArea ref={rootRef} className="chat-scroll-area h-full min-h-0">
