@@ -220,7 +220,7 @@ export function AppSidebar() {
     if (renaming === key) {
       return (
         <SidebarMenuItem key={key}>
-          <div className="flex h-7 items-center pl-11 pr-5">
+          <div className="flex h-7 items-center pl-12 pr-5">
             <Input
               autoFocus
               defaultValue={s.title}
@@ -239,9 +239,11 @@ export function AppSidebar() {
     }
     return (
       <SidebarMenuItem key={key}>
-        {/* harness 小标比文件夹图标列(left-5)再错进一档(left-6),树状错落表达层级;
-            尺寸与文件夹图标同为 16px,错落只在位置不在大小 */}
-        <span className="pointer-events-none absolute left-6 top-1/2 -translate-y-1/2 opacity-70">
+        {/* harness 小标比文件夹图标列(left-5)错进一档(left-7 = 8px):4px 错落低于
+            可识别阈值,读起来像没对齐;8px 才成立为树状层级。尺寸仍与文件夹图标同 16px */}
+        {/* flex 让 span 高度塌缩到图标本身:否则 span 是 24px 行盒,内联图标坐在
+            基线上方,整列图标偏高 ~2px(实测过) */}
+        <span className="pointer-events-none absolute left-7 top-1/2 flex -translate-y-1/2 opacity-70">
           <HarnessIcon id={s.harnessId as HarnessId} className="size-4" />
         </span>
         <SidebarMenuButton
@@ -256,12 +258,12 @@ export function AppSidebar() {
             e.dataTransfer.effectAllowed = "move"
           }}
           className={cn(
-            "h-7 pl-11 pr-5 group-hover/menu-item:pr-24 group-focus-within/menu-item:pr-24",
+            "h-7 pl-12 pr-5 group-hover/menu-item:pr-24 group-focus-within/menu-item:pr-24",
             rowRound,
             openSessionMenu === key && "pr-24",
           )}
         >
-          {/* 会话行不带图标:标题落文字轴(pl-11 = 44px),层级靠错落缩进表达,
+          {/* 会话行标题随图标列一起错进(pl-12 = 48px),文字缩进与图标错落共同表达层级,
               不靠压父级颜色(Codex 式) */}
           <span className="flex-1 truncate text-sm">{s.title}</span>
           {/* 状态指示样式由设置 → 外观 里的 StatusGlyph 决定 */}
@@ -376,9 +378,9 @@ export function AppSidebar() {
                     className={cn("h-8 gap-2 px-5 text-sm", rowRound)}
                     onClick={() => requestNewSession()}
                   >
-                    {/* PenSquare 字形左侧留白比 Blocks 多 ~1px(viewBox 内边距不同),
-                        光学补偿 -1px 让两个图标的左缘对齐 */}
-                    <PenSquare className="size-4 -translate-x-px" />
+                    {/* 光学对齐基准是文件夹图标列(tabler,字形左缘比 lucide 深 1px):
+                        PenSquare 字形留白天然多 1px 正好落位,Blocks 需 +1px 补偿 */}
+                    <PenSquare className="size-4" />
                     <span>新对话</span>
                     <span className="ml-auto type-micro text-muted-foreground">⌘N</span>
                   </SidebarMenuButton>
@@ -392,7 +394,9 @@ export function AppSidebar() {
                       closeNewSession()
                     }}
                   >
-                    <Blocks className="size-4" />
+                    {/* Blocks 字形在 lucide 网格里偏左上:右移 1px 对齐文件夹列,
+                        上移 1px 的反向是下沉——实测它比文字质心低 1.2px,提 1px */}
+                    <Blocks className="size-4 translate-x-px -translate-y-px" />
                     <span>应用</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
