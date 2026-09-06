@@ -24,7 +24,7 @@ const OUTER: Record<ComposerShape, string> = {
   // 悬浮:脱离文档流盖在消息上,靠 App 的 relative main 定位。
   // before 是那道渐隐:消息滚到输入框附近先淡出,而不是被硬生生切一刀
   floating:
-    "pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-5 before:pointer-events-none before:absolute before:inset-x-0 before:-top-12 before:bottom-0 before:bg-gradient-to-t before:from-background before:via-background before:to-transparent",
+    "composer-fade pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-5 before:pointer-events-none before:absolute before:inset-x-0 before:-top-12 before:bottom-0 before:bg-gradient-to-t before:from-background before:via-background before:to-transparent",
   inline: "shrink-0 border-t border-border px-4 pb-4 pt-3",
 }
 
@@ -34,7 +34,7 @@ const SHELL: Record<ComposerShape, string> = {
   card: "rounded-lg border bg-card shadow-flat",
   // 悬浮态用实底 + 投影分层,不用毛玻璃:消息从下面滚过去的遮挡交给
   // ChatView 底部那道渐隐,半透明输入框会让底下的代码块糊成噪点
-  floating: "pointer-events-auto rounded-3xl border bg-card shadow-float",
+  floating: "composer-shell pointer-events-auto rounded-3xl border bg-card shadow-float",
   inline: "rounded-none border-0 bg-transparent shadow-none",
 }
 
@@ -210,9 +210,10 @@ export function Composer({
             </div>
           )}
 
-          {/* 附件区:图像走缩略图,文件走小卡片,不再用分隔线圈出一条窄带 */}
+          {/* 附件区:图像走缩略图,文件走小卡片,不再用分隔线圈出一条窄带;
+              横向 padding 跟随主题圆角:大圆角(浮岛)里内容要躲开曲线端 */}
           {attachments.length > 0 && (
-            <div className="flex flex-wrap items-start gap-2 px-4 pt-3.5">
+            <div className="flex flex-wrap items-start gap-2 px-[max(1rem,calc(var(--radius)*1.2))] pt-3.5">
               {attachments.map((a) =>
                 a.kind === "image" ? (
                   <div
@@ -316,7 +317,7 @@ export function Composer({
             // 单行输入看起来太扁。收起态固定 48px 单行居中,py-3 对称 padding 居中文字;
             // 右侧保留区:平时 pr-44(发送钮+身份),运行中停止钮出现扩到 pr-[200px]
             className={cn(
-              "resize-none border-0 bg-transparent px-4 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent",
+              "resize-none border-0 bg-transparent px-[max(1rem,calc(var(--radius)*1.2))] text-sm shadow-none focus-visible:ring-0 dark:bg-transparent",
               "transition-[height,padding] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
               collapsed
                 ? cn("h-12 max-h-12 min-h-12 overflow-hidden py-3 leading-6", running ? "pr-[200px]" : "pr-44")
@@ -352,7 +353,9 @@ export function Composer({
             <div className="min-h-0 overflow-hidden">
               <div
                 className={cn(
-                  "flex items-center gap-1 px-3 pb-3 transition-opacity duration-200",
+                  // 比文字行少 6px:抵消 icon-sm 按钮的内边距,让图标左缘和
+                  // 上面 placeholder 的字对齐,而不是按钮壳对齐
+                  "flex items-center gap-1 px-[max(0.625rem,calc(var(--radius)*1.2-0.375rem))] pb-3 transition-opacity duration-200",
                   // 右侧给绝对定位的发送(+停止)钮留位
                   running ? "pr-20" : "pr-12",
                   collapsed && "opacity-0",
@@ -431,8 +434,9 @@ export function Composer({
             </div>
           </div>
 
-          {/* 运行中仍允许发下一条;停止保持独立动作。钉在右下角:收起态也可见 */}
-          <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1">
+          {/* 运行中仍允许发下一条;停止保持独立动作。钉在右下角:收起态也可见。
+              右端偏移跟随圆角:大圆角壳里按钮不能被曲线吃掉 */}
+          <div className="absolute bottom-2.5 right-[max(0.625rem,calc(var(--radius)*0.8))] flex items-center gap-1">
             <Button size="icon" className="size-7 rounded-full" disabled={!canSend} onClick={send}>
               <ArrowUp className="size-4" />
               <span className="sr-only">{running ? "发送为下一条" : "发送"}</span>
@@ -450,19 +454,6 @@ export function Composer({
             )}
           </div>
         </div>
-
-        {/* 悬浮形态下这行会压在消息上,不如省掉 */}
-        {shape !== "floating" && (
-          <p
-            className={cn(
-              "px-1 text-center text-xs text-muted-foreground",
-              shape === "docked" ? "mt-1.5" : "mt-2",
-            )}
-          >
-            <kbd className="font-mono">⏎</kbd> 发送 · <kbd className="font-mono">⇧⏎</kbd> 换行 ·
-            可直接把图片或文件拖进来,或直接粘贴剪贴板图片
-          </p>
-        )}
       </div>
     </div>
   )

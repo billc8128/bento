@@ -87,7 +87,7 @@ import type { SidebarShape } from "@/data/styles"
 /** 外层包裹:浮岛要靠四周留白才浮得起来 */
 const FRAME: Record<SidebarShape, string> = {
   flush: "h-full",
-  island: "h-full py-2.5 pl-2.5",
+  island: "h-full p-3",
   bare: "h-full",
 }
 
@@ -96,6 +96,14 @@ const PANEL: Record<SidebarShape, string> = {
   flush: "border-r border-sidebar-border",
   island: "rounded-xl border border-sidebar-border shadow-pop",
   bare: "",
+}
+
+/** 内容区内缩:贴边/裸露的高亮可以通栏 bleed;浮岛的行碰到卡片边会显得挤,
+ * 内容整体内缩 8px,行再多一圈圆角,选中态是嵌在卡里的胶囊而不是贴边长条 */
+const CONTENT_PAD: Record<SidebarShape, string> = {
+  flush: "px-0",
+  island: "px-2",
+  bare: "px-0",
 }
 
 /** 会话目录名展示:取路径最后一段 */
@@ -124,6 +132,8 @@ function relativeTime(iso: string): string {
 
 export function AppSidebar() {
   const { sidebar: shape } = useTraits()
+  const inset = shape === "island"
+  const rowRound = inset ? "rounded-lg" : "rounded-none"
   const { focusedSessionId, appsFocused } = useLayout()
   const profile = useProfile()
   const theme = useTheme()
@@ -246,7 +256,8 @@ export function AppSidebar() {
             e.dataTransfer.effectAllowed = "move"
           }}
           className={cn(
-            "h-7 rounded-none pl-11 pr-5 group-hover/menu-item:pr-24 group-focus-within/menu-item:pr-24",
+            "h-7 pl-11 pr-5 group-hover/menu-item:pr-24 group-focus-within/menu-item:pr-24",
+            rowRound,
             openSessionMenu === key && "pr-24",
           )}
         >
@@ -352,8 +363,8 @@ export function AppSidebar() {
         </div>
       </SidebarHeader>
 
-      {/* px-0:行的 hover/选中背景通栏 bleed,不留内缩药丸(对齐轴在各行自己的 px-5) */}
-      <SidebarContent className="px-0">
+      {/* 贴边/裸露:行的 hover/选中背景通栏 bleed;浮岛:内缩 + 圆角(见 CONTENT_PAD) */}
+      <SidebarContent className={CONTENT_PAD[shape]}>
         <SidebarGroup className="p-0">
           <div className="space-y-4 pb-2">
               {/* 主导航:新对话是唯一新建入口(头部不再放 compose 图标,避免双入口);
@@ -362,7 +373,7 @@ export function AppSidebar() {
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={newSessionOpen || (liveSessions.length === 0 && !appsFocused)}
-                    className="h-8 gap-2 rounded-none px-5 text-sm"
+                    className={cn("h-8 gap-2 px-5 text-sm", rowRound)}
                     onClick={() => requestNewSession()}
                   >
                     {/* PenSquare 字形左侧留白比 Blocks 多 ~1px(viewBox 内边距不同),
@@ -375,7 +386,7 @@ export function AppSidebar() {
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     isActive={appsFocused && !newSessionOpen}
-                    className="h-8 gap-2 rounded-none px-5 text-sm"
+                    className={cn("h-8 gap-2 px-5 text-sm", rowRound)}
                     onClick={() => {
                       openAppsView()
                       closeNewSession()

@@ -4,9 +4,6 @@
  * 只换颜色的话几套看起来还是同一个界面。真正拉开距离的是布局本身:
  * 侧边栏贴不贴边、消息有没有气泡、输入框是嵌在底边还是浮在内容上。
  * 只换 token 不配 traits 的主题没有资格进内置列表(ARCHITECTURE.md §3)。
- *
- * 原型阶段落选的三套(linear / dense / paper)token 封存在 themes.css,
- * 不在此注册;未来可作为外部主题包复活。
  */
 
 export type SidebarShape =
@@ -72,7 +69,7 @@ export type Style = {
 export const STYLES = [
   {
     id: "graphite",
-    name: "浅色模式",
+    name: "默认",
     desc: "石墨灰阶 · 琥珀点睛 · 悬浮输入",
     tone: "light",
     layout: { sidebar: { default: 204, min: 196, max: 304 } },
