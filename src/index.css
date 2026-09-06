@@ -284,7 +284,7 @@
 }
 
 .welcome-logo-block-l { --wx: -30; --wy: 0; --wr: -8deg; fill: var(--foreground); }
-.welcome-logo-block-t { --wx: 20; --wy: -25; --wr: 10deg; fill: #fdb102; animation-delay: 120ms; }
+.welcome-logo-block-t { --wx: 20; --wy: -25; --wr: 10deg; fill: #f5a83b; animation-delay: 120ms; }
 .welcome-logo-block-b { --wx: 20; --wy: 25; --wr: 6deg; fill: var(--foreground); animation-delay: 220ms; }
 
 @keyframes welcome-block-in {
@@ -325,7 +325,7 @@
 }
 
 .welcome-title { --welcome-wave-peak: #c47f00; }
-.dark .welcome-title { --welcome-wave-peak: #fdb102; }
+.dark .welcome-title { --welcome-wave-peak: #f5a83b; }
 
 @media (prefers-reduced-motion: reduce) {
   .welcome-logo-block,
