@@ -79,8 +79,10 @@ describe("ProviderRoutingService OAuth", () => {
     const routing = new ProviderRoutingService(dir, () => store, undefined, discoverCodex)
 
     await expect(routing.discoverProviderModels("openai", "pi", dir)).resolves.toMatchObject({
-      currentModelId: "gpt-5.6-sol",
-      models: [{ id: "gpt-5.6-sol" }],
+      result: {
+        currentModelId: "gpt-5.6-sol",
+        models: [{ id: "gpt-5.6-sol" }],
+      },
     })
     expect(discoverCodex).toHaveBeenCalledOnce()
     expect(routing.sessionsUsing("openai")).toBe(0)
@@ -117,11 +119,76 @@ describe("ProviderRoutingService OAuth", () => {
     )
 
     await expect(routing.discoverProviderModels("anthropic", "claude-code", dir))
-      .resolves.toMatchObject({ models: [{ id: "actual-claude" }] })
+      .resolves.toMatchObject({ result: { models: [{ id: "actual-claude" }] } })
     expect(routing.sessionsUsing("anthropic")).toBe(0)
     expect(fs.readdirSync(path.join(dir, "providers")).some(
       (name) => name.startsWith("cc-discovery-"),
     )).toBe(false)
+    routing.dispose()
+  })
+
+  it("非发现目标返回空结果且不带错误,不误标失败", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-non-target-"))
+    dirs.push(dir)
+    const store = new CustomProviderStore(dir, memorySecrets())
+    const routing = new ProviderRoutingService(dir, () => store)
+
+    await expect(routing.discoverProviderModels("user-relay", "codex", dir))
+      .resolves.toEqual({ result: null })
+    await expect(routing.discoverProviderModels("openai", "nonexistent-harness", dir))
+      .resolves.toEqual({ result: null })
+    routing.dispose()
+  })
+
+  it("OAuth 凭证缺失时账户发现按授权异常上报中文文案", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-no-token-"))
+    dirs.push(dir)
+    const store = new CustomProviderStore(dir, memorySecrets())
+    const routing = new ProviderRoutingService(dir, () => store)
+
+    const outcome = await routing.discoverProviderModels("openai", "codex", dir)
+    expect(outcome.result).toBeNull()
+    expect(outcome.error).toContain("重新登录")
+    routing.dispose()
+  })
+
+  it("发现探针抛错时按失败上报,提示运行时就绪后重试", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-rpc-fail-"))
+    dirs.push(dir)
+    const store = new CustomProviderStore(dir, memorySecrets())
+    store.writeOAuthTokens("openai", {
+      accessToken: "oauth-access",
+      refreshToken: "oauth-refresh",
+      expiresAt: Date.now() + 60 * 60 * 1000,
+    })
+    const discoverCodex = vi.fn(async () => {
+      throw new Error("spawn codex ENOENT")
+    })
+    const routing = new ProviderRoutingService(dir, () => store, undefined, discoverCodex)
+
+    const outcome = await routing.discoverProviderModels("openai", "codex", dir)
+    expect(outcome.result).toBeNull()
+    expect(outcome.error).toContain("运行时就绪")
+    expect(outcome.error).toContain("spawn codex ENOENT")
+    routing.dispose()
+  })
+
+  it("OAuth 账户目录为空时按失败上报,不静默当无发现", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-empty-"))
+    dirs.push(dir)
+    const store = new CustomProviderStore(dir, memorySecrets())
+    store.writeOAuthTokens("openai", {
+      accessToken: "oauth-access",
+      refreshToken: "oauth-refresh",
+      expiresAt: Date.now() + 60 * 60 * 1000,
+    })
+    const discoverCodex = vi.fn(async () => ({ models: [] }))
+    const routing = new ProviderRoutingService(dir, () => store, undefined, discoverCodex)
+
+    const outcome = await routing.discoverProviderModels("openai", "codex", dir)
+    expect(outcome.result).toEqual({ models: [] })
+    expect(outcome.error).toContain("空的模型列表")
+    expect(routing.sessionsUsing("openai")).toBe(0)
     routing.dispose()
   })
 

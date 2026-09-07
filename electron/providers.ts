@@ -14,6 +14,7 @@ import { builtinProvidersForHarness } from "./builtin-providers"
 import type { ProviderModelCache } from "./provider-model-cache"
 import {
   ProviderDiscoveryService,
+  type BuiltinDiscoveryResult,
   type ProviderDiscoveryResult,
 } from "./provider-discovery"
 
@@ -28,7 +29,7 @@ type BuiltinDiscoverer = (
   providerId: string,
   harnessId: HarnessId,
   cwd: string,
-) => Promise<ProviderDiscoveryResult | null>
+) => Promise<BuiltinDiscoveryResult | null>
 
 type ModelEnabledReader = (providerId: string, modelId: string) => boolean
 
@@ -195,21 +196,28 @@ export class ProviderRegistry {
         this.builtinAccountCache.set(accountKey, discovered)
       }
       if (options.discover && !discovered) {
+        let outcome: BuiltinDiscoveryResult | null = null
         try {
-          discovered = await this.discoverBuiltin(provider.id, options.harnessId, cwd) ?? undefined
-          if (discovered?.models.length) {
-            this.builtinCache.set(key, discovered)
-            this.persistentCache?.set(persistentKey, discovered)
-            if (accountCatalog) {
-              this.builtinAccountCache.set(accountKey, discovered)
-              this.persistentCache?.set(accountPersistentKey, discovered)
-            }
-          }
+          outcome = await this.discoverBuiltin(provider.id, options.harnessId, cwd)
         } catch (error) {
+          outcome = { result: null, error: error instanceof Error ? error.message : String(error) }
+        }
+        // 发现目标执行过但失败(抛错/空目录):标 failed 并透出文案,
+        // 不能静默回 idle 让设置页谎报"模型列表已是最新"。
+        if (outcome?.error) {
           return {
             ...view,
             modelDiscovery: "failed" as const,
-            discoveryError: error instanceof Error ? error.message : String(error),
+            discoveryError: outcome.error,
+          }
+        }
+        discovered = outcome?.result ?? undefined
+        if (discovered?.models.length) {
+          this.builtinCache.set(key, discovered)
+          this.persistentCache?.set(persistentKey, discovered)
+          if (accountCatalog) {
+            this.builtinAccountCache.set(accountKey, discovered)
+            this.persistentCache?.set(accountPersistentKey, discovered)
           }
         }
       }

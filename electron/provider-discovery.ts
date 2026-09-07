@@ -28,6 +28,15 @@ export type ProviderDiscoveryResult = {
 
 export type ProviderDiscoverer = (cwd: string) => Promise<ProviderDiscoveryResult>
 
+/**
+ * builtin OAuth 账户发现结果:result/error 皆空 = 非发现目标(不标 failed);
+ * error 存在 = 发现执行过但失败(抛错或 OAuth 账户返回空目录),带中文文案。
+ */
+export type BuiltinDiscoveryResult = {
+  result: ProviderDiscoveryResult | null
+  error?: string
+}
+
 type RuntimeProviderDefinition = {
   id: string
   name: string

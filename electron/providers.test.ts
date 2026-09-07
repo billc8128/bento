@@ -26,12 +26,14 @@ describe("ProviderRegistry", () => {
       async () => {
         calls += 1
         return {
-          currentModelId: "gpt-5.6-sol",
-          models: [
-            { id: "gpt-5.6-sol", name: "GPT-5.6-Sol", reasoning: true },
-            { id: "gpt-5.6-terra", name: "GPT-5.6-Terra", reasoning: true },
-            { id: "gpt-5.6-luna", name: "GPT-5.6-Luna", reasoning: true },
-          ],
+          result: {
+            currentModelId: "gpt-5.6-sol",
+            models: [
+              { id: "gpt-5.6-sol", name: "GPT-5.6-Sol", reasoning: true },
+              { id: "gpt-5.6-terra", name: "GPT-5.6-Terra", reasoning: true },
+              { id: "gpt-5.6-luna", name: "GPT-5.6-Luna", reasoning: true },
+            ],
+          },
         }
       },
     )
@@ -195,7 +197,7 @@ describe("ProviderRegistry", () => {
     const registry = new ProviderRegistry(
       undefined,
       (config) => config.id === "openai",
-      async () => ({ models: [{ id: "gpt-5.4", name: "GPT-5.4", reasoning: true }] }),
+      async () => ({ result: { models: [{ id: "gpt-5.4", name: "GPT-5.4", reasoning: true }] } }),
     )
     await expect(registry.resolveSelection({
       harnessId: "codex",
@@ -225,7 +227,7 @@ describe("ProviderRegistry", () => {
       undefined,
       () => true,
       async () => ({
-        models: [{ id: "gpt-5.4", name: "GPT-5.4", reasoning: true }],
+        result: { models: [{ id: "gpt-5.4", name: "GPT-5.4", reasoning: true }] },
       }),
       (_providerId, modelId) => modelId !== "gpt-5.4",
     )
@@ -242,11 +244,13 @@ describe("ProviderRegistry", () => {
       async () => {
         calls += 1
         return {
-          currentModelId: "gpt-runtime-default",
-          models: [
-            { id: "gpt-runtime-default", name: "Runtime Default", reasoning: true },
-            { id: "gpt-runtime-fast", name: "Runtime Fast", reasoning: true },
-          ],
+          result: {
+            currentModelId: "gpt-runtime-default",
+            models: [
+              { id: "gpt-runtime-default", name: "Runtime Default", reasoning: true },
+              { id: "gpt-runtime-fast", name: "Runtime Fast", reasoning: true },
+            ],
+          },
         }
       },
     )
@@ -266,6 +270,67 @@ describe("ProviderRegistry", () => {
       modelId: "gpt-runtime-fast",
     })).resolves.toEqual({ providerId: "openai", modelId: "gpt-runtime-fast" })
     expect(calls).toBe(1)
+  })
+
+  it("builtin 账户发现带错误时标 failed 并透出文案,不写入缓存", async () => {
+    let calls = 0
+    const registry = new ProviderRegistry(
+      undefined,
+      (config) => config.id === "openai",
+      async () => {
+        calls += 1
+        return { result: null, error: "OpenAI 模型发现失败,请稍后重试;首次使用需等待内置运行时就绪" }
+      },
+    )
+
+    const [failed] = await registry.list({ harnessId: "codex", cwd: "/tmp", discover: true })
+    expect(failed).toMatchObject({ id: "openai", modelDiscovery: "failed" })
+    expect(failed.discoveryError).toContain("运行时就绪")
+    // 失败不进缓存:下一次 discover 会重新尝试,而不是被空结果钉死。
+    const [again] = await registry.list({ harnessId: "codex", cwd: "/tmp", discover: true })
+    expect(again.modelDiscovery).toBe("failed")
+    expect(calls).toBe(2)
+  })
+
+  it("builtin OAuth 账户目录为空时标 failed,不静默回 idle", async () => {
+    const registry = new ProviderRegistry(
+      undefined,
+      (config) => config.id === "openai",
+      async () => ({ result: { models: [] }, error: "OpenAI 返回了空的模型列表,请稍后重试" }),
+    )
+
+    const [provider] = await registry.list({ harnessId: "codex", cwd: "/tmp", discover: true })
+    expect(provider.modelDiscovery).toBe("failed")
+    expect(provider.discoveryError).toContain("空的模型列表")
+  })
+
+  it("非发现目标(discoverBuiltin 返回 null)保持 idle,不标 failed", async () => {
+    const registry = new ProviderRegistry(
+      undefined,
+      (config) => config.id === "openai",
+      async () => null,
+    )
+
+    const [provider] = await registry.list({ harnessId: "codex", cwd: "/tmp", discover: true })
+    expect(provider).toMatchObject({ id: "openai", modelDiscovery: "idle" })
+    expect(provider.discoveryError).toBeUndefined()
+  })
+
+  it("discoverBuiltin 自身抛错也标 failed,不让整个列表请求失败", async () => {
+    const registry = new ProviderRegistry(
+      undefined,
+      (config) => config.id === "openai",
+      async () => {
+        throw new Error("unexpected routing crash")
+      },
+    )
+
+    const [provider] = await registry.list({ harnessId: "codex", cwd: "/tmp", discover: true })
+    expect(provider).toMatchObject({
+      id: "openai",
+      modelDiscovery: "failed",
+      discoveryError: "unexpected routing crash",
+    })
   })
 
   it("runtime provider 未发现时未连接,发现服务成功后发布模型并缓存", async () => {
@@ -381,7 +446,7 @@ describe("ProviderRegistry", () => {
     const connected = new ProviderRegistry(
       undefined,
       (config) => config.id === "openai",
-      async () => ({ models: [{ id: "gpt-5.4", name: "GPT-5.4", reasoning: true }] }),
+      async () => ({ result: { models: [{ id: "gpt-5.4", name: "GPT-5.4", reasoning: true }] } }),
     )
     await expect(connected.resolveSelection({
       harnessId: "codex",

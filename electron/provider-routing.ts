@@ -22,7 +22,16 @@ import { RouteRegistry, startLocalModelProxy, type LocalModelProxy, type ProxyRo
 import { refreshOAuthToken } from "./oauth-runner"
 import { discoverCodexModels } from "./drivers/codex"
 import { discoverClaudeModels } from "./drivers/claude-agent-sdk"
-import type { ProviderDiscoveryResult } from "./provider-discovery"
+import type { BuiltinDiscoveryResult, ProviderDiscoveryResult } from "./provider-discovery"
+
+/** 把 builtin 账户发现的底层错误归类成设置页可行动的中文文案。 */
+function builtinDiscoveryErrorMessage(providerName: string, error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/尚未授权|未授权|未登录|登录|授权|401|403|unauthorized|forbidden|invalid_grant/i.test(message)) {
+    return `${providerName} 授权状态异常,请断开后重新登录再试(${message})`
+  }
+  return `${providerName} 模型发现失败,请稍后重试;首次使用需等待内置运行时就绪(${message})`
+}
 
 export type SessionRoute = {
   token: string
@@ -294,38 +303,52 @@ export class ProviderRoutingService {
     providerId: string,
     harnessId: string,
     cwd: string,
-  ): Promise<ProviderDiscoveryResult | null> {
+  ): Promise<BuiltinDiscoveryResult> {
     const config = this.providers().getProviderConfig(providerId)
     if (!config?.runtimes[harnessId as keyof typeof config.runtimes] ||
       (providerId !== "openai" && providerId !== "anthropic")) {
-      return null
+      return { result: null }
     }
-    const sessionKey = `discovery-${randomUUID()}`
-    if (providerId === "openai") {
-      // OpenAI OAuth 是账户级目录。固定 managed Codex 负责 model/list，
-      // 结果再由 Provider Registry 投影给所有 Responses-compatible Harness。
-      const route = await this.issueRoute(sessionKey, providerId, "codex")
-      const proxyEnv = this.codexHomeEnv(sessionKey, route, providerId)
-      try {
-        return await this.discoverCodex(cwd, proxyEnv.env, { runtimePreference: "managed" })
-      } finally {
-        this.revokeRoute(sessionKey)
-        this.disposeCodexHome(sessionKey)
-      }
-    }
-
-    // Anthropic OAuth 同样只接受 SDK 初始化返回的账户真实目录。
-    const route = await this.issueRoute(sessionKey, providerId, "claude-code")
-    const isolated = this.claudeCodeEnv(route)
-    const configDir = this.claudeCodeConfigDir(sessionKey)
     try {
-      return await this.discoverClaude(cwd, {
-        env: { ...isolated.env, CLAUDE_CONFIG_DIR: configDir },
-        strip: isolated.strip,
-      }, "managed")
-    } finally {
-      this.revokeRoute(sessionKey)
-      fs.rmSync(configDir, { recursive: true, force: true })
+      const sessionKey = `discovery-${randomUUID()}`
+      let result: ProviderDiscoveryResult
+      if (providerId === "openai") {
+        // OpenAI OAuth 是账户级目录。固定 managed Codex 负责 model/list，
+        // 结果再由 Provider Registry 投影给所有 Responses-compatible Harness。
+        const route = await this.issueRoute(sessionKey, providerId, "codex")
+        const proxyEnv = this.codexHomeEnv(sessionKey, route, providerId)
+        try {
+          result = await this.discoverCodex(cwd, proxyEnv.env, { runtimePreference: "managed" })
+        } finally {
+          this.revokeRoute(sessionKey)
+          this.disposeCodexHome(sessionKey)
+        }
+      } else {
+        // Anthropic OAuth 同样只接受 SDK 初始化返回的账户真实目录。
+        const route = await this.issueRoute(sessionKey, providerId, "claude-code")
+        const isolated = this.claudeCodeEnv(route)
+        const configDir = this.claudeCodeConfigDir(sessionKey)
+        try {
+          result = await this.discoverClaude(cwd, {
+            env: { ...isolated.env, CLAUDE_CONFIG_DIR: configDir },
+            strip: isolated.strip,
+          }, "managed")
+        } finally {
+          this.revokeRoute(sessionKey)
+          fs.rmSync(configDir, { recursive: true, force: true })
+        }
+      }
+      // OAuth 账户目录为空不是正常状态(多为运行时就绪前的探针异常),
+      // 按失败上报,不能静默当"无发现"。
+      if (result.models.length === 0) {
+        return {
+          result,
+          error: `${config.name} 返回了空的模型列表,请稍后重试;首次使用需等待内置运行时就绪`,
+        }
+      }
+      return { result }
+    } catch (error) {
+      return { result: null, error: builtinDiscoveryErrorMessage(config.name, error) }
     }
   }
 
