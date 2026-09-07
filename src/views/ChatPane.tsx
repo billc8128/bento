@@ -18,6 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { cn } from "@/lib/utils"
+import { useT } from "@/lib/i18n"
 import { usePanelInstance } from "@/lib/panel-context"
 import { useTraits } from "@/lib/style-context"
 import { requestNewSession } from "@/lib/new-session-store"
@@ -65,6 +66,7 @@ function PaneHeader({
   solo: boolean
   onClose: () => void
 }) {
+  const { t } = useT()
   return (
     <header
       className={cn(
@@ -79,7 +81,7 @@ function PaneHeader({
         // 和文件夹图标同一待遇:裸图标,不带底色 chip(灰底看着像选中态)
         <MessageCircle
           className="size-4 shrink-0 text-muted-foreground"
-          aria-label="Chat 会话"
+          aria-label={t("chat.chatSession")}
         />
       )}
       {/* 项目会话:文件夹名提到标题级(纯信息,不响应点击)——分栏布局下每个
@@ -113,7 +115,7 @@ function PaneHeader({
       {!minimal && (
         <Button variant="ghost" size="icon" className="size-7 [-webkit-app-region:no-drag]">
           <MoreHorizontal className="size-4" />
-          <span className="sr-only">更多操作</span>
+          <span className="sr-only">{t("chat.moreActions")}</span>
         </Button>
       )}
       {!solo && (
@@ -124,7 +126,7 @@ function PaneHeader({
           onClick={onClose}
         >
           <X className="size-4" />
-          <span className="sr-only">关闭此分栏</span>
+          <span className="sr-only">{t("chat.closePane")}</span>
         </Button>
       )}
     </header>
@@ -133,6 +135,7 @@ function PaneHeader({
 
 export function ChatPane() {
   const traits = useTraits()
+  const { t } = useT()
   const { sessionId, close, solo } = usePanelInstance()
   const [nextHarnessId, setNextHarnessId] = useState<HarnessId | null>(null)
   useLive() // 订阅真会话变化
@@ -148,10 +151,10 @@ export function ChatPane() {
   if (!live) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-        会话不存在或已删除
+        {t("chat.sessionMissing")}
         {!solo && (
           <Button variant="ghost" size="sm" onClick={close}>
-            关闭此分栏
+            {t("chat.closePane")}
           </Button>
         )}
       </div>
@@ -201,7 +204,7 @@ export function ChatPane() {
       />
       {legacyNative ? (
         <div className="flex min-h-14 items-center justify-between gap-3 border-t px-4 py-3 text-sm text-muted-foreground">
-          <span>该会话依赖本机 CLI 配置,已不再支持;历史消息仍可查看。</span>
+          <span>{t("chat.legacyNative")}</span>
           <Button
             variant="outline"
             size="sm"
@@ -211,7 +214,7 @@ export function ChatPane() {
               ...(live.scope === "project" ? { cwd: live.cwd } : {}),
             })}
           >
-            新建会话
+            {t("chat.newSession")}
           </Button>
         </div>
       ) : (
@@ -256,15 +259,16 @@ export function ChatPane() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>切换 Harness 需要新对话</AlertDialogTitle>
+            <AlertDialogTitle>{t("chat.switchHarnessTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              当前会话不能直接从 {harness.name} 切换到
-              {nextHarnessId ? ` ${getHarness(nextHarnessId).name}` : "其他 Harness"}。
-              新建后会保留当前会话和上下文。
+              {t("chat.switchHarnessDesc", {
+                from: harness.name,
+                to: nextHarnessId ? getHarness(nextHarnessId).name : t("chat.otherHarness"),
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t("chat.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (!nextHarnessId) return
@@ -276,7 +280,7 @@ export function ChatPane() {
                 setNextHarnessId(null)
               }}
             >
-              新建对话
+              {t("chat.newChat")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

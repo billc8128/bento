@@ -6,6 +6,8 @@ import "@xterm/xterm/css/xterm.css"
 
 import type { ITheme } from "@xterm/xterm"
 
+import { useT, type TFn } from "@/lib/i18n"
+
 function cssToken(element: HTMLElement, name: string): string {
   return getComputedStyle(element).getPropertyValue(name).trim()
 }
@@ -65,11 +67,14 @@ export function TerminalWorkspacePane({
   const hostRef = useRef<HTMLDivElement>(null)
   const terminalIdRef = useRef<string | null>(null)
   const titleChangeRef = useRef(onTitleChange)
+  const { t } = useT()
+  const tRef = useRef<TFn>(t)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     titleChangeRef.current = onTitleChange
-  }, [onTitleChange])
+    tRef.current = t
+  }, [onTitleChange, t])
 
   useEffect(() => {
     const api = window.bento?.workspace.terminal
@@ -115,7 +120,7 @@ export function TerminalWorkspacePane({
     const stopExit = api.onExit(({ id, exitCode }) => {
       if (id !== terminalIdRef.current) return
       terminalIdRef.current = null
-      terminal.writeln(`\r\n\x1b[90m[进程已退出，状态码 ${exitCode}]\x1b[0m`)
+      terminal.writeln(`\r\n\x1b[90m${tRef.current("workspace.processExited", { code: exitCode })}\x1b[0m`)
     })
     const input = terminal.onData((data) => {
       const id = terminalIdRef.current
@@ -157,11 +162,11 @@ export function TerminalWorkspacePane({
   if (!window.bento) return <DemoTerminal />
 
   return (
-    <section aria-label="终端" className="relative min-h-0 flex-1 bg-background">
+    <section aria-label={t("workspace.terminal")} className="relative min-h-0 flex-1 bg-background">
       <div ref={hostRef} className="workspace-terminal absolute inset-0 p-3" />
       {error && (
         <div role="alert" className="absolute inset-0 grid place-items-center bg-background p-6 text-center text-xs text-muted-foreground">
-          <div><p className="font-medium text-foreground">终端启动失败</p><p className="mt-1">{error}</p></div>
+          <div><p className="font-medium text-foreground">{t("workspace.terminalStartFailed")}</p><p className="mt-1">{error}</p></div>
         </div>
       )}
     </section>

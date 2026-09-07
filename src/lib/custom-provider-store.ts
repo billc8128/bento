@@ -7,6 +7,11 @@
 import { useEffect, useSyncExternalStore } from "react"
 
 import type { CustomHarnessId, CustomProviderConfig, CustomRuntimeConfig } from "@/core/provider"
+import { loadPreference, resolveLocale, translate } from "@/lib/i18n"
+
+function t(key: string, vars?: Record<string, string | number>): string {
+  return translate(resolveLocale(loadPreference()), key, vars)
+}
 
 /** listCustomProviders 的条目:完整配置 + 每个 runtime 是否已存 key(key 本体只写不读)。 */
 export type CustomProviderEntry = Omit<CustomProviderConfig, "runtimes"> & {
@@ -72,7 +77,7 @@ export async function saveCustomProvider(
   keys?: Record<string, string>,
 ): Promise<{ error?: string }> {
   const bento = window.bento
-  if (!bento) return { error: "需要桌面版" }
+  if (!bento) return { error: t("app.desktopRequired") }
   const cleanKeys = keys
     ? Object.fromEntries(Object.entries(keys).filter(([, value]) => value.trim() !== ""))
     : undefined
@@ -87,7 +92,7 @@ export async function saveCustomProvider(
 
 export async function deleteCustomProvider(providerId: string): Promise<{ error?: string }> {
   const bento = window.bento
-  if (!bento) return { error: "需要桌面版" }
+  if (!bento) return { error: t("app.desktopRequired") }
   const result = await bento.removeCustomProvider(providerId)
   if (result.error) return { error: result.error }
   await refresh()

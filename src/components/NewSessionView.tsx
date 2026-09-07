@@ -23,6 +23,7 @@ import { showFolder } from "@/lib/folder-preferences"
 import { openSession } from "@/lib/layout-store"
 import { createLive, sendPrompt, useLive } from "@/lib/live-store"
 import { useAllProviderCatalogs } from "@/lib/provider-store"
+import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 export function NewSessionView({
@@ -37,6 +38,7 @@ export function NewSessionView({
   initialScope?: SessionScope
 }) {
   const { sessions, binaryProgress } = useLive()
+  const { t } = useT()
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const composingRef = useRef(false)
   const [cwd, setCwd] = useState(initialCwd)
@@ -105,7 +107,7 @@ export function NewSessionView({
       scope,
       harnessId,
       cwd: scope === "project" ? cwd.trim() : "",
-      title: prompt.slice(0, 24) || "新会话",
+      title: prompt.slice(0, 24) || t("chat.defaultSessionTitle"),
       providerId: resolvedProviderId!,
       modelId: resolvedModelId!,
       permissionProfile,
@@ -142,7 +144,7 @@ export function NewSessionView({
           onClick={closeNewSession}
         >
           <X className="size-4" />
-          <span className="sr-only">关闭新对话</span>
+          <span className="sr-only">{t("chat.closeNewChat")}</span>
         </Button>
       )}
 
@@ -155,7 +157,7 @@ export function NewSessionView({
                 (按用户偏好 revert 5c190f7 的"并入卡片") */}
             <div className="relative z-0 mx-3 -mb-px flex min-h-[var(--app-project-row-height)] w-[calc(100%-1.5rem)] items-center justify-center rounded-t-2xl bg-muted/45 px-4 pb-2 pt-3 sm:mx-5 sm:w-[calc(100%-2.5rem)] sm:rounded-t-3xl sm:px-5">
               <div className="flex items-center justify-center">
-                <div className="inline-flex shrink-0 gap-0.5 rounded-xl bg-muted p-1" role="tablist" aria-label="对话模式">
+                <div className="inline-flex shrink-0 gap-0.5 rounded-xl bg-muted p-1" role="tablist" aria-label={t("chat.sessionMode")}>
                   <button
                     type="button"
                     role="tab"
@@ -173,7 +175,7 @@ export function NewSessionView({
                     )}
                   >
                     <MessageCircle className="size-4" />
-                    对话
+                    {t("chat.scopeChat")}
                   </button>
                   <button
                     type="button"
@@ -192,7 +194,7 @@ export function NewSessionView({
                     )}
                   >
                     <Folder className="size-4" />
-                    项目
+                    {t("chat.scopeProject")}
                   </button>
                 </div>
                 <div
@@ -238,7 +240,7 @@ export function NewSessionView({
                   void start()
                 }
               }}
-              placeholder={scope === "chat" ? "随便聊聊，或问我任何问题…" : "描述一个需要在项目中完成的任务…"}
+              placeholder={scope === "chat" ? t("chat.placeholderChat") : t("chat.placeholderProject")}
               rows={5}
               className="min-h-[var(--app-onboarding-composer-height)] resize-none rounded-none border-0 bg-transparent px-4 pb-3 pt-5 text-base shadow-none focus-visible:ring-0 dark:bg-transparent sm:px-5 md:text-base"
             />
@@ -281,7 +283,7 @@ export function NewSessionView({
                 onClick={() => void start()}
               >
                 {creating ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
-                <span className="sr-only">开始对话</span>
+                <span className="sr-only">{t("chat.startChat")}</span>
               </Button>
             </div>
 

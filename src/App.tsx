@@ -40,6 +40,7 @@ import { consumeWorkspaceFileReveal, useWorkspaceFileReveal } from "@/lib/worksp
 import "@/views/builtin"
 import { DEFAULT_STYLE, STYLES, getStyle, type StyleId } from "@/data/styles"
 import { cn } from "@/lib/utils"
+import { useT } from "@/lib/i18n"
 import { browserRevealPanelWidth, sidePanelsFit } from "@/core/workspace-layout"
 
 /* 主题偏好持久化。localStorage 可能被禁用,全部 try/catch 静默降级 */
@@ -64,6 +65,7 @@ function loadDark(style: StyleId): boolean {
 }
 
 export default function App() {
+  const { t } = useT()
   const [style, setStyleState] = useState<StyleId>(loadStyle)
   const [dark, setDark] = useState<boolean>(() => loadDark(loadStyle()))
   const compact = useIsMobile()
@@ -284,14 +286,14 @@ export default function App() {
                 <div className="app-window-drag flex h-9 shrink-0 items-center border-b border-border/60 bg-background pl-[76px] pr-3 [-webkit-app-region:drag]">
                   <WindowPanelToggle
                     onClick={toggleSidebarPanel}
-                    label={`${sidebarCollapsed ? "展开" : "收起"}侧边栏 (⌘B)`}
+                    label={sidebarCollapsed ? t("chat.expandSidebar") : t("chat.collapseSidebar")}
                   >
                     <PanelStateIcon side="left" expanded={!sidebarCollapsed} />
                   </WindowPanelToggle>
                   <span className="flex-1" />
                   <WindowPanelToggle
                     onClick={toggleWorkspaceTools}
-                    label={`${workspaceToolsOpen ? "关闭" : "打开"}工具面板 (⌘J)`}
+                    label={workspaceToolsOpen ? t("chat.closeToolsPanel") : t("chat.openToolsPanel")}
                   >
                     <PanelStateIcon side="right" expanded={workspaceToolsOpen} />
                   </WindowPanelToggle>

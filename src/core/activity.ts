@@ -11,8 +11,14 @@
 
 import type { ActivityItem, ApprovalRequest, Message, PlanItem, ToolCall } from "./types"
 import { formatDuration } from "./formatDuration"
+import { loadPreference, resolveLocale, translate } from "@/lib/i18n/core"
 
 type AssistantMsg = Extract<Message, { role: "assistant" }>
+
+type TFn = (key: string, vars?: Record<string, string | number>) => string
+
+/** 组件应把 useT() 的 t 显式传入;非组件调用方缺省时按已存语言偏好查表。 */
+const defaultT: TFn = (key, vars) => translate(resolveLocale(loadPreference()), key, vars)
 
 /** 阶段栈行(渲染的最小单元):连续 thinking 并成一段、连续 tool 并成一组;
  * progress/steer 是公开文字,独立成行、不参与折叠分组;approval 是审批卡片,独立成行。
@@ -89,13 +95,19 @@ export function buildPhases(items: ActivityItem[]): PhaseRow[] {
 /** 阶段行标题。live = 这是正在进行中的阶段(栈末行),thinking 用它切换现在时/过去时;
  * tools 行的时态不看 live、由该行自身状态决定——栈末行被穿插的思考抢走时(livePhaseId 只管
  * 高亮),running 工具所在行不能说过去式(「已使用 N 个工具」的计数里还含着没落定的工具)。 */
-export function phaseLabel(row: Extract<PhaseRow, { kind: "thinking" | "tools" }>, live: boolean): string {
+export function phaseLabel(
+  row: Extract<PhaseRow, { kind: "thinking" | "tools" }>,
+  live: boolean,
+  t: TFn = defaultT,
+): string {
   if (row.kind === "thinking") {
-    if (live) return "正在思考…"
-    return row.durationMs !== undefined ? `已思考 ${formatDuration(row.durationMs)}` : "已思考"
+    if (live) return t("activity.thinkingLive")
+    return row.durationMs !== undefined
+      ? t("activity.thoughtWithDuration", { duration: formatDuration(row.durationMs) })
+      : t("activity.thought")
   }
-  if (row.tools.some((tool) => tool.status === "running")) return "正在使用工具"
-  return `已使用 ${row.tools.length} 个工具`
+  if (row.tools.some((tool) => tool.status === "running")) return t("activity.usingTools")
+  return t("activity.usedTools", { count: row.tools.length })
 }
 
 /** 阶段栈中正在进行的那一行:末段是 tools 且有工具在跑 → 工具阶段;
@@ -139,44 +151,58 @@ export function liveTurnState(messages: Message[], running: boolean): LiveTurn |
  * 有活跃工作段时状态由该阶段行自己承担(livePhaseId),不走这里。
  * 末段思考已被说话闭合(durationMs 写死)= agent 正在输出正文,正文在下方流式,
  * 状态行如实说「正在回复」,不再假装还在思考。 */
-export function liveStatus(turn: LiveTurn): { label: string } {
+export function liveStatus(turn: LiveTurn, t: TFn = defaultT): { label: string } {
   const activityTools = turn.activity.flatMap((item) => item.kind === "tool" ? [item.tool] : [])
   if ([...turn.tools, ...activityTools].some((tool) => tool.status === "running")) {
-    return { label: "正在使用工具" }
+    return { label: t("activity.usingTools") }
   }
   const last = turn.activity.at(-1)
   // 审批 hold 中的回合没有工具在跑、没有文本在流——如实说在等用户
   if (last?.kind === "approval" && last.approval.state === "pending") {
-    return { label: "等待你的审批" }
+    return { label: t("activity.waitingApproval") }
   }
-  if (last?.kind === "steer") return { label: "已收到你的补充" }
-  if (last?.kind === "thinking" && last.durationMs !== undefined) return { label: "正在回复" }
+  if (last?.kind === "steer") return { label: t("activity.steerReceived") }
+  if (last?.kind === "thinking" && last.durationMs !== undefined) return { label: t("activity.replying") }
   if (turn.activity.some((item) => item.kind === "tool" || item.kind === "progress")) {
-    return { label: "正在工作" }
+    return { label: t("activity.working") }
   }
-  return { label: "正在思考" }
+  return { label: t("activity.thinking") }
+}
+
+type TurnOutcome = NonNullable<AssistantMsg["outcome"]>
+
+function outcomeLabel(outcome: TurnOutcome, t: TFn): string {
+  return outcome === "cancelled"
+    ? t("activity.stopped")
+    : outcome === "error"
+      ? t("activity.runFailed")
+      : t("activity.unfinished")
 }
 
 /** 落定后的总折叠行标题:有耗时用「已工作 Xm XXs」;旧数据缺 durationMs 时
  * 回退到内容摘要。非正常终结(outcome)冠在前面,不伪装成完成态。 */
 export function settledMasterLabel(
   m: Pick<AssistantMsg, "thinking" | "tools" | "outcome" | "durationMs">,
+  t: TFn = defaultT,
 ): string {
-  if (m.durationMs === undefined) return settledSummary(m)
-  const work = `已工作 ${formatDuration(m.durationMs)}`
+  if (m.durationMs === undefined) return settledSummary(m, t)
+  const work = t("activity.worked", { duration: formatDuration(m.durationMs) })
   if (!m.outcome) return work
-  const label = m.outcome === "cancelled" ? "已停止" : m.outcome === "error" ? "执行失败" : "上轮未完成"
-  return `${label} · ${work}`
+  return t("activity.outcomeWork", { outcome: outcomeLabel(m.outcome, t), work })
 }
 
 /** 落定后的内容摘要(缺 durationMs 的旧数据回退用)。 */
-export function settledSummary(m: Pick<AssistantMsg, "thinking" | "tools" | "outcome">): string {
+export function settledSummary(
+  m: Pick<AssistantMsg, "thinking" | "tools" | "outcome">,
+  t: TFn = defaultT,
+): string {
   const count = m.tools?.length ?? 0
   if (m.outcome) {
-    const label = m.outcome === "cancelled" ? "已停止" : m.outcome === "error" ? "执行失败" : "上轮未完成"
-    return count > 0 ? `${label} · ${count} 个工具` : label
+    const label = outcomeLabel(m.outcome, t)
+    return count > 0 ? t("activity.outcomeTools", { outcome: label, count }) : label
   }
-  return count > 0 ? `${m.thinking ? "思考并" : ""}使用了 ${count} 个工具` : "思考完成"
+  if (count === 0) return t("activity.thinkingDone")
+  return t(m.thinking ? "activity.thoughtAndUsedTools" : "activity.usedToolsSummary", { count })
 }
 
 /** 工具组聚合状态:有一个在跑就是在跑,否则有失败报失败,全部落定才成功。 */

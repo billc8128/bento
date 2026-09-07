@@ -14,6 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import type { ProviderCategory, ProviderPreset } from "@/core/provider-preset"
 import { getProviderPreset, PROVIDER_PRESETS } from "@/data/provider-presets"
 import type { CustomProviderEntry } from "@/lib/custom-provider-store"
+import { useT } from "@/lib/i18n"
 
 import { DetectLocalProviders } from "./DetectLocalProviders"
 import { PresetProviderForm } from "./PresetProviderForm"
@@ -23,12 +24,12 @@ import { ProviderMark } from "./ProviderMark"
 type Pick = ProviderPreset | "custom" | null
 type Step = "pick" | "form" | "detect"
 
-const GROUPS: Array<{ id: ProviderCategory; label: string }> = [
-  { id: "api", label: "API" },
-  { id: "plan", label: "Coding / Token Plan" },
-  { id: "local", label: "本地与代理" },
-  { id: "account", label: "账户连接" },
-  { id: "cloud", label: "云平台" },
+const GROUPS: Array<{ id: ProviderCategory; labelKey: string }> = [
+  { id: "api", labelKey: "providers.groupApi" },
+  { id: "plan", labelKey: "providers.groupPlan" },
+  { id: "local", labelKey: "providers.groupLocal" },
+  { id: "account", labelKey: "providers.groupAccount" },
+  { id: "cloud", labelKey: "providers.groupCloud" },
 ]
 
 function SpecialProviderForm({
@@ -40,6 +41,7 @@ function SpecialProviderForm({
   onCancel: () => void
   onDetect: () => void
 }) {
+  const { t } = useT()
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex-1 space-y-5 p-5">
@@ -47,10 +49,10 @@ function SpecialProviderForm({
           <h3 className="text-sm font-medium">{preset.name}</h3>
           <p className="text-xs text-muted-foreground">
             {preset.category === "cloud"
-              ? "需要项目、区域或云端身份配置，不能作为普通 API Key 端点添加。"
+              ? t("providers.specialCloudDesc")
               : preset.category === "account"
-                ? "该类账户登录(如 Cursor、GitHub Copilot)需在对应 CLI 内使用,Bento 不导入也不代理其登录态。"
-                : "使用供应商账户或现有 CLI 登录状态连接。"}
+                ? t("providers.specialAccountDesc")
+                : t("providers.specialDefaultDesc")}
           </p>
         </div>
         <a
@@ -59,12 +61,12 @@ function SpecialProviderForm({
           rel="noreferrer"
           className="inline-flex items-center gap-1 text-xs underline underline-offset-4"
         >
-          查看接入文档 <ExternalLink className="size-3" />
+          {t("providers.viewDocs")} <ExternalLink className="size-3" />
         </a>
       </div>
       <footer className="flex justify-end gap-2 border-t border-border px-5 py-3">
-        <Button variant="ghost" onClick={onCancel}>返回</Button>
-        {preset.category !== "account" && <Button onClick={onDetect}>检测本机配置</Button>}
+        <Button variant="ghost" onClick={onCancel}>{t("providers.back")}</Button>
+        {preset.category !== "account" && <Button onClick={onDetect}>{t("providers.detectLocal")}</Button>}
       </footer>
     </div>
   )
@@ -85,6 +87,7 @@ export function ProviderWizard({
   /** 打开时直接进入的步骤(空态导入 CTA 用 detect);关闭时复位。 */
   startStep?: Step | null
 }) {
+  const { t } = useT()
   const [pick, setPick] = useState<Pick>(null)
   const [step, setStep] = useState<Step>(startStep ?? "pick")
   const [query, setQuery] = useState("")
@@ -138,20 +141,20 @@ export function ProviderWizard({
                   if (activeStep === "detect" && detectBackRef.current?.()) return
                   backToPick()
                 }}
-                aria-label="返回供应商列表"
+                aria-label={t("providers.backToProviders")}
               >
                 <ArrowLeft />
               </Button>
             )}
             {editing
-              ? `编辑 ${editing.name}`
+              ? t("providers.editTitle", { name: editing.name })
               : activeStep === "pick"
-                ? "添加供应商"
+                ? t("providers.addProvider")
                 : activeStep === "detect"
-                  ? "从本机配置导入"
-                  : selected?.name ?? "自定义端点"}
+                  ? t("providers.importLocal")
+                  : selected?.name ?? t("providers.customEndpoint")}
           </DialogTitle>
-          <DialogDescription className="sr-only">选择并配置模型供应商</DialogDescription>
+          <DialogDescription className="sr-only">{t("providers.wizardDesc")}</DialogDescription>
         </DialogHeader>
 
         {activeStep === "pick" ? (
@@ -159,7 +162,7 @@ export function ProviderWizard({
             <div className="border-b border-border px-5 py-3">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索供应商" className="pl-8 focus-visible:border-foreground/25 focus-visible:ring-1 focus-visible:ring-foreground/15" autoFocus />
+                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("providers.searchProviders")} className="pl-8 focus-visible:border-foreground/25 focus-visible:ring-1 focus-visible:ring-foreground/15" autoFocus />
               </div>
             </div>
             <ScrollArea className="min-h-0 flex-1">
@@ -175,8 +178,8 @@ export function ProviderWizard({
                         <TerminalSquare className="size-4" />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-medium">从本机配置导入</span>
-                        <span className="block text-xs text-muted-foreground">自动检测 omp / Pi / OpenCode / Kimi Code 等本机配置</span>
+                        <span className="block text-sm font-medium">{t("providers.importLocal")}</span>
+                        <span className="block text-xs text-muted-foreground">{t("providers.importLocalDesc")}</span>
                       </span>
                       <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
                     </button>
@@ -187,8 +190,8 @@ export function ProviderWizard({
                     >
                       <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-sm font-medium">+</span>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-medium">添加自定义端点</span>
-                        <span className="block text-xs text-muted-foreground">手动填写 Base URL、API Key 与模型</span>
+                        <span className="block text-sm font-medium">{t("providers.addCustomEndpoint")}</span>
+                        <span className="block text-xs text-muted-foreground">{t("providers.addCustomEndpointDesc")}</span>
                       </span>
                       <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
                     </button>
@@ -196,7 +199,7 @@ export function ProviderWizard({
                 )}
                 {groups.map((group) => (
                   <section key={group.id} className="py-2">
-                    <p className="mb-1.5 px-2 text-xs text-muted-foreground">{group.label}</p>
+                    <p className="mb-1.5 px-2 text-xs text-muted-foreground">{t(group.labelKey)}</p>
                     <div className="divide-y divide-border border-y border-border">
                       {group.items.map((preset) => (
                         <button
@@ -207,13 +210,13 @@ export function ProviderWizard({
                         >
                           <ProviderMark name={preset.name} brandKey={preset.id} className="size-7" />
                           <span className="min-w-0 flex-1 truncate text-sm">{preset.name}</span>
-                          {!preset.directConnect && <span className="text-xs text-muted-foreground">专用接入</span>}
+                          {!preset.directConnect && <span className="text-xs text-muted-foreground">{t("providers.specialAccess")}</span>}
                         </button>
                       ))}
                     </div>
                   </section>
                 ))}
-                {groups.length === 0 && <p className="py-12 text-center text-sm text-muted-foreground">没有匹配的供应商</p>}
+                {groups.length === 0 && <p className="py-12 text-center text-sm text-muted-foreground">{t("providers.noMatchingProviders")}</p>}
                 {q && (
                   <section className="py-2">
                     <button
@@ -222,7 +225,7 @@ export function ProviderWizard({
                       className="flex min-h-11 w-full items-center gap-3 border-y border-dashed border-border px-2 py-2 text-left hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-muted text-xs font-medium">+</span>
-                      <span className="text-sm">添加自定义端点</span>
+                      <span className="text-sm">{t("providers.addCustomEndpoint")}</span>
                     </button>
                   </section>
                 )}

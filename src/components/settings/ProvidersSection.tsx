@@ -28,6 +28,7 @@ import {
   type CustomProviderEntry,
 } from "@/lib/custom-provider-store"
 import { applyProviderModelVisibility, providerCatalogSnapshot, useAllProviderCatalogs } from "@/lib/provider-store"
+import { useT, type TFn } from "@/lib/i18n"
 import { useLocalImportSources } from "@/lib/local-import"
 import { consumeAddProviderIntent } from "@/lib/settings-store"
 import { toast } from "@/lib/toast"
@@ -62,10 +63,10 @@ function providerFamilyName(id: string, fallback: string): string {
   return fallback
 }
 
-function sourceTabLabel(source: ProviderSource): string {
+function sourceTabLabel(source: ProviderSource, t: TFn): string {
   if (source.authMethod === "oauth") return "OAuth"
   if (source.authMethod === "apiKey") return "API Key"
-  return "无需鉴权"
+  return t("providers.authNone")
 }
 
 function groupModelCount(group: ProviderGroup): number {
@@ -164,8 +165,9 @@ function contextLabel(value: number | undefined): string {
 }
 
 function ProvidersSkeleton() {
+  const { t } = useT()
   return (
-    <div className="contents" aria-busy="true" aria-label="正在加载供应商">
+    <div className="contents" aria-busy="true" aria-label={t("providers.loadingProviders")}>
       <aside className="flex w-64 min-w-0 shrink-0 flex-col border-r border-border">
         <div className="flex h-12 items-center justify-between border-b border-border px-4">
           <Skeleton className="h-4 w-20" />
@@ -218,6 +220,7 @@ function ProvidersSkeleton() {
 }
 
 export function ProvidersSection({ addProviderIntent }: { addProviderIntent: false | "form" | "detect" }) {
+  const { t } = useT()
   const { desktop, loaded, providers: customProviders } = useCustomProviders()
   const {
     providers: catalogProviders,
@@ -357,7 +360,7 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
         delete next[providerId]
         return next
       })
-      toast.error(`保存失败:${result.error}`)
+      toast.error(t("providers.saveFailed", { error: result.error }))
       return
     }
     // 写盘期间没有新的改动才清草稿,否则保留等下一轮 flush
@@ -411,7 +414,7 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
         delete next[entry.id]
         return next
       })
-      toast.error(`保存失败:${result && "error" in result ? result.error : "桌面服务不可用"}`)
+      toast.error(t("providers.saveFailed", { error: result && "error" in result ? result.error : t("providers.desktopUnavailable") }))
       return
     }
     applyProviderModelVisibility(ids, enabled)
@@ -440,7 +443,7 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
   /** 自定义供应商:按 runtime 候选地址逐个拉模型列表,合并新增项。
    *  返回新增数或失败原因;toast/错误展示由 refreshSelectedGroup 统一收口。 */
   async function refreshCustom(source: Extract<ProviderSource, { kind: "custom" }>): Promise<{ added: number } | { error: string }> {
-    if (!window.bento) return { error: "仅桌面版可用" }
+    if (!window.bento) return { error: t("providers.desktopOnly") }
     const config = toConfig(source.entry)
     const candidates = CUSTOM_HARNESSES.flatMap((harness) => {
       const runtime = config.runtimes[harness]
@@ -467,7 +470,7 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
         discovered = result.models
         break
       } else {
-        failures.push(describeFetchError(result))
+        failures.push(describeFetchError(result, t))
       }
     }
     if (discovered) {
@@ -487,7 +490,7 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
       if (result.error) return { error: result.error }
       return { added }
     }
-    return { error: failures[0] ?? "无法获取模型列表,请在编辑中检查模型列表地址或手动维护。" }
+    return { error: failures[0] ?? t("providers.fetchModelsFailed") }
   }
 
   async function refreshSelectedGroup() {
@@ -513,7 +516,7 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
       for (const provider of providerCatalogSnapshot(harnessId, "")) {
         if (!selectedGroup.sources.some((source) => source.id === provider.id)) continue
         if (provider.modelDiscovery === "failed") {
-          failures.push(provider.discoveryError ?? "模型发现失败")
+          failures.push(provider.discoveryError ?? t("providers.discoveryFailed"))
           continue
         }
         for (const list of Object.values(provider.models)) {
@@ -530,7 +533,7 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
     if (failures.length > 0) {
       setError(failures[0])
     } else if (harnesses.size > 0 || customResults.length > 0) {
-      toast.success(added > 0 ? `已刷新,新增 ${added} 个模型` : "模型列表已是最新")
+      toast.success(added > 0 ? t("providers.refreshedAdded", { count: added }) : t("providers.refreshNoNew"))
     }
     setRefreshing(false)
   }
@@ -545,7 +548,7 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
     if ("error" in result) {
       setError(result.error)
     } else {
-      toast.success(provider.connected ? `已断开 ${provider.name}` : `已连接 ${provider.name}`)
+      toast.success(provider.connected ? t("providers.disconnected", { name: provider.name }) : t("providers.connected", { name: provider.name }))
     }
     setConnecting(false)
   }
@@ -557,15 +560,15 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
     if (providerId) {
       setSelectedId(providerFamilyId(providerId.replace(/^user-/, "")))
     }
-    toast.success(wasEditing ? "已保存修改" : "已添加供应商")
+    toast.success(wasEditing ? t("providers.savedChanges") : t("providers.providerAdded"))
   }
 
   if (!desktop) {
     return (
       <div className="grid min-h-80 place-items-center rounded-xl border border-border text-center">
         <div>
-          <p className="text-sm font-medium">供应商管理需要桌面版 Bento</p>
-          <p className="mt-1 text-xs text-muted-foreground">凭证和本机配置只在 Electron 主进程中处理。</p>
+          <p className="text-sm font-medium">{t("providers.requiresDesktopTitle")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t("providers.requiresDesktopDesc")}</p>
         </div>
       </div>
     )
@@ -582,15 +585,15 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
           <>
         <aside className="flex w-64 min-w-0 shrink-0 flex-col border-r border-border">
           <div className="flex h-12 items-center justify-between border-b border-border px-4 text-xs text-muted-foreground">
-            <span>我的供应商</span>
+            <span>{t("providers.myProviders")}</span>
             <span className="tabular-nums">{groups.length}</span>
           </div>
           <ScrollArea className="min-h-0 min-w-0 flex-1">
             <div className="w-0 min-w-full p-2">
               {groups.map((group) => {
-                const sourceLabels = [...new Set(group.sources.map((source) => sourceTabLabel(source)))]
+                const sourceLabels = [...new Set(group.sources.map((source) => sourceTabLabel(source, t)))]
                 const sourceSummary = sourceLabels.length > 2
-                  ? `${sourceLabels.length} 个来源`
+                  ? t("providers.sourceCount", { count: sourceLabels.length })
                   : sourceLabels.join(" + ")
                 const connected = group.sources.some((source) => source.connected)
                 const modelCount = groupModelCount(group)
@@ -612,7 +615,7 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
                     <span className="min-w-0 flex-1 overflow-hidden">
                       <span className="block truncate text-sm font-medium">{group.name}</span>
                       <span className="block truncate text-xs text-muted-foreground">
-                        {sourceSummary} · {modelCount} 模型
+                        {t("providers.sourceModelSummary", { sources: sourceSummary, count: modelCount })}
                       </span>
                     </span>
                     <span className={cn("size-2 shrink-0 rounded-full bg-border", connected && "bg-[var(--app-ok)]")} />
@@ -621,15 +624,15 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
               })}
               {loaded && groups.length === 0 && (
                 <div className="px-3 py-10 text-center">
-                  <p className="text-xs text-muted-foreground">还没有供应商</p>
-                  <p className="mt-1 text-xs text-muted-foreground/70">从下方添加一个开始</p>
+                  <p className="text-xs text-muted-foreground">{t("providers.noProviders")}</p>
+                  <p className="mt-1 text-xs text-muted-foreground/70">{t("providers.addOneBelow")}</p>
                   {importSources !== null && importSources.length > 0 && (
                     <button
                       type="button"
                       className="mt-2 block w-full text-xs text-foreground underline underline-offset-4"
                       onClick={() => { setEditing(null); setWizardStartStep("detect"); setWizardOpen(true) }}
                     >
-                      从本机配置导入({importSources.join(" / ")})…
+                      {t("providers.importFromLocal", { sources: importSources.join(" / ") })}
                     </button>
                   )}
                 </div>
@@ -638,7 +641,7 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
           </ScrollArea>
           <div className="border-t border-border p-3">
             <Button className="w-full" onClick={() => { setEditing(null); setWizardOpen(true) }}>
-              <Plus />添加供应商
+              <Plus />{t("providers.addProvider")}
             </Button>
           </div>
         </aside>
@@ -656,11 +659,14 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
                         key={source.id}
                         className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground"
                       >
-                        {sourceTabLabel(source)}
+                        {sourceTabLabel(source, t)}
                       </span>
                     ))}
                     <span className="ml-1 text-xs text-muted-foreground">
-                      {selectedGroup.sources.some((source) => source.connected) ? "可用" : "未连接"} · {models.filter((model) => model.enabled !== false).length} 模型
+                      {t("providers.statusSummary", {
+                        status: selectedGroup.sources.some((source) => source.connected) ? t("providers.available") : t("providers.notConnected"),
+                        count: models.filter((model) => model.enabled !== false).length,
+                      })}
                     </span>
                   </div>
                 </div>
@@ -668,33 +674,33 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
                   <>
                     {builtinSource.connected && (
                       <Button variant="outline" disabled={refreshing} onClick={() => void refreshSelectedGroup()}>
-                        <RefreshCw className={cn(refreshing && "animate-spin")} />刷新模型
+                        <RefreshCw className={cn(refreshing && "animate-spin")} />{t("providers.refreshModels")}
                       </Button>
                     )}
                     <Button variant={builtinSource.connected ? "outline" : "default"} disabled={connecting} onClick={() => void toggleBuiltinAuth(builtinSource)}>
-                      {connecting && <Loader2 className="animate-spin" />}{builtinSource.connected ? "断开" : "登录"}
+                      {connecting && <Loader2 className="animate-spin" />}{builtinSource.connected ? t("providers.disconnect") : t("providers.login")}
                     </Button>
                   </>
                 ) : customSource ? (
                   <Button variant="outline" disabled={refreshing} onClick={() => void refreshSelectedGroup()}>
-                    <RefreshCw className={cn(refreshing && "animate-spin")} />刷新模型
+                    <RefreshCw className={cn(refreshing && "animate-spin")} />{t("providers.refreshModels")}
                   </Button>
                 ) : (
                   <Button variant="outline" disabled={refreshing} onClick={() => void refreshSelectedGroup()}>
-                    <RefreshCw className={cn(refreshing && "animate-spin")} />重新检测
+                    <RefreshCw className={cn(refreshing && "animate-spin")} />{t("providers.redetect")}
                   </Button>
                 )}
                 {customSource && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" aria-label="更多操作"><MoreHorizontal /></Button>
+                      <Button variant="ghost" size="icon" aria-label={t("providers.moreActions")}><MoreHorizontal /></Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onSelect={() => { setEditing(customSource.entry); setWizardOpen(true) }}>编辑供应商</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => { setEditing(customSource.entry); setWizardOpen(true) }}>{t("providers.editProvider")}</DropdownMenuItem>
                       {customSource.entry.docsUrl && (
-                      <DropdownMenuItem asChild><a href={customSource.entry.docsUrl} target="_blank" rel="noreferrer">接入文档</a></DropdownMenuItem>
+                      <DropdownMenuItem asChild><a href={customSource.entry.docsUrl} target="_blank" rel="noreferrer">{t("providers.integrationDocs")}</a></DropdownMenuItem>
                       )}
-                      <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(customSource.entry)}>删除供应商</DropdownMenuItem>
+                      <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(customSource.entry)}>{t("providers.deleteProvider")}</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}
@@ -703,11 +709,11 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
               <div className="flex items-center gap-4 border-b border-border px-6 py-4">
                 <div className="relative max-w-md flex-1">
                   <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索模型名称或 ID" className="pl-8" />
+                  <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("providers.searchModels")} className="pl-8" />
                 </div>
                 {models.length > 0 && (
                   <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-                    全部展示
+                    {t("providers.showAll")}
                     <Switch
                       checked={allEnabled}
                       onCheckedChange={(checked) => toggleGroupModel(null, checked)}
@@ -728,17 +734,17 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
                       {hasContext && <span className="text-right text-sm tabular-nums text-muted-foreground">{contextLabel(model.contextWindow)}</span>}
                       <Switch
                         checked={model.enabled !== false}
-                        aria-label={`展示 ${model.name}`}
+                        aria-label={t("providers.showModel", { name: model.name })}
                         onCheckedChange={(checked) => toggleGroupModel(model, checked)}
                       />
                     </div>
                   ))}
                   {visibleModels.length === 0 && (
                     <div className="py-16 text-center">
-                      <p className="text-sm text-muted-foreground">{query ? "没有匹配的模型" : "暂无模型"}</p>
+                      <p className="text-sm text-muted-foreground">{query ? t("providers.noMatchingModels") : t("providers.noModels")}</p>
                       {!query && customSource && (
                         <Button variant="outline" size="sm" className="mt-3" disabled={refreshing} onClick={() => void refreshSelectedGroup()}>
-                          <RefreshCw className={cn(refreshing && "animate-spin")} />刷新模型
+                          <RefreshCw className={cn(refreshing && "animate-spin")} />{t("providers.refreshModels")}
                         </Button>
                       )}
                     </div>
@@ -749,9 +755,9 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
           ) : (
             <div className="grid flex-1 place-items-center">
               <div className="text-center">
-                <p className="text-sm text-muted-foreground">添加一个供应商开始</p>
+                <p className="text-sm text-muted-foreground">{t("providers.emptyAddProvider")}</p>
                 <Button className="mt-3" onClick={() => { setEditing(null); setWizardOpen(true) }}>
-                  <Plus />添加供应商
+                  <Plus />{t("providers.addProvider")}
                 </Button>
               </div>
             </div>
@@ -775,25 +781,25 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
       <Dialog open={deleting !== null} onOpenChange={(open) => { if (!open) setDeleting(null) }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>删除 {deleting?.name}</DialogTitle>
+            <DialogTitle>{t("providers.deleteTitle", { name: deleting?.name ?? "" })}</DialogTitle>
             <DialogDescription>
               {usingCount
-                ? `有 ${usingCount} 个活跃会话正在使用它,删除后这些会话无法继续。供应商配置和已保存凭证会一起删除。`
-                : "供应商配置和已保存凭证会一起删除。"}
+                ? t("providers.deleteDescInUse", { count: usingCount })
+                : t("providers.deleteDesc")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleting(null)}>取消</Button>
+            <Button variant="ghost" onClick={() => setDeleting(null)}>{t("providers.cancel")}</Button>
             <Button variant="destructive" onClick={async () => {
               if (!deleting) return
               const result = await deleteCustomProvider(deleting.id)
               if (result.error) {
-                toast.error(`删除失败:${result.error}`)
+                toast.error(t("providers.deleteFailed", { error: result.error }))
               } else {
                 setDeleting(null)
-                toast.success(`已删除 ${deleting.name}`)
+                toast.success(t("providers.deleted", { name: deleting.name }))
               }
-            }}>删除</Button>
+            }}>{t("providers.delete")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

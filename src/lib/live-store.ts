@@ -19,6 +19,11 @@ import type { HarnessEvent } from "@/core/events"
 import { normalizePromptInput, type Effort, type Message, type PromptInput, type SessionScope } from "@/core/types"
 import type { PermissionProfile } from "@/core/permission"
 import type { ApprovalDecision } from "@/core/events"
+import { loadPreference, resolveLocale, translate } from "@/lib/i18n"
+
+function t(key: string, vars?: Record<string, string | number>): string {
+  return translate(resolveLocale(loadPreference()), key, vars)
+}
 
 type LiveSnapshot = {
   version: number
@@ -315,7 +320,7 @@ export async function createLive(opts: {
   permissionProfile?: PermissionProfile
 }): Promise<{ key: string } | { error: string }> {
   const bento = window.bento
-  if (!bento) return { error: "桌面模式不可用" }
+  if (!bento) return { error: t("app.desktopUnavailable") }
   const res = await bento.createSession(opts)
   if ("error" in res && res.error) return { error: res.error }
   const ok = res as { key: string; record: LiveSessionRecord }
@@ -327,7 +332,7 @@ export async function createLive(opts: {
 
 export async function setLiveModel(sessionId: string, providerId: string, modelId: string) {
   const res = await window.bento?.setModel(sessionId, { providerId, modelId })
-  if (!res || "error" in res) return res?.error ?? "桌面模式不可用"
+  if (!res || "error" in res) return res?.error ?? t("app.desktopUnavailable")
   bump({
     sessions: snapshot.sessions.map((session) =>
       session.key === sessionId ? { ...session, providerId, modelId } : session,
@@ -337,7 +342,7 @@ export async function setLiveModel(sessionId: string, providerId: string, modelI
 
 export async function setLiveEffort(sessionId: string, effort: Effort) {
   const res = await window.bento?.setEffort(sessionId, effort)
-  if (!res || "error" in res) return res?.error ?? "桌面模式不可用"
+  if (!res || "error" in res) return res?.error ?? t("app.desktopUnavailable")
   bump({
     sessions: snapshot.sessions.map((session) =>
       session.key === sessionId ? { ...session, effort } : session,
@@ -347,7 +352,7 @@ export async function setLiveEffort(sessionId: string, effort: Effort) {
 
 export async function setLivePermissionProfile(sessionId: string, profile: PermissionProfile) {
   const res = await window.bento?.setPermissionProfile(sessionId, profile)
-  if (!res || "error" in res) return res?.error ?? "桌面模式不可用"
+  if (!res || "error" in res) return res?.error ?? t("app.desktopUnavailable")
   bump({
     sessions: snapshot.sessions.map((session) =>
       session.key === sessionId ? { ...session, permissionProfile: profile } : session,
@@ -392,7 +397,7 @@ export async function sendPrompt(sessionId: string, value: string | PromptInput)
           seq: acc.lastSeq + 1,
           at: new Date().toISOString(),
           kind: "notice",
-          payload: { text: `请求失败:${res.error}` },
+          payload: { text: t("app.requestFailed", { error: res.error }) },
         })
     }
   } finally {

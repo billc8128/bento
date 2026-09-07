@@ -5,6 +5,12 @@
 
 import { useSyncExternalStore } from "react"
 
+import { loadPreference, resolveLocale, translate } from "@/lib/i18n"
+
+function t(key: string, vars?: Record<string, string | number>): string {
+  return translate(resolveLocale(loadPreference()), key, vars)
+}
+
 export type Profile = {
   name: string
   /** 头像图片(128px dataURL);空 = 名字首字占位 */
@@ -12,7 +18,9 @@ export type Profile = {
 }
 
 const KEY = "bento.profile"
-const DEFAULT_PROFILE: Profile = { name: "我", avatar: null }
+function defaultProfile(): Profile {
+  return { name: t("app.defaultProfileName"), avatar: null }
+}
 
 function load(): Profile {
   try {
@@ -20,14 +28,14 @@ function load(): Profile {
     if (raw && typeof raw === "object") {
       const p = raw as Partial<Profile>
       return {
-        name: typeof p.name === "string" && p.name.trim() ? p.name : DEFAULT_PROFILE.name,
+        name: typeof p.name === "string" && p.name.trim() ? p.name : defaultProfile().name,
         avatar: typeof p.avatar === "string" ? p.avatar : null,
       }
     }
   } catch {
     /* ignore */
   }
-  return DEFAULT_PROFILE
+  return defaultProfile()
 }
 
 let profile = load()

@@ -10,13 +10,22 @@ import { useState } from "react"
 import { Check, ChevronRight } from "lucide-react"
 
 import { StatusGlyph } from "@/components/StatusGlyph"
-import { STYLES, getStyle, type StyleId } from "@/data/styles"
-import { STATUS_GLYPH_VARIANTS, setStatusGlyph, useStatusGlyph } from "@/lib/status-glyph"
+import { STYLES, getStyle, styleName, type StyleId } from "@/data/styles"
+import { useLocalePreference, useT, type LocalePreference } from "@/lib/i18n"
+import { STATUS_GLYPH_VARIANTS, setStatusGlyph, useStatusGlyph, type StatusGlyphVariant } from "@/lib/status-glyph"
 import { useTheme } from "@/lib/theme-context"
 import { cn } from "@/lib/utils"
 
 /** 迷你窗口用的五色:窗底 / 侧栏 / 文字行(弱化内容) / 强调。按主题设计的明暗取 */
 type Preview = { bg: string; side: string; soft: string; acc: string }
+
+/** 状态指示变体名的词典 key(命名空间 settings) */
+const GLYPH_NAME_KEYS: Record<StatusGlyphVariant, string> = {
+  b: "settings.glyphProgressRing",
+  a: "settings.glyphBreathingHalo",
+  d: "settings.glyphEnergyBar",
+  f: "settings.glyphPixelState",
+}
 
 const PREVIEWS: Record<StyleId, Preview> = {
   graphite: { bg: "oklch(1 0 0)", side: "oklch(0.985 0 0)", soft: "oklch(0.93 0 0)", acc: "oklch(0.72 0.15 72)" },
@@ -94,15 +103,48 @@ export function AppearanceSection() {
   const theme = useTheme()
   const statusGlyph = useStatusGlyph()
   const [moreOpen, setMoreOpen] = useState(false)
+  const { t } = useT()
+  const { preference, setPreference } = useLocalePreference()
+
+  const languageOptions: { id: LocalePreference; label: string }[] = [
+    { id: "system", label: t("settings.languageSystem") },
+    { id: "zh-CN", label: t("settings.languageZh") },
+    { id: "en-US", label: t("settings.languageEn") },
+  ]
 
   return (
     <div className="flex flex-col gap-8">
       <section>
-        <h2 className="text-sm font-medium">配色套系</h2>
+        <h2 className="text-sm font-medium">{t("settings.language")}</h2>
+        <div className="mt-3 grid grid-cols-3 gap-3">
+          {languageOptions.map((option) => {
+            const activeItem = preference === option.id
+            return (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setPreference(option.id)}
+                className={cn(
+                  "flex items-center justify-between rounded-xl border px-3 py-2.5 text-left transition-colors",
+                  activeItem
+                    ? "border-brand ring-1 ring-brand/40"
+                    : "border-border hover:border-foreground/25",
+                )}
+              >
+                <span className="text-sm font-medium">{option.label}</span>
+                {activeItem && <Check className="size-4 shrink-0 text-brand" />}
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-sm font-medium">{t("settings.colorThemes")}</h2>
         <div className="mt-3 grid grid-cols-2 gap-3">
           <ThemeCard
             id="graphite"
-            name="默认"
+            name={styleName("graphite", t)}
             active={theme.style === "graphite"}
             onSelect={() => theme.setStyle("graphite")}
           />
@@ -114,7 +156,7 @@ export function AppearanceSection() {
           className="mt-3 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <ChevronRight className={cn("size-3.5 transition-transform", moreOpen && "rotate-90")} />
-          更多主题
+          {t("settings.moreThemes")}
         </button>
         {moreOpen && (
           <div className="mt-2 grid grid-cols-2 gap-3">
@@ -122,7 +164,7 @@ export function AppearanceSection() {
               <ThemeCard
                 key={s.id}
                 id={s.id}
-                name={s.name}
+                name={styleName(s.id, t)}
                 active={theme.style === s.id}
                 onSelect={() => theme.setStyle(s.id)}
               />
@@ -132,7 +174,7 @@ export function AppearanceSection() {
       </section>
 
       <section>
-        <h2 className="text-sm font-medium">会话状态指示</h2>
+        <h2 className="text-sm font-medium">{t("settings.statusIndicator")}</h2>
         <div className="mt-3 grid grid-cols-2 gap-3">
           {STATUS_GLYPH_VARIANTS.map((v) => {
             const activeItem = statusGlyph === v.id
@@ -155,7 +197,7 @@ export function AppearanceSection() {
                   <StatusGlyph state="unread" variant={v.id} />
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium">{v.name}</span>
+                  <span className="text-sm font-medium">{t(GLYPH_NAME_KEYS[v.id])}</span>
                   {activeItem && <Check className="size-4 shrink-0 text-brand" />}
                 </div>
               </button>

@@ -18,6 +18,7 @@ import {
   type ProviderView,
 } from "@/core/provider"
 import { EFFORTS, type Effort } from "@/core/types"
+import { useT } from "@/lib/i18n"
 import { openSettings } from "@/lib/settings-store"
 import { useHarnessPreferences } from "@/lib/harness-preferences"
 import { useLocalImportSources } from "@/lib/local-import"
@@ -61,6 +62,7 @@ export function RuntimePicker({
   session = false,
   modelLocked = false,
 }: RuntimePickerProps) {
+  const { t } = useT()
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<PickerView>("root")
   const [query, setQuery] = useState("")
@@ -86,20 +88,21 @@ export function RuntimePicker({
     selection.harnessId,
     selection.modelId,
   )
-  const modelLabel = selectedModel ? compactModelName(selectedModel) : "选择模型"
-  const effortLabel = EFFORTS.find((item) => item.id === selection.effort)?.label ?? selection.effort
+  const modelLabel = selectedModel ? compactModelName(selectedModel) : t("workspace.selectModel")
+  const effortMeta = EFFORTS.find((item) => item.id === selection.effort)
+  const effortLabel = effortMeta ? t(effortMeta.labelKey) : selection.effort
   const canTuneEffort = Boolean(
     selectedModel && harness.effortSelection && selectedModel.reasoning !== false && onEffortChange,
   )
   // 权限档位:codex 是 OS 沙箱硬边界;claude/ACP 系是工具集近似(非硬边界);
   // pi 暂无映射(等同放行)。会话中 codex 换档需新会话(thread 级一次性下发)。
-  const permissionLabel = PERMISSION_PROFILES.find((p) => p.id === permissionProfile)?.name ?? "标准"
+  const permissionLabel = t(PERMISSION_PROFILES.find((p) => p.id === permissionProfile)?.nameKey ?? "core.profileStandardName")
   const permissionNote = selection.harnessId === "pi"
-    ? "该 Harness 暂不支持权限档位(行为等同放行)"
+    ? t("workspace.permissionNotePi")
     : !onPermissionChange && session && selection.harnessId === "codex"
-      ? "Codex 换档需新建会话生效"
+      ? t("workspace.permissionNoteCodex")
       : selection.harnessId !== "codex"
-        ? "工具集近似,非硬边界;受限/标准档无 shell(Bash 类),需要请选放行"
+        ? t("workspace.permissionNoteApprox")
         : undefined
   const canTunePermission = Boolean(onPermissionChange) && selection.harnessId !== "pi"
   const needle = query.trim().toLowerCase()
@@ -231,7 +234,7 @@ export function RuntimePicker({
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
-          aria-label="运行配置"
+          aria-label={t("workspace.runtimeConfig")}
           className={cn(
             // interpolate-size: 让 width 在 auto(静止内容宽) 与 15rem(展开) 之间可过渡,
             // 否则 auto→固定值不插值、直接跳变(Chromium 129+)
@@ -263,9 +266,9 @@ export function RuntimePicker({
       >
         <div>
           {rootRow("Harness", harness.name, "harness")}
-          {rootRow("模型", modelLabel, "model", modelLocked)}
-          {rootRow("推理强度", canTuneEffort ? effortLabel : "—", "effort", !canTuneEffort)}
-          {permissionProfile && rootRow("权限", permissionLabel, "permission")}
+          {rootRow(t("workspace.model"), modelLabel, "model", modelLocked)}
+          {rootRow(t("workspace.effort"), canTuneEffort ? effortLabel : "—", "effort", !canTuneEffort)}
+          {permissionProfile && rootRow(t("workspace.permission"), permissionLabel, "permission")}
         </div>
 
         {view !== "root" && (
@@ -295,7 +298,7 @@ export function RuntimePicker({
             <div className="flex h-full min-h-0 flex-col" onKeyDown={onModelKeyDown}>
               <label className="mx-2 mt-2 flex h-10 shrink-0 items-center gap-2.5 rounded-xl bg-muted/70 px-3 focus-within:ring-1 focus-within:ring-foreground/20">
                 <Search className="size-4 shrink-0 text-muted-foreground" />
-                <input value={query} onChange={(event) => { setQuery(event.target.value); setHighlight(0) }} placeholder="搜索模型" aria-label="搜索模型" className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
+                <input value={query} onChange={(event) => { setQuery(event.target.value); setHighlight(0) }} placeholder={t("workspace.searchModels")} aria-label={t("workspace.searchModels")} className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
               </label>
               <div className="mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2">
                 {items.map((row, index) => {
@@ -321,7 +324,7 @@ export function RuntimePicker({
                   const meta = EFFORTS.find((item) => item.id === effort)
                   return (
                     <button key={effort} type="button" onClick={() => pickEffort(effort)} className="flex min-h-12 w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
-                      <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{meta?.label ?? effort}</span>{meta?.hint && <span className="block truncate text-xs text-muted-foreground">{meta.hint}</span>}</span>
+                      <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{meta ? t(meta.labelKey) : effort}</span>{meta && <span className="block truncate text-xs text-muted-foreground">{t(meta.hintKey)}</span>}</span>
                       {effort === selection.effort && <Check className="size-4 shrink-0" />}
                     </button>
                   )
@@ -335,7 +338,7 @@ export function RuntimePicker({
               <div className="min-h-0 flex-1 overflow-y-auto p-2">
                 {PERMISSION_PROFILES.map((profile) => (
                   <button key={profile.id} type="button" disabled={!canTunePermission} onClick={() => pickPermission(profile.id)} className="flex min-h-12 w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-default disabled:opacity-45">
-                    <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{profile.name}</span><span className="block truncate text-xs text-muted-foreground">{profile.desc}</span></span>
+                    <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{t(profile.nameKey)}</span><span className="block truncate text-xs text-muted-foreground">{t(profile.descKey)}</span></span>
                     {profile.id === permissionProfile && <Check className="size-4 shrink-0" />}
                   </button>
                 ))}
@@ -366,9 +369,10 @@ function EmptyModelList({
 }) {
   const importSources = useLocalImportSources()
   const canImport = !needle && importSources !== null && importSources.length > 0
+  const { t } = useT()
   return (
     <div className="space-y-2 px-3 py-6 text-center text-sm text-muted-foreground">
-      <p>{needle ? "没有匹配的模型" : "没有已连接供应商提供可选模型。"}</p>
+      <p>{needle ? t("workspace.noMatchingModels") : t("workspace.noConnectedProviders")}</p>
       {typeof window !== "undefined" && window.bento && (
         <div className="flex flex-col items-center gap-1.5">
           {canImport && (
@@ -377,7 +381,7 @@ function EmptyModelList({
               className="text-foreground underline underline-offset-4"
               onClick={() => { closePopover(); onOpenSettings("providers", { addProvider: "detect" }) }}
             >
-              从本机配置导入({importSources!.join(" / ")})…
+              {t("workspace.importLocalConfig", { sources: importSources!.join(" / ") })}
             </button>
           )}
           <button
@@ -385,7 +389,7 @@ function EmptyModelList({
             className="text-foreground underline underline-offset-4"
             onClick={() => { closePopover(); onOpenSettings("providers", { addProvider: Boolean(needle) }) }}
           >
-            {needle ? "添加供应商…" : "前往供应商设置…"}
+            {needle ? t("workspace.addProvider") : t("workspace.goToProviderSettings")}
           </button>
         </div>
       )}

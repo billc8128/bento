@@ -30,6 +30,7 @@ import {
 } from "@/lib/layout-store"
 import { liveSessionsSnapshot, useLive } from "@/lib/live-store"
 import { useNewSession } from "@/lib/new-session-store"
+import { useT } from "@/lib/i18n"
 import { PanelInstanceProvider } from "@/lib/panel-context"
 import { NewSessionView } from "@/components/NewSessionView"
 import { getView } from "@/views/registry"
@@ -47,6 +48,7 @@ type PanelParams = {
 /** 所有面板的统一宿主:把布局树里的 instanceState 转成实例 context */
 function PanelHost(props: IDockviewPanelProps<PanelParams>) {
   const { openSessionIds } = useLayout()
+  const { t } = useT()
   const { viewId, instanceState } = props.params
   const sessionId = instanceState?.sessionId ?? ""
 
@@ -57,7 +59,7 @@ function PanelHost(props: IDockviewPanelProps<PanelParams>) {
     // viewId 未注册(比如插件被卸载后遗留的布局):占位而不是白屏
     return (
       <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-        未知视图 {viewId}
+        {t("workspace.unknownView", { viewId })}
       </div>
     )
   }

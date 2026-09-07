@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { useT } from "@/lib/i18n"
 import { useTraits } from "@/lib/style-context"
 import { getHarness, type HarnessId } from "@/core/harness"
 import type { PermissionProfile } from "@/core/permission"
@@ -77,6 +78,7 @@ export function Composer({
   collapsible = false,
 }: ComposerProps) {
   const { composer: shape, width } = useTraits()
+  const { t } = useT()
   const [text, setText] = useState("")
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [dragging, setDragging] = useState(false)
@@ -206,7 +208,7 @@ export function Composer({
         >
           {dragging && (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[inherit] bg-card/85">
-              <span className="text-sm font-medium text-primary">松手上传</span>
+              <span className="text-sm font-medium text-primary">{t("composer.dropToUpload")}</span>
             </div>
           )}
 
@@ -237,7 +239,7 @@ export function Composer({
                     <button
                       onClick={() => removeAttachment(a.id)}
                       className="absolute right-1 top-1 rounded-full bg-black/55 p-0.5 text-white transition hover:bg-black/75 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                      aria-label={`移除 ${a.name}`}
+                      aria-label={t("composer.removeAttachment", { name: a.name })}
                     >
                       <X className="size-3" />
                     </button>
@@ -259,7 +261,7 @@ export function Composer({
                     <button
                       onClick={() => removeAttachment(a.id)}
                       className="absolute right-1 top-1 rounded-full bg-black/55 p-0.5 text-white transition hover:bg-black/75 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                      aria-label={`移除 ${a.name}`}
+                      aria-label={t("composer.removeAttachment", { name: a.name })}
                     >
                       <X className="size-3" />
                     </button>
@@ -308,7 +310,7 @@ export function Composer({
                 send()
               }
             }}
-            placeholder={collapsed ? "Type…" : `向 ${harness.name} 描述你要做的事…`}
+            placeholder={collapsed ? t("composer.placeholderCollapsed") : t("composer.placeholder", { name: harness.name })}
             rows={collapsed ? 1 : 2}
             // 收起态是单行胶囊:禁换行,空间不够时横向裁剪(同单行 input),
             // 否则窄分栏下 placeholder 换行会被固定高度竖直切半
@@ -385,10 +387,10 @@ export function Composer({
                   onClick={() => imageRef.current?.click()}
                 >
                   <ImageIcon className="size-4" />
-                  <span className="sr-only">上传图像</span>
+                  <span className="sr-only">{t("composer.uploadImage")}</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>上传图像</TooltipContent>
+              <TooltipContent>{t("composer.uploadImage")}</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -398,10 +400,10 @@ export function Composer({
                   onClick={() => fileRef.current?.click()}
                 >
                   <Paperclip className="size-4" />
-                  <span className="sr-only">上传文件</span>
+                  <span className="sr-only">{t("composer.uploadFile")}</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>上传文件</TooltipContent>
+              <TooltipContent>{t("composer.uploadFile")}</TooltipContent>
             </Tooltip>
 
             {/* 运行配置:右锚定,展开时向左生长,不挤发送按钮 */}
@@ -439,17 +441,17 @@ export function Composer({
           <div className="absolute bottom-2.5 right-[max(0.625rem,calc(var(--radius)*0.8))] flex items-center gap-1">
             <Button size="icon" className="size-7 rounded-full" disabled={!canSend} onClick={send}>
               <ArrowUp className="size-4" />
-              <span className="sr-only">{running ? "发送为下一条" : "发送"}</span>
+              <span className="sr-only">{running ? t("composer.sendNext") : t("composer.send")}</span>
             </Button>
             {running && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button size="icon" variant="secondary" onClick={onToggleRun} className="size-7 rounded-full">
                     <Square className="size-3 fill-current" />
-                    <span className="sr-only">停止</span>
+                    <span className="sr-only">{t("composer.stop")}</span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>停止当前任务</TooltipContent>
+                <TooltipContent>{t("composer.stopTask")}</TooltipContent>
               </Tooltip>
             )}
           </div>

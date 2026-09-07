@@ -10,14 +10,15 @@ export type PermissionProfile = "restricted" | "standard" | "full"
 
 export const DEFAULT_PERMISSION_PROFILE: PermissionProfile = "standard"
 
+/** nameKey/descKey 是 i18n 词典 key(命名空间 core),渲染端用 t() 取文案。 */
 export const PERMISSION_PROFILES: readonly {
   id: PermissionProfile
-  name: string
-  desc: string
+  nameKey: string
+  descKey: string
 }[] = [
-  { id: "restricted", name: "受限", desc: "工作区内读写,禁网络,越界直接拒" },
-  { id: "standard", name: "标准", desc: "工作区读写 + 网络放行,越界暂自动拒" },
-  { id: "full", name: "放行", desc: "不设限,可写任意路径、可执行任意命令" },
+  { id: "restricted", nameKey: "core.profileRestrictedName", descKey: "core.profileRestrictedDesc" },
+  { id: "standard", nameKey: "core.profileStandardName", descKey: "core.profileStandardDesc" },
+  { id: "full", nameKey: "core.profileFullName", descKey: "core.profileFullDesc" },
 ]
 
 /** 路径是否在工作区内(字符串层归一化)。symlink 逃逸由 electron 侧在调用前

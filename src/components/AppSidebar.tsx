@@ -64,6 +64,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
+import { useT, type TFn } from "@/lib/i18n"
 import { useTraits } from "@/lib/style-context"
 import { closeSession, openAppsView, openSession, useLayout } from "@/lib/layout-store"
 import { closeNewSession, requestNewSession, useNewSession } from "@/lib/new-session-store"
@@ -113,17 +114,17 @@ function dirLabel(cwd: string): string {
 }
 
 /** 会话行的相对时间:刚刚 / Nm / Nh / 昨天 / 周X / M-D */
-function relativeTime(iso: string): string {
+function relativeTime(iso: string, t: TFn): string {
   const then = new Date(iso).getTime()
   if (Number.isNaN(then)) return ""
   const diff = Date.now() - then
   const minutes = Math.floor(diff / 60_000)
-  if (minutes < 1) return "刚刚"
+  if (minutes < 1) return t("sidebar.timeJustNow")
   if (minutes < 60) return `${minutes}m`
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return `${hours}h`
   const days = Math.floor(hours / 24)
-  if (days === 1) return "昨天"
+  if (days === 1) return t("sidebar.timeYesterday")
   if (days < 7) return `${days}d`
   const d = new Date(then)
   return `${d.getMonth() + 1}-${d.getDate()}`
@@ -131,6 +132,7 @@ function relativeTime(iso: string): string {
 
 
 export function AppSidebar() {
+  const { t } = useT()
   const { sidebar: shape } = useTraits()
   const inset = shape === "island"
   const rowRound = inset ? "rounded-lg" : "rounded-none"
@@ -224,7 +226,7 @@ export function AppSidebar() {
             <Input
               autoFocus
               defaultValue={s.title}
-              aria-label="重命名会话"
+              aria-label={t("sidebar.renameSession")}
               className="h-6 flex-1 rounded-md px-1 text-sm focus-visible:border-foreground/25 focus-visible:ring-1 focus-visible:ring-foreground/15"
               onFocus={(e) => e.currentTarget.select()}
               onKeyDown={(e) => {
@@ -283,13 +285,13 @@ export function AppSidebar() {
         >
           {!running && (
             <span className="px-0.5 type-micro tabular-nums text-muted-foreground">
-              {relativeTime(s.updatedAt)}
+              {relativeTime(s.updatedAt, t)}
             </span>
           )}
           {allowPin && (
             <button
               type="button"
-              title={isPinned ? "取消置顶" : "置顶"}
+              title={isPinned ? t("sidebar.unpin") : t("sidebar.pin")}
               className="flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
               onClick={() => togglePin(key)}
             >
@@ -303,7 +305,7 @@ export function AppSidebar() {
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                title="会话操作"
+                title={t("sidebar.sessionActions")}
                 className="flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-border hover:text-foreground"
               >
                 <MoreHorizontal className="size-3.5" />
@@ -318,19 +320,19 @@ export function AppSidebar() {
               {allowPin && (
                 <DropdownMenuItem className="gap-2 text-sm" onSelect={() => togglePin(key)}>
                   <PinIcon filled={isPinned} className="size-3.5 opacity-70" />
-                  {isPinned ? "取消置顶" : "置顶"}
+                  {isPinned ? t("sidebar.unpin") : t("sidebar.pin")}
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem className="gap-2 text-sm" onSelect={() => setRenaming(key)}>
                 <Pencil className="size-4 opacity-70" />
-                重命名
+                {t("sidebar.rename")}
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="gap-2 text-sm text-destructive focus:text-destructive"
                 onSelect={() => setDeleting({ key, title: s.title })}
               >
                 <Trash2 className="size-4 opacity-70" />
-                删除
+                {t("sidebar.delete")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -355,11 +357,11 @@ export function AppSidebar() {
               variant="ghost"
               size="icon-sm"
               className="text-muted-foreground hover:text-foreground"
-              title="搜索对话"
+              title={t("sidebar.searchChats")}
               onClick={() => setChatArchiveOpen(true)}
             >
               <Search className="size-4" />
-              <span className="sr-only">搜索对话</span>
+              <span className="sr-only">{t("sidebar.searchChats")}</span>
             </Button>
           </span>
         </div>
@@ -381,7 +383,7 @@ export function AppSidebar() {
                     {/* 光学对齐基准是文件夹图标列(tabler,字形左缘比 lucide 深 1px):
                         PenSquare 字形留白天然多 1px 正好落位,Blocks 需 +1px 补偿 */}
                     <PenSquare className="size-4" />
-                    <span>新对话</span>
+                    <span>{t("sidebar.newChat")}</span>
                     <span className="ml-auto type-micro text-muted-foreground">⌘N</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -397,7 +399,7 @@ export function AppSidebar() {
                     {/* Blocks 字形在 lucide 网格里偏左上:右移 1px 对齐文件夹列,
                         上移 1px 的反向是下沉——实测它比文字质心低 1.2px,提 1px */}
                     <Blocks className="size-4 translate-x-px -translate-y-px" />
-                    <span>应用</span>
+                    <span>{t("sidebar.apps")}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               </SidebarMenu>
@@ -407,13 +409,13 @@ export function AppSidebar() {
                 <Collapsible open={!chatCollapsed} onOpenChange={(open) => setChatCollapsed(!open)}>
                   <div className="group/section relative flex h-7 items-center">
                     <CollapsibleTrigger className="group flex h-full w-full items-center gap-1.5 px-5 pr-9 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
-                      对话
+                      {t("sidebar.chats")}
                       <ChevronDown className="size-3.5 transition-transform group-data-[state=closed]:-rotate-90" />
                     </CollapsibleTrigger>
                     <button
                       type="button"
-                      title="新建对话"
-                      aria-label="新建对话"
+                      title={t("sidebar.newChat")}
+                      aria-label={t("sidebar.newChat")}
                       onClick={() => requestNewSession({ scope: "chat" })}
                       className="absolute right-2 grid size-5 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-border hover:text-foreground focus-visible:opacity-100 group-hover/section:opacity-100 group-focus-within/section:opacity-100"
                     >
@@ -422,7 +424,7 @@ export function AppSidebar() {
                   </div>
                   <CollapsibleContent className="collapsible-section">
                 {chatKeys.length === 0 && (
-                  <p className="pl-5 pr-5 pt-1 type-micro text-muted-foreground">还没有对话</p>
+                  <p className="pl-5 pr-5 pt-1 type-micro text-muted-foreground">{t("sidebar.noChats")}</p>
                 )}
                 {chatKeys.length > 0 && (
                   <SidebarMenu className="gap-0.5">
@@ -441,7 +443,7 @@ export function AppSidebar() {
                     <div className="mt-1 flex h-6 items-center">
                       <CollapsibleTrigger className="flex h-6 items-center gap-1 rounded px-5 type-micro text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
                         {chatExpanded ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
-                        {chatExpanded ? "收起" : `更多 ${chatKeys.length - 1} 条`}
+                        {chatExpanded ? t("sidebar.collapse") : t("sidebar.moreCount", { count: chatKeys.length - 1 })}
                       </CollapsibleTrigger>
                       <button
                         type="button"
@@ -456,7 +458,7 @@ export function AppSidebar() {
                           chatExpanded ? "opacity-100" : "pointer-events-none",
                         )}
                       >
-                        全部
+                        {t("sidebar.showAll")}
                       </button>
                     </div>
                   </Collapsible>
@@ -468,7 +470,7 @@ export function AppSidebar() {
               {pinnedKeys.length > 0 && (
                 <Collapsible defaultOpen>
                   <CollapsibleTrigger className="group flex h-7 w-full items-center gap-1.5 px-5 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
-                    置顶
+                    {t("sidebar.pinned")}
                     <ChevronDown className="size-3.5 transition-transform group-data-[state=closed]:-rotate-90" />
                   </CollapsibleTrigger>
                   <CollapsibleContent className="collapsible-section">
@@ -481,15 +483,15 @@ export function AppSidebar() {
               <Collapsible open={!projectsCollapsed} onOpenChange={(open) => setProjectsCollapsed(!open)}>
                 <div className="group/section relative flex h-7 items-center">
                   <CollapsibleTrigger className="group flex h-full w-full items-center gap-1.5 px-5 pr-9 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
-                    项目
+                    {t("sidebar.projects")}
                     <ChevronDown className="size-3.5 transition-transform group-data-[state=closed]:-rotate-90" />
                   </CollapsibleTrigger>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
-                        title="新建项目"
-                        aria-label="新建项目"
+                        title={t("sidebar.newProject")}
+                        aria-label={t("sidebar.newProject")}
                         className="absolute right-2 grid size-5 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-border hover:text-foreground focus-visible:opacity-100 group-hover/section:opacity-100 group-focus-within/section:opacity-100"
                       >
                         <Plus className="size-3.5" />
@@ -498,11 +500,11 @@ export function AppSidebar() {
                     <DropdownMenuContent side="right" align="start" className="w-44">
                       <DropdownMenuItem className="gap-2 text-sm" onSelect={() => setCreateProjectOpen(true)}>
                         <Plus className="size-3.5 opacity-70" />
-                        新建空白项目
+                        {t("sidebar.newBlankProject")}
                       </DropdownMenuItem>
                       <DropdownMenuItem className="gap-2 text-sm" onSelect={() => void pickProjectFolder()}>
                         <FolderPlus className="size-3.5 opacity-70" />
-                        使用现有文件夹
+                        {t("sidebar.useExistingFolder")}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -532,7 +534,7 @@ export function AppSidebar() {
                           <Input
                             autoFocus
                             defaultValue={label}
-                            aria-label="重命名文件夹分组"
+                            aria-label={t("sidebar.renameFolder")}
                             className="h-6 flex-1 rounded-md px-1 text-sm focus-visible:border-foreground/25 focus-visible:ring-1 focus-visible:ring-foreground/15"
                             onFocus={(event) => event.currentTarget.select()}
                             onKeyDown={(event) => {
@@ -562,8 +564,8 @@ export function AppSidebar() {
                               <DropdownMenuTrigger asChild>
                                 <button
                                   type="button"
-                                  title="文件夹操作"
-                                  aria-label={`${label} 文件夹操作`}
+                                  title={t("sidebar.folderActions", { label })}
+                                  aria-label={t("sidebar.folderActions", { label })}
                                   className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                                 >
                                   <MoreHorizontal className="size-3.5" />
@@ -572,11 +574,11 @@ export function AppSidebar() {
                               <DropdownMenuContent side="right" align="start" className="w-40">
                                 <DropdownMenuItem className="gap-2 text-sm" onSelect={() => toggleFolderPin(g.cwd)}>
                                   <PinIcon filled={isPinnedFolder} className="size-3.5 opacity-70" />
-                                  {isPinnedFolder ? "取消置顶" : "置顶文件夹"}
+                                  {isPinnedFolder ? t("sidebar.unpin") : t("sidebar.pinFolder")}
                                 </DropdownMenuItem>
                                 <DropdownMenuItem className="gap-2 text-sm" onSelect={() => setRenamingFolder(g.cwd)}>
                                   <Pencil className="size-4 opacity-70" />
-                                  重命名
+                                  {t("sidebar.rename")}
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
@@ -585,14 +587,14 @@ export function AppSidebar() {
                                   onSelect={() => hideFolder(g.cwd)}
                                 >
                                   <Trash2 className="size-4 opacity-70" />
-                                  从侧栏移除
+                                  {t("sidebar.removeFromSidebar")}
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
                             <button
                               type="button"
-                              title="在此文件夹中新建对话"
-                              aria-label={`在 ${label} 中新建对话`}
+                              title={t("sidebar.newChatInFolder")}
+                              aria-label={t("sidebar.newChatIn", { label })}
                               className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                               onClick={() => requestNewSession({ scope: "project", cwd: g.cwd })}
                             >
@@ -636,7 +638,7 @@ export function AppSidebar() {
             </button>
             <button
               type="button"
-              title={theme.dark ? "切换到浅色模式" : "切换到深色模式"}
+              title={theme.dark ? t("sidebar.switchToLight") : t("sidebar.switchToDark")}
               onClick={() => theme.setDark(!theme.dark)}
               className="mr-0.5 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
@@ -662,8 +664,8 @@ export function AppSidebar() {
       >
         <DialogContent className="flex h-[min(34rem,calc(100vh-3rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
           <DialogHeader className="border-b border-border px-5 py-4">
-            <DialogTitle>全部对话</DialogTitle>
-            <DialogDescription className="sr-only">搜索或浏览全部对话</DialogDescription>
+            <DialogTitle>{t("sidebar.allChats")}</DialogTitle>
+            <DialogDescription className="sr-only">{t("sidebar.allChatsDesc")}</DialogDescription>
           </DialogHeader>
           <div className="border-b border-border px-4 py-3">
             {/* 自动聚焦的唯一输入位:光标即焦点提示,focus-within 只做轻微提亮,
@@ -674,8 +676,8 @@ export function AppSidebar() {
                 autoFocus
                 value={chatQuery}
                 onChange={(event) => setChatQuery(event.target.value)}
-                placeholder="搜索对话"
-                aria-label="搜索全部对话"
+                placeholder={t("sidebar.searchChats")}
+                aria-label={t("sidebar.searchChats")}
                 className="h-full border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
               />
             </div>
@@ -699,13 +701,13 @@ export function AppSidebar() {
                   <MessageCircle className="size-4 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">{session.title}</span>
                   <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                    {relativeTime(session.updatedAt)}
+                    {relativeTime(session.updatedAt, t)}
                   </span>
                 </button>
               ))}
               {filteredChats.length === 0 && (
                 <div className="grid min-h-48 place-items-center text-sm text-muted-foreground">
-                  没有匹配的对话
+                  {t("sidebar.noMatchingChats")}
                 </div>
               )}
             </div>
@@ -717,13 +719,13 @@ export function AppSidebar() {
       <AlertDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除会话</AlertDialogTitle>
+            <AlertDialogTitle>{t("sidebar.deleteSession")}</AlertDialogTitle>
             <AlertDialogDescription>
-              「{deleting?.title}」的历史记录将一并删除,此操作不可撤销。
+              {t("sidebar.deleteSessionDesc", { title: deleting?.title ?? "" })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t("sidebar.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               onClick={() => {
@@ -733,7 +735,7 @@ export function AppSidebar() {
                 setDeleting(null)
               }}
             >
-              删除
+              {t("sidebar.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

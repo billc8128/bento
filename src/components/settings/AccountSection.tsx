@@ -9,10 +9,11 @@ import { CircleUserRound, Trash2 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { useT, type TFn } from "@/lib/i18n"
 import { profileInitial, setProfile, useProfile } from "@/lib/profile-store"
 
 /** 选图 → 方形居中裁 128px → JPEG dataURL(localStorage 友好) */
-function readAvatar(file: File): Promise<string> {
+function readAvatar(file: File, t: TFn): Promise<string> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file)
     const img = new Image()
@@ -29,7 +30,7 @@ function readAvatar(file: File): Promise<string> {
     }
     img.onerror = () => {
       URL.revokeObjectURL(url)
-      reject(new Error("图片读取失败"))
+      reject(new Error(t("settings.avatarReadFailed")))
     }
     img.src = url
   })
@@ -38,12 +39,13 @@ function readAvatar(file: File): Promise<string> {
 export function AccountSection() {
   const profile = useProfile()
   const fileRef = useRef<HTMLInputElement>(null)
+  const { t } = useT()
 
   return (
     <div className="flex items-center gap-4 rounded-xl border border-border px-4 py-4">
       <button
         type="button"
-        title="更换头像"
+        title={t("settings.changeAvatar")}
         onClick={() => fileRef.current?.click()}
         className="group relative shrink-0 rounded-full focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
@@ -64,12 +66,12 @@ export function AccountSection() {
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0]
-          if (file) void readAvatar(file).then((avatar) => setProfile({ avatar }))
+          if (file) void readAvatar(file, t).then((avatar) => setProfile({ avatar }))
           e.target.value = ""
         }}
       />
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-        <span className="text-sm font-medium">显示名</span>
+        <span className="text-sm font-medium">{t("settings.displayName")}</span>
         <Input
           key={profile.name}
           defaultValue={profile.name}
@@ -86,7 +88,7 @@ export function AccountSection() {
           onClick={() => setProfile({ avatar: null })}
         >
           <Trash2 className="size-3.5" />
-          移除头像
+          {t("settings.removeAvatar")}
         </Button>
       )}
     </div>

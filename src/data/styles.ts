@@ -6,6 +6,8 @@
  * 只换 token 不配 traits 的主题没有资格进内置列表(ARCHITECTURE.md §3)。
  */
 
+import type { TFn } from "@/lib/i18n"
+
 export type SidebarShape =
   /** 贴边全高,靠一条竖线和主区分开 */
   | "flush"
@@ -58,8 +60,7 @@ export type StyleLayout = {
 
 export type Style = {
   id: string
-  name: string
-  desc: string
+  /** 显示名/描述是 UI 文案,在 i18n 词典(common.theme*);用 styleName/styleDesc 解析 */
   /** 这套主题是照着哪个模式设计的,切过去时默认跟到对应明暗 */
   tone: "light" | "dark"
   traits: StyleTraits
@@ -69,8 +70,6 @@ export type Style = {
 export const STYLES = [
   {
     id: "graphite",
-    name: "默认",
-    desc: "石墨灰阶 · 琥珀点睛 · 悬浮输入",
     tone: "light",
     layout: { sidebar: { default: 204, min: 196, max: 304 } },
     traits: {
@@ -85,8 +84,6 @@ export const STYLES = [
   },
   {
     id: "glass",
-    name: "液态玻璃",
-    desc: "整窗 vibrancy · 玻璃层叠 · 明暗双色",
     tone: "light",
     layout: { sidebar: { default: 204, min: 196, max: 304 } },
     traits: {
@@ -101,8 +98,6 @@ export const STYLES = [
   },
   {
     id: "indigo",
-    name: "靛蓝暗夜",
-    desc: "纯黑底 · 靛蓝强调 · 浮岛侧栏",
     tone: "dark",
     layout: { sidebar: { default: 216, min: 208, max: 320 } },
     traits: {
@@ -117,8 +112,6 @@ export const STYLES = [
   },
   {
     id: "soft",
-    name: "柔和浮岛",
-    desc: "大圆角 · 双向气泡 · 悬浮输入",
     tone: "light",
     layout: { sidebar: { default: 224, min: 216, max: 336 } },
     traits: {
@@ -133,8 +126,6 @@ export const STYLES = [
   },
   {
     id: "warm",
-    name: "温暖编辑",
-    desc: "衬线标题 · 双向气泡 · 圆润",
     tone: "light",
     layout: { sidebar: { default: 220, min: 212, max: 328 } },
     traits: {
@@ -149,8 +140,6 @@ export const STYLES = [
   },
   {
     id: "terminal",
-    name: "终端极客",
-    desc: "等宽字体 · 锐角 · 贴底输入区",
     tone: "dark",
     layout: { sidebar: { default: 240, min: 224, max: 360 } },
     traits: {
@@ -171,6 +160,24 @@ export const DEFAULT_STYLE: StyleId = "graphite"
 
 export function getStyle(id: StyleId): Style {
   return STYLES.find((s) => s.id === id)!
+}
+
+const STYLE_I18N_KEYS: Record<StyleId, { name: string; desc: string }> = {
+  graphite: { name: "common.themeGraphiteName", desc: "common.themeGraphiteDesc" },
+  glass: { name: "common.themeGlassName", desc: "common.themeGlassDesc" },
+  indigo: { name: "common.themeIndigoName", desc: "common.themeIndigoDesc" },
+  soft: { name: "common.themeSoftName", desc: "common.themeSoftDesc" },
+  warm: { name: "common.themeWarmName", desc: "common.themeWarmDesc" },
+  terminal: { name: "common.themeTerminalName", desc: "common.themeTerminalDesc" },
+}
+
+/** 主题显示名:t 从组件传入(参考 AppSidebar 的 relativeTime(iso, t)) */
+export function styleName(id: StyleId, t: TFn): string {
+  return t(STYLE_I18N_KEYS[id].name)
+}
+
+export function styleDesc(id: StyleId, t: TFn): string {
+  return t(STYLE_I18N_KEYS[id].desc)
 }
 
 /** 正文和输入区共用的栏宽。full 不居中,直接铺满可用区域 */

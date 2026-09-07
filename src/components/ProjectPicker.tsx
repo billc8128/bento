@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 type ProjectPickerProps = {
@@ -46,6 +47,7 @@ export function NewProjectDialog({
   onOpenChange: (open: boolean) => void
   onCreated: (path: string) => void
 }) {
+  const { t } = useT()
   const [name, setName] = useState("")
   const [sourceDir, setSourceDir] = useState("")
   const [creating, setCreating] = useState(false)
@@ -81,7 +83,7 @@ export function NewProjectDialog({
     const result = await window.bento.createProject({ sourceDir, name: name.trim() })
     setCreating(false)
     if (!result.path) {
-      setError(result.error ?? "项目创建失败")
+      setError(result.error ?? t("workspace.createProjectFailed"))
       return
     }
     onCreated(result.path)
@@ -94,9 +96,9 @@ export function NewProjectDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="gap-5 p-6 sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="text-xl font-semibold">创建项目</DialogTitle>
+          <DialogTitle className="text-xl font-semibold">{t("workspace.createProject")}</DialogTitle>
           <DialogDescription className="sr-only">
-            输入项目名称并选择新项目所在的源文件夹。
+            {t("workspace.createProjectDesc")}
           </DialogDescription>
         </DialogHeader>
 
@@ -107,14 +109,14 @@ export function NewProjectDialog({
             autoFocus
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="项目名称"
-            aria-label="项目名称"
+            placeholder={t("workspace.projectName")}
+            aria-label={t("workspace.projectName")}
             className="h-12 border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"
           />
         </div>
 
         <div className="space-y-2">
-          <p className="text-sm font-medium">源文件夹</p>
+          <p className="text-sm font-medium">{t("workspace.sourceFolder")}</p>
           <button
             type="button"
             onClick={() => void pickSource()}
@@ -136,7 +138,7 @@ export function NewProjectDialog({
                 <span className="max-w-full truncate text-xs text-muted-foreground">{sourceDir}</span>
               </>
             ) : (
-              <span>{dragging ? "松手选择这个文件夹" : "点击选择,或把文件夹拖进来"}</span>
+              <span>{dragging ? t("workspace.dropToChooseFolder") : t("workspace.clickOrDropFolder")}</span>
             )}
           </button>
         </div>
@@ -145,10 +147,10 @@ export function NewProjectDialog({
 
         <DialogFooter className="-mx-6 -mb-6 bg-transparent px-6 pb-6 pt-1 sm:border-0">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            取消
+            {t("workspace.cancel")}
           </Button>
           <Button disabled={!window.bento || !name.trim() || !sourceDir || creating} onClick={() => void create()}>
-            {creating ? "正在创建…" : "创建项目"}
+            {creating ? t("workspace.creating") : t("workspace.createProject")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -164,6 +166,7 @@ export function ProjectPicker({
   compact = false,
   disabled = false,
 }: ProjectPickerProps) {
+  const { t } = useT()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [createOpen, setCreateOpen] = useState(false)
@@ -200,7 +203,7 @@ export function ProjectPicker({
             <PopoverTrigger asChild>
               <button
                 type="button"
-                aria-label="选择项目"
+                aria-label={t("workspace.selectProject")}
                 disabled={disabled}
                 className={cn(
                   compact
@@ -222,7 +225,7 @@ export function ProjectPicker({
                   )}
                   title={value || undefined}
                 >
-                  {value ? projectName(value) : "选择项目"}
+                  {value ? projectName(value) : t("workspace.selectProject")}
                 </span>
                 {compact && <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />}
               </button>
@@ -231,8 +234,8 @@ export function ProjectPicker({
             {value && !compact && (
               <button
                 type="button"
-                aria-label={`清除项目 ${projectName(value)}`}
-                title="清除项目"
+                aria-label={t("workspace.clearProjectNamed", { name: projectName(value) })}
+                title={t("workspace.clearProject")}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
                   event.stopPropagation()
@@ -259,8 +262,8 @@ export function ProjectPicker({
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索项目"
-              aria-label="搜索项目"
+              placeholder={t("workspace.searchProjects")}
+              aria-label={t("workspace.searchProjects")}
               className="h-8 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
             />
           </div>
@@ -284,7 +287,7 @@ export function ProjectPicker({
               </button>
             ))}
             {filtered.length === 0 && (
-              <p className="px-3 py-4 text-center text-sm text-muted-foreground">没有匹配的最近项目</p>
+              <p className="px-3 py-4 text-center text-sm text-muted-foreground">{t("workspace.noMatchingProjects")}</p>
             )}
           </div>
 
@@ -296,7 +299,7 @@ export function ProjectPicker({
               className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-45"
             >
               <FolderPlus className="size-4" />
-              打开文件夹…
+              {t("workspace.openFolder")}
             </button>
             <button
               type="button"
@@ -307,7 +310,7 @@ export function ProjectPicker({
               className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
               <Plus className="size-4" />
-              新建项目
+              {t("workspace.newProject")}
             </button>
           </div>
         </PopoverContent>

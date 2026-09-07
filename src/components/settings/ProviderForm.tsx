@@ -33,13 +33,13 @@ import {
 } from "@/core/provider"
 import { EFFORTS, type Effort } from "@/core/types"
 import { saveCustomProvider, type CustomProviderEntry } from "@/lib/custom-provider-store"
+import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 import { CUSTOM_HARNESSES, describeFetchError, HARNESS_PROTOCOLS, PROTOCOL_LABELS } from "./labels"
 
 /** 自定义模型的推理档位固定给低/中/高三档(上游接不接只有用户知道,不给 off/auto/max) */
 const REASONING_EFFORTS: Effort[] = ["low", "medium", "high"]
-const EFFORT_LABEL = new Map(EFFORTS.map((item) => [item.id, item.label]))
 
 type ModelRow = {
   id: string
@@ -157,6 +157,7 @@ export function ProviderForm({
   /** 保存成功回传 provider id。 */
   onSaved: (providerId?: string) => void
 }) {
+  const { t } = useT()
   const [name, setName] = useState(editing?.name ?? "")
   const [slug, setSlug] = useState(editing ? editing.id.replace(/^user-/, "") : "")
   const [slugTouched, setSlugTouched] = useState(false)
@@ -251,11 +252,11 @@ export function ProviderForm({
     if (!bento || !shared || !first) return
     const baseUrl = shared.baseUrl.trim().replace(/\/+$/, "")
     if (!/^https?:\/\//.test(baseUrl)) {
-      patchAll({ fetchError: "先填写以 http(s):// 开头的 Base URL" })
+      patchAll({ fetchError: t("providers.errorBaseUrlFirst") })
       return
     }
     if (authMethod === "apiKey" && !shared.apiKey.trim() && !editing?.hasCredential) {
-      patchAll({ fetchError: "先填写 API Key,或把鉴权方式改为「无需鉴权」" })
+      patchAll({ fetchError: t("providers.errorApiKeyFirst") })
       return
     }
     patchAll({ fetching: true, fetchError: null })
@@ -282,7 +283,7 @@ export function ProviderForm({
         return { fetching: false, fetched: true, models: [...runtime.models, ...added] }
       })
     } else {
-      patchAll({ fetching: false, fetchError: describeFetchError(result) })
+      patchAll({ fetching: false, fetchError: describeFetchError(result, t) })
     }
   }
 
@@ -312,7 +313,7 @@ export function ProviderForm({
     const id = manualId.trim()
     if (!id) return
     if (shared.models.some((row) => row.id === id)) {
-      patchAll({ fetchError: `模型 ${id} 已在清单里` })
+      patchAll({ fetchError: t("providers.modelInList", { id }) })
       return
     }
     const row: ModelRow = { id, name: manualName.trim() || id, reasoning: false, defaultEffort: "medium", disabled: false, manual: true }
@@ -324,18 +325,18 @@ export function ProviderForm({
     setManualName("")
   }
 
-  function buildConfig(): { config?: CustomProviderConfig; keys?: Record<string, string>; error?: string } {
+  function buildConfig(): { config?: CustomProviderConfig; keys?: Record<string, string>; error?: string; advanced?: boolean } {
     const trimmedName = name.trim()
-    if (!trimmedName) return { error: "请填写供应商名称" }
-    if (trimmedName.length > 60) return { error: "名称最长 60 个字符" }
+    if (!trimmedName) return { error: t("providers.errorNameRequired") }
+    if (trimmedName.length > 60) return { error: t("providers.errorNameTooLong") }
     let id = editing?.id
     if (!id) {
       // 纯中文名 slugify 后为空:静默兜底一个随机标识,不拿实现细节烦用户
       const slugValue = slug.trim() || `p-${Math.random().toString(36).slice(2, 8)}`
       id = `user-${slugValue}`
-      if (!USER_PROVIDER_ID_RE.test(id)) return { error: "标识只能用小写字母、数字、- 和 _(在高级设置里)" }
+      if (!USER_PROVIDER_ID_RE.test(id)) return { error: t("providers.errorIdChars"), advanced: true }
     }
-    if (authMethod === "oauth" && !oauthDescriptor) return { error: "请选择内置 OAuth 订阅预设" }
+    if (authMethod === "oauth" && !oauthDescriptor) return { error: t("providers.errorOAuthPreset") }
     const config: CustomProviderConfig = {
       schemaVersion: 2,
       runtimePolicy: editing?.runtimePolicy ?? "custom",
@@ -354,7 +355,7 @@ export function ProviderForm({
       if (!runtime.enabled) continue
       const baseUrl = runtime.baseUrl.trim().replace(/\/+$/, "")
       if (!/^https?:\/\//.test(baseUrl)) {
-        return { error: enabled.length > 1 ? `${getHarness(agent).name} 的 Base URL 要以 http(s):// 开头` : "Base URL 要以 http(s):// 开头" }
+        return { error: enabled.length > 1 ? t("providers.errorBaseUrlHarness", { name: getHarness(agent).name }) : t("providers.errorBaseUrl"), advanced: true }
       }
       // 去重非空:停用与空 id/重复 id 的条目直接不进清单
       const seen = new Set<string>()
@@ -373,7 +374,7 @@ export function ProviderForm({
         })
       }
       if (models.length === 0) {
-        return { error: enabled.length > 1 ? `${getHarness(agent).name} 至少需要一个可用模型(拉取或手填)` : "至少需要一个可用模型(拉取或手填)" }
+        return { error: enabled.length > 1 ? t("providers.errorNeedModelHarness", { name: getHarness(agent).name }) : t("providers.errorNeedModel") }
       }
       let fixedHeaders: Record<string, string> | undefined
       if (runtime.fixedHeaders.trim()) {
@@ -381,11 +382,11 @@ export function ProviderForm({
           const parsed = JSON.parse(runtime.fixedHeaders) as unknown
           if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
             Object.values(parsed).some((value) => typeof value !== "string")) {
-            return { error: "自定义请求头必须是字符串 JSON 对象(在高级设置里)" }
+            return { error: t("providers.errorHeadersType"), advanced: true }
           }
           fixedHeaders = parsed as Record<string, string>
         } catch {
-          return { error: "自定义请求头不是合法 JSON(在高级设置里)" }
+          return { error: t("providers.errorHeadersJson"), advanced: true }
         }
       }
       config.runtimes[agent] = {
@@ -409,7 +410,7 @@ export function ProviderForm({
       }
       if (authMethod === "apiKey" && runtime.apiKey.trim()) keys[agent] = runtime.apiKey.trim()
     }
-    if (Object.keys(config.runtimes).length === 0) return { error: "至少启用一个 Harness" }
+    if (Object.keys(config.runtimes).length === 0) return { error: t("providers.errorEnableHarness") }
     if (config.runtimePolicy === "preset") {
       config.disabledHarnesses = CUSTOM_HARNESSES.filter((agent) => !runtimes[agent].enabled)
     }
@@ -419,8 +420,9 @@ export function ProviderForm({
   async function save() {
     const built = buildConfig()
     if (built.error || !built.config) {
-      setError(built.error ?? "配置不完整")
-      if (built.error && /高级设置|Base URL|JSON|标识/.test(built.error)) setAdvancedOpen(true)
+      setError(built.error ?? t("providers.errorIncomplete"))
+      // 校验落在高级设置字段时自动展开(原按文案正则判定,i18n 后改为结构化标记)
+      if (built.advanced) setAdvancedOpen(true)
       return
     }
     setSaving(true)
@@ -437,7 +439,7 @@ export function ProviderForm({
   async function loginOAuth() {
     const built = buildConfig()
     if (built.error || !built.config) {
-      setError(built.error ?? "配置不完整")
+      setError(built.error ?? t("providers.errorIncomplete"))
       return
     }
     const bento = window.bento
@@ -469,28 +471,28 @@ export function ProviderForm({
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-4 p-5">
           <label className="block space-y-1.5">
-            <span className="text-xs text-muted-foreground">名称</span>
-            <Input value={name} onChange={(event) => onNameChange(event.target.value)} placeholder="我的供应商" />
+            <span className="text-xs text-muted-foreground">{t("providers.nameLabel")}</span>
+            <Input value={name} onChange={(event) => onNameChange(event.target.value)} placeholder={t("providers.namePlaceholder")} />
           </label>
 
           <div className="grid grid-cols-2 gap-3">
             <label className="space-y-1.5">
-              <span className="text-xs text-muted-foreground">鉴权方式</span>
+              <span className="text-xs text-muted-foreground">{t("providers.authMethod")}</span>
               <Select value={authMethod} onValueChange={(value) => setAuthMethod(value as "none" | "apiKey" | "oauth")}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="apiKey">API Key</SelectItem>
-                  <SelectItem value="none">无需鉴权</SelectItem>
-                  <SelectItem value="oauth" disabled={!oauthDescriptor}>OAuth 订阅</SelectItem>
+                  <SelectItem value="none">{t("providers.authNone")}</SelectItem>
+                  <SelectItem value="oauth" disabled={!oauthDescriptor}>{t("providers.oauthSubscription")}</SelectItem>
                 </SelectContent>
               </Select>
             </label>
 
             {custom && (
               <label className="space-y-1.5">
-                <span className="text-xs text-muted-foreground">接口协议</span>
+                <span className="text-xs text-muted-foreground">{t("providers.wireProtocol")}</span>
                 <Select value={customProtocol} onValueChange={(value) => onCustomProtocolChange(value as WireProtocol)}>
                   <SelectTrigger className="w-full">
                     <SelectValue />
@@ -510,7 +512,7 @@ export function ProviderForm({
           {authMethod === "oauth" ? (
             <div className="flex items-center justify-between rounded-lg bg-muted/60 px-3 py-2.5">
               <span className="text-xs text-muted-foreground">
-                {authorized ? "已授权，可刷新登录" : "在浏览器中登录订阅账户"}
+                {authorized ? t("providers.oauthAuthorizedHint") : t("providers.oauthLoginHint")}
               </span>
               <Button
                 type="button"
@@ -521,7 +523,7 @@ export function ProviderForm({
                 className="gap-1.5"
               >
                 {loggingIn ? <Loader2 className="size-3.5 animate-spin" /> : <LogIn className="size-3.5" />}
-                {authorized ? "已授权 · 刷新" : "登录"}
+                {authorized ? t("providers.oauthRefresh") : t("providers.login")}
               </Button>
             </div>
           ) : (
@@ -533,7 +535,7 @@ export function ProviderForm({
                     type="password"
                     value={shared.apiKey}
                     onChange={(event) => patchAll({ apiKey: event.target.value })}
-                    placeholder={enabled.some((agent) => runtimes[agent].hasKey) ? "已设置,留空则不修改" : "sk-…"}
+                    placeholder={enabled.some((agent) => runtimes[agent].hasKey) ? t("providers.keySetPlaceholder") : "sk-…"}
                     autoComplete="off"
                   />
                 </label>
@@ -565,13 +567,13 @@ export function ProviderForm({
                   className="gap-1.5"
                 >
                   {shared.fetching ? <Loader2 className="size-3.5 animate-spin" /> : null}
-                  {shared.models.length > 0 ? "刷新模型" : "获取模型列表"}
+                  {shared.models.length > 0 ? t("providers.refreshModels") : t("providers.fetchModels")}
                 </Button>
                 {shared.fetched && !shared.fetchError && (
-                  <span className="type-micro text-muted-foreground">已合并进下面清单(只增不改)</span>
+                  <span className="type-micro text-muted-foreground">{t("providers.mergedHint")}</span>
                 )}
                 {divergent && (
-                  <span className="type-micro text-muted-foreground">各 Harness 清单不同,已在下方展开</span>
+                  <span className="type-micro text-muted-foreground">{t("providers.divergentHint")}</span>
                 )}
               </div>
               {shared.fetchError && <p className="text-xs text-destructive">{shared.fetchError}</p>}
@@ -579,7 +581,7 @@ export function ProviderForm({
               {shared.models.length > 8 && (
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <Input value={modelQuery} onChange={(event) => setModelQuery(event.target.value)} placeholder="在清单里搜索" className="h-8 pl-8 text-xs" />
+                  <Input value={modelQuery} onChange={(event) => setModelQuery(event.target.value)} placeholder={t("providers.searchInList")} className="h-8 pl-8 text-xs" />
                 </div>
               )}
 
@@ -596,14 +598,14 @@ export function ProviderForm({
                       <Checkbox
                         checked={!row.disabled}
                         onCheckedChange={(value) => patchRowAll(row.id, { disabled: value !== true })}
-                        aria-label={`启用 ${row.id}`}
+                        aria-label={t("providers.enableModel", { id: row.id })}
                       />
                       <span className="min-w-0 flex-1 truncate text-xs" title={row.id}>
                         {row.name}
                       </span>
                       {row.manual && (
                         <Badge variant="outline" className="px-1 py-0 type-micro font-normal">
-                          手填
+                          {t("providers.manualBadge")}
                         </Badge>
                       )}
                       <label className="flex shrink-0 items-center gap-1 type-micro text-muted-foreground">
@@ -611,7 +613,7 @@ export function ProviderForm({
                           checked={row.reasoning}
                           onCheckedChange={(value) => patchRowAll(row.id, { reasoning: value === true })}
                         />
-                        推理
+                        {t("providers.reasoning")}
                       </label>
                       {row.reasoning && (
                         <Select
@@ -622,18 +624,21 @@ export function ProviderForm({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {REASONING_EFFORTS.map((effort) => (
-                              <SelectItem key={effort} value={effort} className="text-xs">
-                                {EFFORT_LABEL.get(effort) ?? effort}
-                              </SelectItem>
-                            ))}
+                            {REASONING_EFFORTS.map((effort) => {
+                              const meta = EFFORTS.find((item) => item.id === effort)
+                              return (
+                                <SelectItem key={effort} value={effort} className="text-xs">
+                                  {meta ? t(meta.labelKey) : effort}
+                                </SelectItem>
+                              )
+                            })}
                           </SelectContent>
                         </Select>
                       )}
                     </div>
                   ))}
                   {visibleRows.length === 0 && (
-                    <p className="py-4 text-center text-xs text-muted-foreground">没有匹配的模型</p>
+                    <p className="py-4 text-center text-xs text-muted-foreground">{t("providers.noMatchingModels")}</p>
                   )}
                 </div>
               )}
@@ -648,13 +653,13 @@ export function ProviderForm({
                       addManualModel()
                     }
                   }}
-                  placeholder="手动添加模型 id"
+                  placeholder={t("providers.manualIdPlaceholder")}
                   className="h-8 flex-1 text-xs"
                 />
                 <Input
                   value={manualName}
                   onChange={(event) => setManualName(event.target.value)}
-                  placeholder="显示名(可选)"
+                  placeholder={t("providers.displayNameOptional")}
                   className="h-8 w-32 text-xs"
                 />
                 <Button
@@ -663,7 +668,7 @@ export function ProviderForm({
                   variant="outline"
                   className="size-8 shrink-0"
                   onClick={addManualModel}
-                  aria-label="添加模型"
+                  aria-label={t("providers.addModel")}
                 >
                   <Plus className="size-3.5" />
                 </Button>
@@ -676,12 +681,12 @@ export function ProviderForm({
             <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
               <CollapsibleTrigger className="group flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground">
                 <ChevronRight className="size-3.5 transition-transform group-data-open:rotate-90" />
-                高级设置
+                {t("providers.advanced")}
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-2 pt-2">
                 {!editing && (
                   <label className="block space-y-1">
-                    <span className="type-micro text-muted-foreground">标识(自动生成,可改)</span>
+                    <span className="type-micro text-muted-foreground">{t("providers.idLabel")}</span>
                     <div className="flex items-center">
                       <span className="rounded-l-md border border-r-0 border-input bg-muted px-2 py-1.5 text-xs text-muted-foreground">
                         user-
@@ -699,7 +704,7 @@ export function ProviderForm({
                   </label>
                 )}
                 <label className="block space-y-1">
-                  <span className="type-micro text-muted-foreground">模型列表地址(缺省 Base URL + /models)</span>
+                  <span className="type-micro text-muted-foreground">{t("providers.modelsUrlLabel")}</span>
                   <Input
                     value={shared.modelsUrl}
                     onChange={(event) => patchAll({ modelsUrl: event.target.value })}
@@ -708,7 +713,7 @@ export function ProviderForm({
                   />
                 </label>
                 <label className="block space-y-1">
-                  <span className="type-micro text-muted-foreground">精确请求路径(可选)</span>
+                  <span className="type-micro text-muted-foreground">{t("providers.requestPathLabel")}</span>
                   <Input
                     value={shared.requestPath}
                     onChange={(event) => patchAll({ requestPath: event.target.value })}
@@ -717,7 +722,7 @@ export function ProviderForm({
                   />
                 </label>
                 <label className="block space-y-1">
-                  <span className="type-micro text-muted-foreground">模型列表格式</span>
+                  <span className="type-micro text-muted-foreground">{t("providers.modelListFormat")}</span>
                   <Select value={shared.discoveryParser} onValueChange={(value) => patchAll({ discoveryParser: value as RuntimeFormState["discoveryParser"] })}>
                     <SelectTrigger className="h-8 w-full text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -731,15 +736,15 @@ export function ProviderForm({
                 {authMethod === "apiKey" && (
                   <div className="grid grid-cols-2 gap-2">
                     <label className="space-y-1">
-                      <span className="type-micro text-muted-foreground">鉴权 Header</span>
+                      <span className="type-micro text-muted-foreground">{t("providers.authHeader")}</span>
                       <Input value={shared.authHeader} onChange={(event) => patchAll({ authHeader: event.target.value })} className="h-8 text-xs" />
                     </label>
                     <label className="space-y-1">
-                      <span className="type-micro text-muted-foreground">值前缀</span>
+                      <span className="type-micro text-muted-foreground">{t("providers.valuePrefix")}</span>
                       <Input value={shared.authPrefix} onChange={(event) => patchAll({ authPrefix: event.target.value })} placeholder="Bearer " className="h-8 text-xs" />
                     </label>
                     <label className="col-span-2 space-y-1">
-                      <span className="type-micro text-muted-foreground">自定义请求头(JSON,可选)</span>
+                      <span className="type-micro text-muted-foreground">{t("providers.customHeaders")}</span>
                       <Textarea value={shared.fixedHeaders} onChange={(event) => patchAll({ fixedHeaders: event.target.value })} placeholder={'{"anthropic-version":"2023-06-01"}'} className="min-h-16 font-mono text-xs" />
                     </label>
                   </div>
@@ -752,7 +757,7 @@ export function ProviderForm({
           {enabled.length > 1 && (
             <Collapsible open={perHarnessOpen} onOpenChange={setPerHarnessOpen}>              <CollapsibleTrigger className="group flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground">
                 <ChevronRight className="size-3.5 transition-transform group-data-open:rotate-90" />
-                按 Harness 分别配置
+                {t("providers.perHarness")}
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-4 pt-3">
                 {enabled.map((agent) => {
@@ -776,7 +781,7 @@ export function ProviderForm({
                             type="password"
                             value={runtime.apiKey}
                             onChange={(event) => patchRuntime(agent, { apiKey: event.target.value })}
-                            placeholder={runtime.hasKey ? "已设置,留空则不修改" : "sk-…"}
+                            placeholder={runtime.hasKey ? t("providers.keySetPlaceholder") : "sk-…"}
                             autoComplete="off"
                             className="h-8 text-xs"
                           />
@@ -784,7 +789,7 @@ export function ProviderForm({
                       )}
                       {allowedProtocols.length > 1 && (
                         <label className="block space-y-1">
-                          <span className="type-micro text-muted-foreground">接口协议</span>
+                          <span className="type-micro text-muted-foreground">{t("providers.wireProtocol")}</span>
                           <Select
                             value={runtime.wireProtocol}
                             onValueChange={(value) => patchRuntime(agent, { wireProtocol: value as WireProtocol })}
@@ -803,7 +808,7 @@ export function ProviderForm({
                         </label>
                       )}
                       <p className="type-micro text-muted-foreground">
-                        模型清单共 {runtime.models.length} 项,在上方统一清单里维护。
+                        {t("providers.harnessModelCount", { count: runtime.models.length })}
                       </p>
                     </section>
                   )
@@ -816,15 +821,15 @@ export function ProviderForm({
 
       <footer className="flex items-center justify-between border-t border-border px-5 py-3">
         <p className={cn("type-micro", error ? "text-destructive" : "text-muted-foreground/80")}>
-          {error ?? (authMethod === "oauth" ? "OAuth token 仅加密保存在本机。" : "填好 Base URL 后会自动获取模型,也可以手动添加。")}
+          {error ?? (authMethod === "oauth" ? t("providers.oauthTokenHint") : t("providers.autoFetchHint"))}
         </p>
         <div className="flex gap-2">
           <Button variant="ghost" onClick={onCancel}>
-            取消
+            {t("providers.cancel")}
           </Button>
           <Button onClick={() => void save()} disabled={saving} className="gap-1.5">
             {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
-            保存
+            {t("providers.save")}
           </Button>
         </div>
       </footer>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 
 import type { Message } from "@/core/types"
+import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 /** 消息快速检索条:贴在聊天区右缘的一列小刻度,一根对应一条用户指令。
@@ -19,6 +20,7 @@ export function PromptRail({ containerRef, messages }: {
   containerRef: React.RefObject<HTMLDivElement | null>
   messages: Message[]
 }) {
+  const { t } = useT()
   // messages 是 live-store 原地变更的稳定引用,不能直接进依赖数组;
   // 每次渲染重新过滤很便宜,效果里用首尾 id + 条数做变更信号
   const prompts: PromptEntry[] = []
@@ -262,7 +264,7 @@ export function PromptRail({ containerRef, messages }: {
             key={p.id}
             ref={(el) => { tickRefs.current[i] = el }}
             type="button"
-            aria-label={`跳转到:${p.text.slice(0, 24)}`}
+            aria-label={t("workspace.jumpToPrompt", { text: p.text.slice(0, 24) })}
             data-current={i === currentIdx ? "1" : undefined}
             data-collab={p.collab ? "1" : undefined}
             onClick={() => jumpTo(p)}
@@ -287,7 +289,7 @@ export function PromptRail({ containerRef, messages }: {
         style={{ top: popTop }}
       >
         <div className="type-micro flex-none px-3.5 pt-2.5 pb-1.5 text-muted-foreground">
-          本会话 {prompts.length} 条指令
+          {t("workspace.promptCount", { count: prompts.length })}
         </div>
         <div ref={listRef} className="overflow-y-auto px-1.5 pb-1.5">
           {prompts.map((p, i) => (

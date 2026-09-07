@@ -32,16 +32,12 @@ export type BentoAppView = {
 
 export const COLLABORATION_APP_ID = "collaboration"
 
+// 内置应用的 name/description 是 i18n 词典 key(命名空间 settings):
+// 这里无法拿到渲染端 locale,由 AppsSection 展示时对 source === "builtin" 的应用 t() 查表。
 export const COLLABORATION_APP = {
   id: COLLABORATION_APP_ID,
-  name: "协作",
-  description: [
-    "让 Agent 发现并协作同一 Bento runtime 内的全部会话：",
-    "可读取 Bento 会话列表与脱敏消息历史；",
-    "可跨项目向其它会话发送消息并等待回复；",
-    "可按调用者配置创建新的 Agent 会话；",
-    "caller 身份由 lease 绑定，Agent 不能伪造来源。",
-  ].join(""),
+  name: "settings.appCollaborationName",
+  description: "settings.appCollaborationDesc",
   source: "builtin",
   enabledByDefault: true,
   transport: "builtin",
@@ -51,8 +47,8 @@ export const COLLABORATION_APP = {
 
 export const BROWSER_APP = {
   id: BROWSER_APP_ID,
-  name: "浏览器",
-  description: "让所有兼容 Harness 操作右侧工作区中的真实浏览器标签页。",
+  name: "settings.appBrowserName",
+  description: "settings.appBrowserDesc",
   source: "builtin",
   enabledByDefault: true,
   transport: "builtin",

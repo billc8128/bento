@@ -5,15 +5,17 @@ import { Blocks } from "lucide-react"
 
 import { AppsSection } from "@/components/settings/AppsSection"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { useT } from "@/lib/i18n"
 
 export function AppsPane() {
+  const { t } = useT()
   return (
     <main className="relative flex h-full min-h-0 min-w-0 flex-col">
       {/* 与 ChatPane 非 minimal 头同构；左右栏开关统一位于全局窗口标题栏。 */}
       <header className="app-window-drag flex h-12 shrink-0 items-center gap-2 border-b px-4 [-webkit-app-region:drag]">
         <Blocks className="size-4 shrink-0 text-muted-foreground" />
         <h1 className="app-title min-w-0 flex-1 truncate text-base font-semibold leading-tight">
-          应用
+          {t("workspace.apps")}
         </h1>
       </header>
       <ScrollArea className="min-h-0 flex-1">

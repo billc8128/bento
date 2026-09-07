@@ -6,6 +6,7 @@
 
 import type { CSSProperties } from "react"
 
+import { useT } from "@/lib/i18n"
 import type { StatusGlyphVariant } from "@/lib/status-glyph"
 
 /** F 变体的 chevron 波前延迟表:亮度波沿"人"字形斜向右推进 */
@@ -22,11 +23,12 @@ export function StatusGlyph({
   state: "running" | "unread" | "attention"
   variant: StatusGlyphVariant
 }) {
+  const { t } = useT()
   const label = state === "running"
-    ? "进行中"
+    ? t("activity.glyphRunning")
     : state === "attention"
-      ? "有待审批的请求"
-      : "有来自其它会话的新消息"
+      ? t("activity.glyphAttention")
+      : t("activity.glyphUnread")
   if (state === "attention") {
     switch (variant) {
       case "a":

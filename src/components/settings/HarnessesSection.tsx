@@ -6,13 +6,14 @@ import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { HARNESSES, getHarness, type HarnessRuntimeStatus } from "@/core/harness"
 import { PERMISSION_PROFILES } from "@/core/permission"
+import { useT, type TFn } from "@/lib/i18n"
 import { setHarnessEnabled, useHarnessPreferences } from "@/lib/harness-preferences"
 import { setDefaultPermissionProfile, useDefaultPermissionProfile } from "@/lib/permission-profile"
 import { cn } from "@/lib/utils"
 
-function sourceLabel(status: HarnessRuntimeStatus | undefined): string {
+function sourceLabel(status: HarnessRuntimeStatus | undefined, t: TFn): string {
   // 版本透传:override 探测、managed 取 manifest pin、bundled 取内嵌包版本
-  return status?.version ?? "检测中…"
+  return status?.version ?? t("settings.detecting")
 }
 
 /** 板块骨架:标题 + 一行说明 + 内容,全页统一节奏 */
@@ -35,6 +36,7 @@ function Section({ title, desc, action, children }: {
 }
 
 export function HarnessesSection() {
+  const { t } = useT()
   const [statuses, setStatuses] = useState<HarnessRuntimeStatus[]>([])
   const [loading, setLoading] = useState(true)
   const defaultProfile = useDefaultPermissionProfile()
@@ -67,12 +69,12 @@ export function HarnessesSection() {
   return (
     <div className="flex flex-col gap-8">
       <Section
-        title="运行环境"
-        desc="会话始终使用 Bento 管理的版本,首次使用时自动安装;关闭后新建会话不可选。"
+        title={t("settings.runtime")}
+        desc={t("settings.runtimeDesc")}
         action={
           <Button variant="ghost" size="icon" className="size-8" onClick={refresh} disabled={loading}>
             <RefreshCw className={loading ? "animate-spin" : ""} />
-            <span className="sr-only">重新检测</span>
+            <span className="sr-only">{t("settings.redetect")}</span>
           </Button>
         }
       >
@@ -87,13 +89,13 @@ export function HarnessesSection() {
                 <span className="flex min-w-0 flex-1 items-baseline gap-2">
                   <span className="text-sm font-medium">{harness.name}</span>
                   <span className="truncate font-mono text-xs text-muted-foreground">
-                    {sourceLabel(status)}
+                    {sourceLabel(status, t)}
                   </span>
                 </span>
                 <Switch
                   checked={isEnabled(harness.id)}
                   onCheckedChange={(v) => setHarnessEnabled(harness.id, v)}
-                  aria-label={`启用 ${harness.name}`}
+                  aria-label={t("settings.enableHarness", { name: harness.name })}
                 />
               </div>
             )
@@ -102,8 +104,8 @@ export function HarnessesSection() {
       </Section>
 
       <Section
-        title="默认权限档位"
-        desc="新建会话继承该档位;只有 Codex 是 OS 沙箱强制的硬边界,其余 Harness 为工具集近似。"
+        title={t("settings.defaultPermission")}
+        desc={t("settings.defaultPermissionDesc")}
       >
         <div className="flex flex-col divide-y divide-border rounded-xl border border-border">
           {PERMISSION_PROFILES.map((profile) => {
@@ -116,8 +118,8 @@ export function HarnessesSection() {
                 className="flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50"
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium">{profile.name}</span>
-                  <span className="type-micro mt-0.5 block text-muted-foreground">{profile.desc}</span>
+                  <span className="block text-sm font-medium">{t(profile.nameKey)}</span>
+                  <span className="type-micro mt-0.5 block text-muted-foreground">{t(profile.descKey)}</span>
                 </span>
                 <span className={cn(
                   "grid size-4 shrink-0 place-items-center rounded-full border",
@@ -132,12 +134,12 @@ export function HarnessesSection() {
       </Section>
 
       <Section
-        title="自动放行规则"
-        desc="工具审批时选过「本会话总是允许」的命令会记到这里,之后在该项目里不再询问;规则写在项目的 .bento/permissions.json。逐条可删,删后恢复逐次询问。"
+        title={t("settings.autoAllowRules")}
+        desc={t("settings.autoAllowRulesDesc")}
       >
         {ruleGroups.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
-            暂无规则——审批弹窗里选「本会话总是允许」后会出现在这里
+            {t("settings.noRules")}
           </p>
         ) : (
           <div className="flex flex-col gap-2">
@@ -163,7 +165,7 @@ export function HarnessesSection() {
                             .then(refreshRules)
                         }}
                       >
-                        删除
+                        {t("settings.delete")}
                       </button>
                     </div>
                   ))}

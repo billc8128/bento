@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/collapsible"
 import { ShiningText } from "@/components/ShiningText"
 import { Button } from "@/components/ui/button"
+import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 import {
   buildPhases,
@@ -54,11 +55,18 @@ const TOOL_ICON = {
   search: Search,
 } as const
 
-const TOOL_LABEL = {
-  read: "读取",
-  edit: "编辑",
-  bash: "执行",
-  search: "搜索",
+const TOOL_LABEL_KEY = {
+  read: "activity.toolRead",
+  edit: "activity.toolEdit",
+  bash: "activity.toolBash",
+  search: "activity.toolSearch",
+} as const
+
+const TOOL_RUNNING_LABEL_KEY = {
+  read: "activity.toolReading",
+  edit: "activity.toolEditing",
+  bash: "activity.toolBashRunning",
+  search: "activity.toolSearching",
 } as const
 
 /** 工具调用行:图标 + 动作 + 目标 + diff 统计 + 结果 + 耗时,状态靠图标而非仅颜色。
@@ -114,8 +122,9 @@ function ToolRow({ tool }: { tool: ToolCall }) {
  * 在跑的行动词用现在时(正在执行),目标先过 cleanToolTarget 剥掉 harness
  * 前缀(如 kimi 的 "Running: "),避免「执行 Running: curl」。 */
 function ToolRowMain({ tool, open }: { tool: ToolCall; open?: boolean }) {
+  const { t } = useT()
   const Icon = TOOL_ICON[tool.kind]
-  const label = tool.status === "running" ? `正在${TOOL_LABEL[tool.kind]}` : TOOL_LABEL[tool.kind]
+  const label = t(tool.status === "running" ? TOOL_RUNNING_LABEL_KEY[tool.kind] : TOOL_LABEL_KEY[tool.kind])
   const target = cleanToolTarget(tool.target)
   return (
     <>
@@ -286,6 +295,7 @@ function ToolsPhaseRow({ tools, label, live }: { tools: ToolCall[]; label: strin
 /** live 回合的计划摘要:一行进度条 + x/y + 当前项,点击展开全表(限高滚动)。
  * 放在阶段栈底部(贴最新消息),不再钉栈顶被滚出视野。 */
 function PlanSummary({ plan }: { plan: PlanItem[] }) {
+  const { t } = useT()
   const [open, setOpen] = useState(false)
   const done = plan.filter((item) => item.status === "completed").length
   const current = plan.find((item) => item.status === "in_progress")
@@ -300,10 +310,12 @@ function PlanSummary({ plan }: { plan: PlanItem[] }) {
           />
         </span>
         <span className="shrink-0">
-          计划 <span className="type-micro tabular-nums text-muted-foreground">{done}/{plan.length}</span>
+          {t("activity.plan")} <span className="type-micro tabular-nums text-muted-foreground">{done}/{plan.length}</span>
         </span>
         {current && (
-          <span className="min-w-0 truncate font-normal text-muted-foreground">正在:{current.content}</span>
+          <span className="min-w-0 truncate font-normal text-muted-foreground">
+            {t("activity.planCurrent", { content: current.content })}
+          </span>
         )}
         <ChevronDown className="ml-auto size-3.5 shrink-0 text-muted-foreground transition-transform duration-300 group-data-[state=open]:rotate-180 motion-reduce:transition-none" />
       </CollapsibleTrigger>
@@ -344,12 +356,13 @@ function ApprovalRow({
   approval: ApprovalRequest
   onResolve?: (id: string, decision: ApprovalDecision) => void
 }) {
+  const { t } = useT()
   if (approval.state === "pending") {
     return (
       <div className="trace-row rounded-lg border border-brand/40 bg-brand/5 px-3 py-2.5">
         <div className="flex items-center gap-2">
           <TriangleAlert className="size-3.5 shrink-0 text-brand" />
-          <span className="shrink-0 text-xs font-medium">需要审批</span>
+          <span className="shrink-0 text-xs font-medium">{t("activity.approvalNeeded")}</span>
         </div>
         <code className="mt-1.5 block truncate font-mono text-xs text-foreground/85">
           {approval.title}
@@ -377,21 +390,21 @@ function ApprovalRow({
   const { decision, source } = approval.state
   const decisionLabel = decision === "deny"
     ? source === "unattended-auto"
-      ? "协作自动拒绝"
+      ? t("activity.autoDenied")
       : source === "cancel"
-        ? "已随取消拒绝"
+        ? t("activity.deniedWithCancel")
         : source === "session-close"
-          ? "已随会话关闭拒绝"
-          : "已拒绝"
+          ? t("activity.deniedWithSessionClose")
+          : t("activity.denied")
     : decision === "allow_always"
-      ? "已总是允许"
-      : "已允许"
+      ? t("activity.allowedAlways")
+      : t("activity.allowed")
   return (
     <div className="trace-row flex h-7 items-center gap-2 px-1.5 text-xs">
       {decision === "deny"
         ? <TriangleAlert className="size-3.5 shrink-0 text-err" />
         : <Check className="size-3.5 shrink-0 text-ok" />}
-      <span className="shrink-0 text-muted-foreground">审批</span>
+      <span className="shrink-0 text-muted-foreground">{t("activity.approval")}</span>
       <code className="min-w-0 truncate font-mono text-foreground/85">{approval.title}</code>
       <span className="flex-1" />
       <span className={cn("shrink-0 type-micro", decision === "deny" ? "text-err/80" : "text-muted-foreground/75")}>
@@ -414,11 +427,12 @@ function PhaseRowView({
   compact: boolean
   onResolveApproval?: (id: string, decision: ApprovalDecision) => void
 }) {
+  const { t } = useT()
   if (row.kind === "thinking") {
-    return <ThinkingPhaseRow text={row.text} label={phaseLabel(row, livePhase)} live={livePhase} />
+    return <ThinkingPhaseRow text={row.text} label={phaseLabel(row, livePhase, t)} live={livePhase} />
   }
   if (row.kind === "tools") {
-    return <ToolsPhaseRow tools={row.tools} label={phaseLabel(row, livePhase)} live={livePhase} />
+    return <ToolsPhaseRow tools={row.tools} label={phaseLabel(row, livePhase, t)} live={livePhase} />
   }
   if (row.kind === "approval") {
     return <ApprovalRow approval={row.approval} onResolve={onResolveApproval} />
@@ -427,7 +441,7 @@ function PhaseRowView({
     return (
       <div className="flex items-start gap-2 rounded-md bg-secondary px-2 py-1.5 text-xs text-secondary-foreground">
         <Forward className="mt-0.5 size-3.5 shrink-0" />
-        <span className="min-w-0 wrap-anywhere">你补充：{row.text}</span>
+        <span className="min-w-0 wrap-anywhere">{t("activity.steer", { text: row.text })}</span>
       </div>
     )
   }
@@ -460,6 +474,7 @@ export function TurnActivity({
   /** 审批卡片决议入口(live 视图);settled 回放一律静态,不传球 */
   onResolveApproval?: (id: string, decision: ApprovalDecision) => void
 }) {
+  const { t } = useT()
   const { activity } = turn
   const phases = buildPhases(activity)
   const plan = turn.plan ?? []
@@ -473,7 +488,7 @@ export function TurnActivity({
   if (live) {
     // 阶段栈逐行渲染;没有活跃工作段时(空栈/说话中/收到补充)由末尾的
     // 兜底状态行承接——全窗口唯一的状态标题,不再别处补。
-    const fallback = liveId === undefined ? liveStatus(turn) : undefined
+    const fallback = liveId === undefined ? liveStatus(turn, t) : undefined
     return (
       <div className="flex min-w-0 max-w-full flex-col gap-0.5">
         {phases.map((row) => (
@@ -507,9 +522,9 @@ export function TurnActivity({
     <>
       <TraceStar working={false} />
       <span className="min-w-0 truncate">
-        {settledMasterLabel(turn)}
+        {settledMasterLabel(turn, t)}
         {usageText && ` · ${usageText}`}
-        {failed > 0 && <span className="text-err"> · {failed} 个失败</span>}
+        {failed > 0 && <span className="text-err"> · {t("activity.failedCount", { count: failed })}</span>}
       </span>
       <span className="flex-1" />
       {expandable && (

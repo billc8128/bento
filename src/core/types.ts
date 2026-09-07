@@ -25,13 +25,14 @@ export function normalizePromptInput(input: string | PromptInput): PromptInput {
   return typeof input === "string" ? { text: input, attachments: [] } : input
 }
 
-export const EFFORTS: { id: Effort; label: string; hint: string }[] = [
-  { id: "off", label: "不推理", hint: "直接回答，不进行额外思考" },
-  { id: "auto", label: "自动", hint: "由 Harness 按任务判断" },
-  { id: "low", label: "低", hint: "抢速度,适合改一行、查文件" },
-  { id: "medium", label: "中", hint: "日常默认" },
-  { id: "high", label: "高", hint: "跨文件重构、疑难排查" },
-  { id: "max", label: "极限", hint: "最慢,留给真正卡住的问题" },
+/** labelKey/hintKey 是 i18n 词典 key(命名空间 core),渲染端用 t() 取文案。 */
+export const EFFORTS: { id: Effort; labelKey: string; hintKey: string }[] = [
+  { id: "off", labelKey: "core.effortOffName", hintKey: "core.effortOffHint" },
+  { id: "auto", labelKey: "core.effortAutoName", hintKey: "core.effortAutoHint" },
+  { id: "low", labelKey: "core.effortLowName", hintKey: "core.effortLowHint" },
+  { id: "medium", labelKey: "core.effortMediumName", hintKey: "core.effortMediumHint" },
+  { id: "high", labelKey: "core.effortHighName", hintKey: "core.effortHighHint" },
+  { id: "max", labelKey: "core.effortMaxName", hintKey: "core.effortMaxHint" },
 ]
 
 /** 回合计划清单条目(来自 ACP plan 事件,TRACE_DATA_PLAN §7 P4) */

@@ -19,6 +19,7 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { useT } from "@/lib/i18n"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -129,6 +130,7 @@ function parseCsv(text: string): string[][] {
 }
 
 function PreviewSurface({ root, path, revision }: { root: string; path: string; revision: number }) {
+  const { t } = useT()
   const [preview, setPreview] = useState<WorkspaceFilePreview | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -165,8 +167,8 @@ function PreviewSurface({ root, path, revision }: { root: string; path: string; 
     if (blobUrl) URL.revokeObjectURL(blobUrl)
   }, [blobUrl])
 
-  if (loading) return <div className="grid h-full place-items-center text-xs text-muted-foreground">正在读取文件…</div>
-  if (error) return <div role="alert" className="grid h-full place-items-center p-6 text-center text-xs"><div><p className="font-medium">无法预览文件</p><p className="mt-1 text-muted-foreground">{error}</p></div></div>
+  if (loading) return <div className="grid h-full place-items-center text-xs text-muted-foreground">{t("workspace.readingFile")}</div>
+  if (error) return <div role="alert" className="grid h-full place-items-center p-6 text-center text-xs"><div><p className="font-medium">{t("workspace.previewFailed")}</p><p className="mt-1 text-muted-foreground">{error}</p></div></div>
   if (!preview) return null
 
   const title = path.split("/").at(-1) ?? path
@@ -196,25 +198,25 @@ function PreviewSurface({ root, path, revision }: { root: string; path: string; 
     content = (
       <div className="h-full overflow-auto bg-muted/25 py-3 font-mono text-xs leading-6">
         {visibleLines.map((line, index) => <div key={index} className="flex min-w-max px-3"><span className="mr-4 w-9 shrink-0 select-none text-right text-muted-foreground/45 tabular-nums">{index + 1}</span><span className="whitespace-pre">{line || " "}</span></div>)}
-        {lines.length > visibleLines.length && <p className="border-t px-4 py-3 text-muted-foreground">文件较长，仅显示前 2000 行。</p>}
+        {lines.length > visibleLines.length && <p className="border-t px-4 py-3 text-muted-foreground">{t("workspace.fileTruncated")}</p>}
       </div>
     )
   } else {
-    content = <div className="grid h-full place-items-center p-6 text-center text-xs"><div><FileText className="mx-auto size-8 text-muted-foreground" /><p className="mt-3 font-medium">暂不支持此文件格式</p><p className="mt-1 text-muted-foreground">{preview.mime}</p></div></div>
+    content = <div className="grid h-full place-items-center p-6 text-center text-xs"><div><FileText className="mx-auto size-8 text-muted-foreground" /><p className="mt-3 font-medium">{t("workspace.unsupportedFormat")}</p><p className="mt-1 text-muted-foreground">{preview.mime}</p></div></div>
   }
 
   return (
-    <section aria-label="文件预览" className="flex h-full min-h-0 flex-col">
+    <section aria-label={t("workspace.filePreview")} className="flex h-full min-h-0 flex-col">
       <header className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
         <FileKindIcon name={title} />
         <span className="min-w-0 flex-1 truncate font-mono text-xs" title={path}>{path}</span>
         <span className="rounded-md bg-muted px-2 py-1 type-micro text-muted-foreground">{extension}</span>
         {(preview.kind === "text" || preview.kind === "csv" || preview.kind === "html") && (
-          <button type="button" aria-label="复制文件内容" title="复制文件内容" onClick={() => void navigator.clipboard.writeText(preview.text)} className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"><Copy className="size-3.5" /></button>
+          <button type="button" aria-label={t("workspace.copyFileContents")} title={t("workspace.copyFileContents")} onClick={() => void navigator.clipboard.writeText(preview.text)} className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"><Copy className="size-3.5" /></button>
         )}
       </header>
       <div className="min-h-0 flex-1">{content}</div>
-      <footer className="flex h-8 shrink-0 items-center border-t px-3 type-micro text-muted-foreground"><span>{Intl.NumberFormat().format(preview.size)} bytes</span><span className="ml-auto">只读预览</span></footer>
+      <footer className="flex h-8 shrink-0 items-center border-t px-3 type-micro text-muted-foreground"><span>{Intl.NumberFormat().format(preview.size)} bytes</span><span className="ml-auto">{t("workspace.readOnlyPreview")}</span></footer>
     </section>
   )
 }
@@ -236,6 +238,7 @@ function FileTreeRow({
   onToggle: (path: string) => void
   onOpen: (path: string) => void
 }) {
+  const { t } = useT()
   const open = entry.kind === "directory" && expanded.has(entry.path)
   const directory = directories.get(entry.path)
   const visible = !query || entry.name.toLowerCase().includes(query) || entry.kind === "directory"
@@ -253,7 +256,7 @@ function FileTreeRow({
         {entry.kind === "directory" && open ? <FolderOpen className="size-3.5 shrink-0" /> : <FileKindIcon name={entry.name} directory={entry.kind === "directory"} />}
         <span className="truncate">{entry.name}</span>
       </button>
-      {open && directory?.loading && <div className="h-7 px-4 text-xs text-muted-foreground" style={{ paddingInlineStart: `${(depth + 1) * 16 + 28}px` }}>读取中…</div>}
+      {open && directory?.loading && <div className="h-7 px-4 text-xs text-muted-foreground" style={{ paddingInlineStart: `${(depth + 1) * 16 + 28}px` }}>{t("workspace.loading")}</div>}
       {open && directory?.error && <div className="px-4 py-1 text-xs text-err" style={{ paddingInlineStart: `${(depth + 1) * 16 + 28}px` }}>{directory.error}</div>}
       {open && directory?.entries.map((child) => <FileTreeRow key={child.path} entry={child} depth={depth + 1} directories={directories} expanded={expanded} query={query} onToggle={onToggle} onOpen={onOpen} />)}
     </>
@@ -286,6 +289,7 @@ export function FilesWorkspacePane({ root, instanceId, storageKey, revealPath, o
   revealPath?: string | null
   onRevealHandled?: () => void
 }) {
+  const { t } = useT()
   const treeTabKey = "__files__"
   const idPrefix = `files-${instanceId.replace(/[^a-zA-Z0-9_-]/g, "-")}`
   const [restored] = useState(() => loadFilesState(storageKey))
@@ -414,27 +418,27 @@ export function FilesWorkspacePane({ root, instanceId, storageKey, revealPath, o
   const rootEntries = directories.get("")
 
   return (
-    <section aria-label="文件" className="flex min-h-0 flex-1 flex-col">
+    <section aria-label={t("workspace.files")} className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-9 shrink-0 items-center border-b bg-muted/30 pl-1.5 type-micro">
-        <div role="tablist" aria-label="文件与预览" className="flex min-w-0 flex-1 items-center overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <button ref={(element) => { if (element) tabRefs.current.set(treeTabKey, element); else tabRefs.current.delete(treeTabKey) }} type="button" role="tab" id={subTabId(null)} aria-selected={activePath === null} aria-controls={`${subTabId(null)}-panel`} tabIndex={activePath === null ? 0 : -1} onClick={() => activate(null)} className={cn("flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none", activePath === null ? "bg-background text-foreground" : "text-muted-foreground hover:text-foreground")}><FolderOpen className="size-3.5" />文件树</button>
+        <div role="tablist" aria-label={t("workspace.filesAndPreview")} className="flex min-w-0 flex-1 items-center overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <button ref={(element) => { if (element) tabRefs.current.set(treeTabKey, element); else tabRefs.current.delete(treeTabKey) }} type="button" role="tab" id={subTabId(null)} aria-selected={activePath === null} aria-controls={`${subTabId(null)}-panel`} tabIndex={activePath === null ? 0 : -1} onClick={() => activate(null)} className={cn("flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none", activePath === null ? "bg-background text-foreground" : "text-muted-foreground hover:text-foreground")}><FolderOpen className="size-3.5" />{t("workspace.fileTree")}</button>
           {previewTabs.map((path) => {
             const title = path.split("/").at(-1) ?? path
             const selected = activePath === path
-            return <div key={path} className={cn("group/file-tab ml-1 flex h-7 min-w-24 max-w-40 shrink-0 items-center rounded-md", selected ? "bg-background text-foreground" : "text-muted-foreground hover:text-foreground")}><button ref={(element) => { if (element) tabRefs.current.set(path, element); else tabRefs.current.delete(path) }} type="button" role="tab" id={subTabId(path)} aria-selected={selected} aria-controls={`${subTabId(path)}-panel`} tabIndex={selected ? 0 : -1} title={path} onClick={() => activate(path)} className="flex h-full min-w-0 flex-1 items-center gap-1.5 px-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"><FileKindIcon name={title} /><span className="truncate font-mono">{title}</span></button><button type="button" tabIndex={-1} aria-label={`关闭 ${title}`} onClick={() => close(path)} className="mr-1 grid size-4 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"><X className="size-3" /></button></div>
+            return <div key={path} className={cn("group/file-tab ml-1 flex h-7 min-w-24 max-w-40 shrink-0 items-center rounded-md", selected ? "bg-background text-foreground" : "text-muted-foreground hover:text-foreground")}><button ref={(element) => { if (element) tabRefs.current.set(path, element); else tabRefs.current.delete(path) }} type="button" role="tab" id={subTabId(path)} aria-selected={selected} aria-controls={`${subTabId(path)}-panel`} tabIndex={selected ? 0 : -1} title={path} onClick={() => activate(path)} className="flex h-full min-w-0 flex-1 items-center gap-1.5 px-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"><FileKindIcon name={title} /><span className="truncate font-mono">{title}</span></button><button type="button" tabIndex={-1} aria-label={t("workspace.closeTab", { title })} onClick={() => close(path)} className="mr-1 grid size-4 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"><X className="size-3" /></button></div>
           })}
         </div>
-        {previewTabs.length > 2 && <DropdownMenu><DropdownMenuTrigger asChild><button type="button" aria-label="所有文件标签" title="所有文件标签" className="mx-1 grid size-7 shrink-0 place-items-center rounded-md border-l text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"><MoreHorizontal className="size-3.5" /></button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-56"><DropdownMenuItem onSelect={() => activate(null)} className="gap-2 py-1.5"><FolderOpen className="size-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate">文件树</span>{activePath === null && <Check className="size-3.5" />}</DropdownMenuItem>{previewTabs.map((path) => { const title = path.split("/").at(-1) ?? path; return <DropdownMenuItem key={path} onSelect={() => activate(path)} className="gap-2 py-1.5"><FileKindIcon name={title} /><span className="min-w-0 flex-1 truncate font-mono">{title}</span>{activePath === path && <Check className="size-3.5" />}</DropdownMenuItem> })}</DropdownMenuContent></DropdownMenu>}
+        {previewTabs.length > 2 && <DropdownMenu><DropdownMenuTrigger asChild><button type="button" aria-label={t("workspace.allFileTabs")} title={t("workspace.allFileTabs")} className="mx-1 grid size-7 shrink-0 place-items-center rounded-md border-l text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"><MoreHorizontal className="size-3.5" /></button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-56"><DropdownMenuItem onSelect={() => activate(null)} className="gap-2 py-1.5"><FolderOpen className="size-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate">{t("workspace.fileTree")}</span>{activePath === null && <Check className="size-3.5" />}</DropdownMenuItem>{previewTabs.map((path) => { const title = path.split("/").at(-1) ?? path; return <DropdownMenuItem key={path} onSelect={() => activate(path)} className="gap-2 py-1.5"><FileKindIcon name={title} /><span className="min-w-0 flex-1 truncate font-mono">{title}</span>{activePath === path && <Check className="size-3.5" />}</DropdownMenuItem> })}</DropdownMenuContent></DropdownMenu>}
       </div>
 
       <div className="relative min-h-0 flex-1">
         <div role="tabpanel" id={`${subTabId(null)}-panel`} aria-labelledby={subTabId(null)} hidden={activePath !== null} className={cn("absolute inset-0 flex min-h-0 flex-col", activePath !== null && "hidden")}>
-          <div className="flex h-10 shrink-0 items-center gap-1.5 border-b px-2"><Search className="ml-1 size-3.5 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value.toLowerCase())} placeholder="筛选已展开文件" aria-label="筛选文件" className="min-w-0 flex-1 bg-transparent text-xs placeholder:text-muted-foreground/65 focus:outline-none" /><button type="button" aria-label="刷新文件树" title="刷新文件树" onClick={() => void loadDirectory("", true)} className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"><RefreshCw className="size-3.5" /></button></div>
-          <div className="flex h-8 shrink-0 items-center border-b bg-muted/20 px-3 type-micro text-muted-foreground"><span className="truncate font-mono" title={root || "Demo workspace"}>{root || "Demo workspace"}</span><span className="ml-auto">{window.bento ? "只读 · 自动刷新" : "只读"}</span></div>
+          <div className="flex h-10 shrink-0 items-center gap-1.5 border-b px-2"><Search className="ml-1 size-3.5 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value.toLowerCase())} placeholder={t("workspace.filterExpandedFiles")} aria-label={t("workspace.filterFiles")} className="min-w-0 flex-1 bg-transparent text-xs placeholder:text-muted-foreground/65 focus:outline-none" /><button type="button" aria-label={t("workspace.refreshFileTree")} title={t("workspace.refreshFileTree")} onClick={() => void loadDirectory("", true)} className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"><RefreshCw className="size-3.5" /></button></div>
+          <div className="flex h-8 shrink-0 items-center border-b bg-muted/20 px-3 type-micro text-muted-foreground"><span className="truncate font-mono" title={root || "Demo workspace"}>{root || "Demo workspace"}</span><span className="ml-auto">{window.bento ? t("workspace.readOnlyAutoRefresh") : t("workspace.readOnly")}</span></div>
           <div className="min-h-0 flex-1 overflow-y-auto py-1.5">
-            {rootEntries?.loading && <p className="px-3 py-2 text-xs text-muted-foreground">正在读取项目…</p>}
-            {rootEntries?.error && <div role="alert" className="px-3 py-3 text-xs"><p className="font-medium">无法打开项目</p><p className="mt-1 text-muted-foreground">{rootEntries.error}</p></div>}
-            {rootEntries && !rootEntries.loading && !rootEntries.error && rootEntries.entries.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">目录为空</p>}
+            {rootEntries?.loading && <p className="px-3 py-2 text-xs text-muted-foreground">{t("workspace.loadingProject")}</p>}
+            {rootEntries?.error && <div role="alert" className="px-3 py-3 text-xs"><p className="font-medium">{t("workspace.openProjectFailed")}</p><p className="mt-1 text-muted-foreground">{rootEntries.error}</p></div>}
+            {rootEntries && !rootEntries.loading && !rootEntries.error && rootEntries.entries.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">{t("workspace.emptyDirectory")}</p>}
             {rootEntries?.entries.map((entry) => <FileTreeRow key={entry.path} entry={entry} depth={0} directories={directories} expanded={expanded} query={query} onToggle={toggle} onOpen={open} />)}
           </div>
         </div>

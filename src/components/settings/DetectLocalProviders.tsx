@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch"
 import type { CustomModelConfig } from "@/core/provider"
 import type { LocalProviderCandidate } from "@/core/provider-preset"
 import { getProviderPreset } from "@/data/provider-presets"
+import { useT } from "@/lib/i18n"
 import { ProviderMark } from "./ProviderMark"
 
 type DetectedModel = CustomModelConfig & { enabled: boolean }
@@ -37,6 +38,7 @@ export function DetectLocalProviders({
   /** 凭证不可复制时跳到对应预设的手动表单。 */
   onConfigure: (presetId: string) => void
 }) {
+  const { t } = useT()
   const [phase, setPhase] = useState<Phase>({ step: "scanning" })
   const [candidates, setCandidates] = useState<LocalProviderCandidate[]>([])
   const [candidate, setCandidate] = useState<LocalProviderCandidate | null>(null)
@@ -84,7 +86,7 @@ export function DetectLocalProviders({
     if (seq !== inspectSeq.current) return
     setPhase({ step: "detail", inspecting: false })
     if (!result || !("ok" in result) || !result.ok) {
-      setError(result && "message" in result ? result.message : "无法读取模型列表，可手动添加")
+      setError(result && "message" in result ? result.message : t("providers.inspectFailed"))
       return
     }
     setModels(result.models.map((model) => ({ ...model, enabled: model.enabled !== false })))
@@ -94,7 +96,7 @@ export function DetectLocalProviders({
     const id = manualId.trim()
     if (!id) return
     if (models.some((model) => model.id === id)) {
-      setError(`模型 ${id} 已在清单里`)
+      setError(t("providers.modelInList", { id }))
       return
     }
     setModels((current) => [...current, { id, name: id, enabled: true }])
@@ -106,7 +108,7 @@ export function DetectLocalProviders({
     if (!candidate || !window.bento) return
     const chosen = models.filter((model) => model.enabled)
     if (chosen.length === 0) {
-      setError("至少保留一个模型，或手动添加一个模型 ID")
+      setError(t("providers.errorKeepOne"))
       return
     }
     setPhase({ step: "importing" })
@@ -114,7 +116,7 @@ export function DetectLocalProviders({
     const result = await window.bento.importLocalProvider({ candidateId: candidate.id, models: chosen })
     if (result.error || !result.config) {
       setPhase({ step: "detail", inspecting: false })
-      setError(result.error ?? "导入失败")
+      setError(result.error ?? t("providers.importFailed"))
       return
     }
     onImported({ id: result.config.id, name: result.config.name, modelCount: chosen.length })
@@ -125,7 +127,7 @@ export function DetectLocalProviders({
       <div className="flex min-h-0 flex-1 flex-col p-5">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
-          正在扫描本机 CLI 配置…
+          {t("providers.scanning")}
         </div>
         <div className="mt-4 space-y-2">
           <Skeleton className="h-12 w-full" />
@@ -142,8 +144,8 @@ export function DetectLocalProviders({
         <div className="flex-1 p-5">
           <p className="mb-3 text-xs text-muted-foreground">
             {candidates.length > 0
-              ? `在 ${[...new Set(candidates.map((item) => item.source))].join(" / ")} 的配置里发现以下供应商：`
-              : "已扫描 omp / Pi / OpenCode / Kimi Code / Hermes 的本机配置："}
+              ? t("providers.foundIn", { sources: [...new Set(candidates.map((item) => item.source))].join(" / ") })
+              : t("providers.scannedNone")}
           </p>
           <div className="divide-y divide-border border-y border-border">
             {candidates.map((item) => (
@@ -157,7 +159,10 @@ export function DetectLocalProviders({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{item.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    来自 {[item.source, ...(item.alsoFrom ?? [])].join(" / ")} · {item.credentialReusable ? "可直接导入" : "需要重新鉴权"}
+                    {t("providers.candidateLine", {
+                      sources: [item.source, ...(item.alsoFrom ?? [])].join(" / "),
+                      status: item.credentialReusable ? t("providers.directImport") : t("providers.reauthNeeded"),
+                    })}
                   </p>
                 </div>
               </button>
@@ -165,15 +170,15 @@ export function DetectLocalProviders({
             {candidates.length === 0 && (
               <div className="py-10 text-center">
                 <TerminalSquare className="mx-auto size-5 text-muted-foreground/60" />
-                <p className="mt-2 text-sm text-muted-foreground">未发现可导入的本机配置</p>
-                <p className="mt-1 text-xs text-muted-foreground/70">可以返回列表，从预设或自定义端点手动添加。</p>
+                <p className="mt-2 text-sm text-muted-foreground">{t("providers.noLocalFound")}</p>
+                <p className="mt-1 text-xs text-muted-foreground/70">{t("providers.noLocalHint")}</p>
               </div>
             )}
           </div>
         </div>
         <footer className="flex justify-start border-t border-border px-5 py-3">
           <Button variant="ghost" onClick={onBack}>
-            <ArrowLeft />返回供应商列表
+            <ArrowLeft />{t("providers.backToProviders")}
           </Button>
         </footer>
       </div>
@@ -192,18 +197,18 @@ export function DetectLocalProviders({
           {candidate && <ProviderMark name={candidate.name} brandKey={candidate.presetId} />}
           <div>
             <p className="text-sm font-medium">{candidate?.name}</p>
-            <p className="text-xs text-muted-foreground">来自 {candidate && [candidate.source, ...(candidate.alsoFrom ?? [])].join(" / ")}</p>
+            <p className="text-xs text-muted-foreground">{candidate && t("providers.fromSource", { sources: [candidate.source, ...(candidate.alsoFrom ?? [])].join(" / ") })}</p>
           </div>
         </div>
 
         {candidate && !candidate.credentialReusable ? (
           <div className="rounded-lg bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground">
-            检测到登录状态，但凭证不可安全复制。可以回到手动流程重新填入密钥完成配置。
+            {t("providers.credentialNotReusable")}
           </div>
         ) : inspecting ? (
           <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
-            正在读取可用模型…
+            {t("providers.readingModels")}
           </div>
         ) : (
           <>
@@ -217,7 +222,7 @@ export function DetectLocalProviders({
                     </div>
                     <Switch
                       checked={model.enabled}
-                      aria-label={`导入 ${model.name}`}
+                      aria-label={t("providers.importModel", { name: model.name })}
                       onCheckedChange={(checked) =>
                         setModels((current) => current.map((item) => (item.id === model.id ? { ...item, enabled: checked } : item)))
                       }
@@ -227,7 +232,7 @@ export function DetectLocalProviders({
               </div>
             )}
             {models.length === 0 && !error && (
-              <p className="text-xs text-muted-foreground">没有读到模型列表，手动添加一个模型 ID 即可导入。</p>
+              <p className="text-xs text-muted-foreground">{t("providers.noModelsRead")}</p>
             )}
             <div className="flex gap-2">
               <Input
@@ -239,10 +244,10 @@ export function DetectLocalProviders({
                     addManual()
                   }
                 }}
-                placeholder="手动添加模型 ID"
+                placeholder={t("providers.manualModelIdPlaceholder")}
                 className="h-8 text-xs"
               />
-              <Button type="button" variant="outline" size="icon" className="size-8 shrink-0" onClick={addManual} aria-label="添加模型">
+              <Button type="button" variant="outline" size="icon" className="size-8 shrink-0" onClick={addManual} aria-label={t("providers.addModel")}>
                 <Plus className="size-3.5" />
               </Button>
             </div>
@@ -253,18 +258,18 @@ export function DetectLocalProviders({
 
       <footer className="flex items-center justify-between border-t border-border px-5 py-3">
         <Button variant="ghost" onClick={() => setPhase({ step: "list" })} disabled={importing}>
-          <ArrowLeft />返回
+          <ArrowLeft />{t("providers.back")}
         </Button>
         {candidate && !candidate.credentialReusable ? (
           preset?.directConnect ? (
-            <Button onClick={() => onConfigure(preset.id)}>手动配置 {preset.name}</Button>
+            <Button onClick={() => onConfigure(preset.id)}>{t("providers.configureManually", { name: preset.name })}</Button>
           ) : (
-            <Button variant="outline" onClick={onBack}>去手动添加</Button>
+            <Button variant="outline" onClick={onBack}>{t("providers.goManual")}</Button>
           )
         ) : (
           <Button disabled={importing || inspecting} onClick={() => void importSelected()}>
             {importing && <Loader2 className="animate-spin" />}
-            导入供应商
+            {t("providers.importProvider")}
           </Button>
         )}
       </footer>

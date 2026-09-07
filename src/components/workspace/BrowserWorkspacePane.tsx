@@ -4,14 +4,17 @@ import { ArrowLeft, ArrowRight, Compass, ExternalLink, RefreshCw } from "lucide-
 
 import type { WorkspaceBrowserState } from "@/types/workspace"
 import { normalizeWorkspaceBrowserUrl } from "@/core/workspace-browser"
+import { useT, type TFn } from "@/lib/i18n"
 
-const EMPTY_BROWSER: WorkspaceBrowserState = {
-  id: "",
-  url: "",
-  title: "新标签页",
-  loading: false,
-  canGoBack: false,
-  canGoForward: false,
+function emptyBrowser(t: TFn): WorkspaceBrowserState {
+  return {
+    id: "",
+    url: "",
+    title: t("workspace.newTab"),
+    loading: false,
+    canGoBack: false,
+    canGoForward: false,
+  }
 }
 
 function BrowserIconButton({
@@ -43,6 +46,7 @@ export function BrowserWorkspacePane({
   preferredBrowserId?: string
   onBrowserIdChange?: (id: string) => void
 }) {
+  const { t } = useT()
   const [restoredUrl] = useState(() => {
     try {
       const saved = localStorage.getItem(storageKey)
@@ -51,15 +55,15 @@ export function BrowserWorkspacePane({
       return ""
     }
   })
-  const restoredTitle = restoredUrl ? new URL(restoredUrl).hostname : "新标签页"
+  const restoredTitle = restoredUrl ? new URL(restoredUrl).hostname : t("workspace.newTab")
   const contentRef = useRef<HTMLDivElement>(null)
   const browserIdRef = useRef<string | null>(null)
   const preferredBrowserIdRef = useRef(preferredBrowserId)
   const titleChangeRef = useRef(onTitleChange)
   const browserIdChangeRef = useRef(onBrowserIdChange)
   const [state, setState] = useState<WorkspaceBrowserState>(() => restoredUrl
-    ? { ...EMPTY_BROWSER, id: window.bento ? "" : "demo", url: restoredUrl, title: restoredTitle }
-    : EMPTY_BROWSER)
+    ? { ...emptyBrowser(t), id: window.bento ? "" : "demo", url: restoredUrl, title: restoredTitle }
+    : emptyBrowser(t))
   const [draft, setDraft] = useState(restoredUrl)
   const [createError, setCreateError] = useState<string | null>(null)
 
@@ -76,7 +80,7 @@ export function BrowserWorkspacePane({
       if (next.id !== browserIdRef.current) return
       setState(next)
       setDraft(next.url)
-      titleChangeRef.current(next.title || "新标签页")
+      titleChangeRef.current(next.title || t("workspace.newTab"))
       if (next.url) {
         try { localStorage.setItem(storageKey, next.url) } catch { /* ignore */ }
       }
@@ -94,7 +98,7 @@ export function BrowserWorkspacePane({
       browserIdChangeRef.current?.(result.state.id)
       setState(result.state)
       setDraft(result.state.url)
-      titleChangeRef.current(result.state.title || "新标签页")
+      titleChangeRef.current(result.state.title || t("workspace.newTab"))
       if (result.state.url) {
         try { localStorage.setItem(storageKey, result.state.url) } catch { /* ignore */ }
       }
@@ -152,11 +156,11 @@ export function BrowserWorkspacePane({
       try {
         const url = normalizeWorkspaceBrowserUrl(value)
         const title = new URL(url).hostname
-        setState({ ...EMPTY_BROWSER, id: "demo", url, title })
+        setState({ ...emptyBrowser(t), id: "demo", url, title })
         titleChangeRef.current(title)
         try { localStorage.setItem(storageKey, url) } catch { /* ignore */ }
       } catch {
-        setState((current) => ({ ...current, error: "请输入有效的 HTTP(S) URL" }))
+        setState((current) => ({ ...current, error: t("workspace.invalidUrl") }))
       }
       return
     }
@@ -173,29 +177,29 @@ export function BrowserWorkspacePane({
   const browserId = state.id || null
 
   return (
-    <section aria-label="浏览器" className="flex min-h-0 flex-1 flex-col">
+    <section aria-label={t("workspace.browser")} className="flex min-h-0 flex-1 flex-col">
       <form onSubmit={navigate} className="flex h-11 shrink-0 items-center gap-1.5 border-b px-2">
-        <BrowserIconButton label="后退" disabled={!state.canGoBack} onClick={() => browserId && browser?.back(browserId)}><ArrowLeft className="size-3.5" /></BrowserIconButton>
-        <BrowserIconButton label="前进" disabled={!state.canGoForward} onClick={() => browserId && browser?.forward(browserId)}><ArrowRight className="size-3.5" /></BrowserIconButton>
-        <BrowserIconButton label="刷新" disabled={!state.url} onClick={() => browserId && browser?.reload(browserId)}><RefreshCw className="size-3.5" /></BrowserIconButton>
+        <BrowserIconButton label={t("workspace.back")} disabled={!state.canGoBack} onClick={() => browserId && browser?.back(browserId)}><ArrowLeft className="size-3.5" /></BrowserIconButton>
+        <BrowserIconButton label={t("workspace.forward")} disabled={!state.canGoForward} onClick={() => browserId && browser?.forward(browserId)}><ArrowRight className="size-3.5" /></BrowserIconButton>
+        <BrowserIconButton label={t("workspace.reload")} disabled={!state.url} onClick={() => browserId && browser?.reload(browserId)}><RefreshCw className="size-3.5" /></BrowserIconButton>
         <label className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border bg-background px-3 focus-within:border-foreground/25 focus-within:ring-1 focus-within:ring-foreground/15">
           <Compass className="size-3.5 shrink-0 text-muted-foreground" />
-          <span className="sr-only">网址</span>
-          <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="输入 URL" className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/60" />
+          <span className="sr-only">{t("workspace.urlLabel")}</span>
+          <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t("workspace.enterUrl")} className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/60" />
         </label>
-        <BrowserIconButton label="在系统浏览器打开" disabled={!state.url || !browserId} onClick={() => { if (browserId) void browser?.openExternal(browserId) }}><ExternalLink className="size-3.5" /></BrowserIconButton>
+        <BrowserIconButton label={t("workspace.openInSystemBrowser")} disabled={!state.url || !browserId} onClick={() => { if (browserId) void browser?.openExternal(browserId) }}><ExternalLink className="size-3.5" /></BrowserIconButton>
       </form>
 
       <div ref={contentRef} className="relative min-h-0 flex-1 overflow-hidden bg-background">
         {state.loading && <div className="absolute inset-x-0 top-0 z-10 h-0.5 overflow-hidden bg-primary/10"><span className="block h-full w-1/2 animate-[browser-progress_600ms_ease-in-out_infinite] bg-primary" /></div>}
         {!state.url && !createError && (
-          <div className="absolute inset-0 grid place-items-center p-6 text-center"><div><Compass className="mx-auto size-8 text-muted-foreground" strokeWidth={1.6} /><p className="mt-3 text-sm font-medium">开始浏览</p><p className="mt-1 text-xs text-muted-foreground">输入 URL 以打开页面</p></div></div>
+          <div className="absolute inset-0 grid place-items-center p-6 text-center"><div><Compass className="mx-auto size-8 text-muted-foreground" strokeWidth={1.6} /><p className="mt-3 text-sm font-medium">{t("workspace.startBrowsing")}</p><p className="mt-1 text-xs text-muted-foreground">{t("workspace.enterUrlHint")}</p></div></div>
         )}
         {(createError || state.error) && (
-          <div role="alert" className="absolute inset-0 z-10 grid place-items-center bg-background p-6 text-center"><div><p className="text-sm font-medium">页面无法打开</p><p className="mt-1 max-w-md text-xs text-muted-foreground">{createError || state.error}</p><button type="button" onClick={() => { setState((current) => ({ ...current, error: undefined })); void navigateToDraft() }} className="mt-4 rounded-md border px-3 py-1.5 text-xs hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">重试</button></div></div>
+          <div role="alert" className="absolute inset-0 z-10 grid place-items-center bg-background p-6 text-center"><div><p className="text-sm font-medium">{t("workspace.pageFailed")}</p><p className="mt-1 max-w-md text-xs text-muted-foreground">{createError || state.error}</p><button type="button" onClick={() => { setState((current) => ({ ...current, error: undefined })); void navigateToDraft() }} className="mt-4 rounded-md border px-3 py-1.5 text-xs hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">{t("workspace.retry")}</button></div></div>
         )}
         {!window.bento && state.url && !state.error && (
-          <div className="absolute inset-0 overflow-auto bg-muted/35 p-4"><div className="mx-auto min-h-full max-w-2xl rounded-lg border bg-background p-8"><p className="font-mono type-micro text-muted-foreground">{state.url}</p><h2 className="mt-10 text-xl font-semibold">Browser preview</h2><p className="mt-3 max-w-lg text-sm leading-6 text-muted-foreground">正式桌面版由隔离的 WebContentsView 渲染真实页面；纯 Web demo 只展示浏览器 chrome 和生命周期。</p></div></div>
+          <div className="absolute inset-0 overflow-auto bg-muted/35 p-4"><div className="mx-auto min-h-full max-w-2xl rounded-lg border bg-background p-8"><p className="font-mono type-micro text-muted-foreground">{state.url}</p><h2 className="mt-10 text-xl font-semibold">Browser preview</h2><p className="mt-3 max-w-lg text-sm leading-6 text-muted-foreground">{t("workspace.demoBrowserNote")}</p></div></div>
         )}
       </div>
     </section>

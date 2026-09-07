@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
 import { cn } from "@/lib/utils"
+import { useT } from "@/lib/i18n"
 import { hardBreaks } from "@/lib/markdown-breaks"
 import { requestWorkspaceFileReveal } from "@/lib/workspace-file-reveal"
 
@@ -32,6 +33,7 @@ const IMAGE_PATH = /\.(png|jpe?g|gif|webp|svg|bmp|ico)(\?|#|$)/i
 
 /** 本地图片:经 IPC 读成 data URL 内联渲染;读不到就退成可点击的文件链接。 */
 function LocalImage({ path, alt, cwd }: { path: string; alt?: string; cwd?: string }) {
+  const { t } = useT()
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
     let alive = true
@@ -50,7 +52,7 @@ function LocalImage({ path, alt, cwd }: { path: string; alt?: string; cwd?: stri
     <img
       src={url}
       alt={alt ?? ""}
-      title={`${path}(点击在访达中打开)`}
+      title={t("chat.openInFinder", { path })}
       onClick={() => void window.bento?.openPath(path)}
       className="my-2 max-h-72 max-w-full cursor-zoom-in rounded-lg border border-border object-contain"
     />
@@ -58,11 +60,12 @@ function LocalImage({ path, alt, cwd }: { path: string; alt?: string; cwd?: stri
 }
 
 function LocalFileLink({ path, cwd, children }: { path: string; cwd?: string; children: ReactNode }) {
+  const { t } = useT()
   const relative = workspaceRelative(path, cwd)
   return (
     <a
       href={`file://${path}`}
-      title={relative ? `${path}(点击在右侧文件面板预览)` : `${path}(点击在访达中打开)`}
+      title={relative ? t("chat.previewInPanel", { path }) : t("chat.openInFinder", { path })}
       onClick={(e) => {
         e.preventDefault()
         // 工作区内的文件进右侧文件面板预览;区外的(或 chat 会话没有 cwd)退回访达

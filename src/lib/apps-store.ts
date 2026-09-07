@@ -1,6 +1,11 @@
 import { useSyncExternalStore } from "react"
 
 import type { BentoAppId, BentoAppView, UserAppInput } from "@/core/apps"
+import { loadPreference, resolveLocale, translate } from "@/lib/i18n"
+
+function t(key: string, vars?: Record<string, string | number>): string {
+  return translate(resolveLocale(loadPreference()), key, vars)
+}
 
 type Snapshot = { loaded: boolean; apps: BentoAppView[]; error: string | null; version: number }
 
@@ -19,7 +24,7 @@ async function refresh() {
     snapshot = {
       ...snapshot,
       loaded: true,
-      error: error instanceof Error ? error.message : "读取 Apps 失败",
+      error: error instanceof Error ? error.message : t("app.loadAppsFailed"),
       version: snapshot.version + 1,
     }
     for (const listener of listeners) listener()
@@ -41,21 +46,21 @@ export async function setAppEnabled(id: BentoAppId, enabled: boolean): Promise<s
   const result = await window.bento?.setAppEnabled(id, enabled)
   if (!result || "error" in result) {
     publish(previous)
-    return result && "error" in result ? result.error : "桌面模式不可用"
+    return result && "error" in result ? result.error : t("app.desktopUnavailable")
   }
   return null
 }
 
 export async function upsertApp(input: UserAppInput): Promise<string | null> {
   const result = await window.bento?.upsertApp(input)
-  if (!result || "error" in result) return result && "error" in result ? result.error : "桌面模式不可用"
+  if (!result || "error" in result) return result && "error" in result ? result.error : t("app.desktopUnavailable")
   await refresh()
   return null
 }
 
 export async function removeApp(id: string): Promise<string | null> {
   const result = await window.bento?.removeApp(id)
-  if (!result || "error" in result) return result && "error" in result ? result.error : "桌面模式不可用"
+  if (!result || "error" in result) return result && "error" in result ? result.error : t("app.desktopUnavailable")
   await refresh()
   return null
 }

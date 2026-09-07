@@ -12,6 +12,7 @@ import { Markdown } from "@/components/Markdown"
 import { PromptRail } from "@/components/PromptRail"
 import { TurnActivity } from "@/components/TurnActivity"
 import { cn } from "@/lib/utils"
+import { useT } from "@/lib/i18n"
 import { useTraits } from "@/lib/style-context"
 import { resolveActivity } from "@/core/activity"
 import type { LiveTurn } from "@/core/activity"
@@ -50,6 +51,7 @@ function ClampedText({ text, className, align = "start", buttonClassName }: {
   buttonClassName?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  const { t } = useT()
   const [open, setOpen] = useState(false)
   const [long, setLong] = useState(false)
   useEffect(() => {
@@ -80,7 +82,7 @@ function ClampedText({ text, className, align = "start", buttonClassName }: {
             buttonClassName ?? "text-muted-foreground hover:text-foreground",
           )}
         >
-          {open ? "收起" : "展开全文"}
+          {open ? t("chat.showLess") : t("chat.showMore")}
         </button>
       )}
     </div>
@@ -88,6 +90,7 @@ function ClampedText({ text, className, align = "start", buttonClassName }: {
 }
 
 const UserMessage = memo(function UserMessage({ m, shape }: { m: UserMsg; shape: MessageShape }) {
+  const { t } = useT()
   // 协作来源:envelope 不落 JSONL,这里只展示可信 origin,不当正文渲染
   const fromSession = m.origin?.kind === "session" ? m.origin.title : null
   // 无气泡的风格里,说话人靠一个标签和左侧竖线交代,读起来像日志
@@ -102,7 +105,7 @@ const UserMessage = memo(function UserMessage({ m, shape }: { m: UserMsg; shape:
           "type-micro font-mono font-medium uppercase tracking-wider",
           fromSession ? "text-muted-foreground" : "text-primary",
         )}>
-          {fromSession ? `来自 ${fromSession}` : "你"}
+          {fromSession ? t("chat.fromSession", { name: fromSession }) : t("chat.you")}
         </span>
         <div className={cn(
           "min-w-0 max-w-full border-l-2 pl-3 text-sm leading-relaxed",
@@ -148,7 +151,7 @@ const UserMessage = memo(function UserMessage({ m, shape }: { m: UserMsg; shape:
         />
       </div>
       {fromSession && (
-        <span className="type-micro font-mono text-muted-foreground">来自 {fromSession}</span>
+        <span className="type-micro font-mono text-muted-foreground">{t("chat.fromSession", { name: fromSession })}</span>
       )}
       {m.attachments?.map((a) => (
         <AttachmentChip key={a.name} name={a.name} kind={a.kind} />
@@ -259,6 +262,7 @@ type ChatViewProps = {
 
 export function ChatView({ messages, pending = true, turn, onResolveApproval, queued, cwd }: ChatViewProps) {
   const traits = useTraits()
+  const { t } = useT()
   const boxRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -343,7 +347,7 @@ export function ChatView({ messages, pending = true, turn, onResolveApproval, qu
       >
         {messages.length === 0 && !pending && (
           <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
-            在下面写下第一句话,开始这段对话。
+            {t("chat.emptyState")}
           </div>
         )}
 
@@ -380,7 +384,7 @@ export function ChatView({ messages, pending = true, turn, onResolveApproval, qu
               {queued.text}
             </div>
             <div className="flex items-center gap-1.5 type-micro text-muted-foreground">
-              <span>下一条</span>
+              <span>{t("chat.queuedNext")}</span>
               {queued.steerAvailable && (
                 <button
                   type="button"
@@ -389,13 +393,13 @@ export function ChatView({ messages, pending = true, turn, onResolveApproval, qu
                   className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 font-medium text-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:text-muted-foreground"
                 >
                   <Forward className="size-3" />
-                  {queued.steering ? "正在引导" : "立即引导"}
+                  {queued.steering ? t("chat.steering") : t("chat.steerNow")}
                 </button>
               )}
               <button
                 type="button"
-                aria-label="取消待发送消息"
-                title="取消待发送消息"
+                aria-label={t("chat.cancelQueued")}
+                title={t("chat.cancelQueued")}
                 onClick={queued.onCancel}
                 className="grid size-6 place-items-center rounded-md hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
@@ -410,8 +414,8 @@ export function ChatView({ messages, pending = true, turn, onResolveApproval, qu
     {!following && (
       <button
         type="button"
-        aria-label="回到最新"
-        title="回到最新"
+        aria-label={t("chat.backToLatest")}
+        title={t("chat.backToLatest")}
         onClick={() => scrollToLatest("smooth")}
         className={cn(
           "absolute left-1/2 z-20 grid size-8 -translate-x-1/2 place-items-center rounded-full border border-border bg-card shadow-pop hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",

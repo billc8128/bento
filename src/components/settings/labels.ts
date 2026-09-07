@@ -1,4 +1,5 @@
 import type { CustomHarnessId, WireProtocol } from "@/core/provider"
+import type { TFn } from "@/lib/i18n"
 
 export const PROTOCOL_LABELS: Record<WireProtocol, string> = {
   "anthropic-messages": "Anthropic Messages",
@@ -26,18 +27,18 @@ type FetchFailure =
   | { error: string; message: string }
 
 /** fetchProviderModels / discoverPresetModels 的失败 → 用户可读文案。 */
-export function describeFetchError(result: FetchFailure): string {
-  if (!("ok" in result)) return result.message || "拉取失败"
+export function describeFetchError(result: FetchFailure, t: TFn): string {
+  if (!("ok" in result)) return result.message || t("providers.fetchFailed")
   switch (result.error.kind) {
     case "unauthorized":
-      return "鉴权失败，请检查 API Key"
+      return t("providers.fetchUnauthorized")
     case "not-found":
-      return "模型列表地址不存在，请在高级设置里检查"
+      return t("providers.fetchNotFound")
     case "network":
-      return "网络错误，无法连接该地址"
+      return t("providers.fetchNetwork")
     case "parse":
-      return "返回内容无法解析为模型列表"
+      return t("providers.fetchParse")
     default:
-      return result.error.message || "拉取失败"
+      return result.error.message || t("providers.fetchFailed")
   }
 }

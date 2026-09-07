@@ -10,6 +10,7 @@ import { ChevronLeft, CircleUserRound, FlaskConical, Keyboard, KeyRound, Palette
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { HorseIcon } from "@/components/HorseIcon"
+import { useT } from "@/lib/i18n"
 import { closeSettings, useSettingsPage, type SettingsSection } from "@/lib/settings-store"
 import { cn } from "@/lib/utils"
 
@@ -20,13 +21,13 @@ import { HarnessesSection } from "./HarnessesSection"
 import { ProvidersSection } from "./ProvidersSection"
 import { ShortcutsSection } from "./ShortcutsSection"
 
-const SECTIONS: { id: SettingsSection; label: string; icon: React.ComponentType<{ className?: string }>; beta?: boolean }[] = [
-  { id: "account", label: "账户", icon: CircleUserRound },
-  { id: "providers", label: "供应商", icon: KeyRound },
-  { id: "harnesses", label: "Harness", icon: HorseIcon },
-  { id: "appearance", label: "外观", icon: Palette },
-  { id: "layout", label: "实验室", icon: FlaskConical, beta: true },
-  { id: "shortcuts", label: "快捷键", icon: Keyboard },
+const SECTIONS: { id: SettingsSection; labelKey: string; icon: React.ComponentType<{ className?: string }>; beta?: boolean }[] = [
+  { id: "account", labelKey: "settings.sectionAccount", icon: CircleUserRound },
+  { id: "providers", labelKey: "settings.sectionProviders", icon: KeyRound },
+  { id: "harnesses", labelKey: "settings.sectionHarnesses", icon: HorseIcon },
+  { id: "appearance", labelKey: "settings.sectionAppearance", icon: Palette },
+  { id: "layout", labelKey: "settings.sectionLayout", icon: FlaskConical, beta: true },
+  { id: "shortcuts", labelKey: "settings.sectionShortcuts", icon: Keyboard },
 ]
 
 function BetaBadge() {
@@ -40,6 +41,7 @@ function BetaBadge() {
 export function SettingsPage() {
   const settings = useSettingsPage()
   const [section, setSection] = useState<SettingsSection>(settings.section)
+  const { t } = useT()
 
   // 每次打开跟随调用方指定的板块(渲染期调整,不开 effect);
   // 页面内的点击切换归本地 state 管
@@ -96,7 +98,7 @@ export function SettingsPage() {
           onClick={closeSettings}
         >
           <ChevronLeft className="size-4 opacity-70" />
-          <span>设置</span>
+          <span>{t("settings.title")}</span>
         </Button>
         {SECTIONS.map((item) => (
           <button
@@ -109,7 +111,7 @@ export function SettingsPage() {
             )}
           >
             <item.icon className="size-4 opacity-70" />
-            {item.label}
+            {t(item.labelKey)}
             {item.beta && <BetaBadge />}
           </button>
         ))}
@@ -119,7 +121,7 @@ export function SettingsPage() {
         <ScrollArea className="h-full">
           <div className="mx-auto max-w-2xl px-8 pb-16 pt-10">
             <h1 className="flex items-center gap-2 text-lg font-semibold">
-              {active.label}
+              {t(active.labelKey)}
               {active.beta && <BetaBadge />}
             </h1>
             <div className="mt-6">

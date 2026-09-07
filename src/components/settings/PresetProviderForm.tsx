@@ -9,6 +9,7 @@ import type { CustomModelConfig } from "@/core/provider"
 import type { ProviderPreset } from "@/core/provider-preset"
 import { getHarness } from "@/core/harness"
 import type { CustomProviderEntry } from "@/lib/custom-provider-store"
+import { useT } from "@/lib/i18n"
 
 type SelectableModel = CustomModelConfig & { enabled: boolean }
 
@@ -43,6 +44,7 @@ export function PresetProviderForm({
   /** 保存成功回传 provider id。 */
   onSaved: (providerId?: string) => void
 }) {
+  const { t } = useT()
   const [name, setName] = useState(editing?.name ?? preset.name)
   const [apiKey, setApiKey] = useState("")
   const [showKey, setShowKey] = useState(false)
@@ -79,7 +81,7 @@ export function PresetProviderForm({
     loadingRef.current = false
     setLoading(false)
     if (!("ok" in result) || !result.ok) {
-      setError("message" in result ? result.message : "无法获取模型列表")
+      setError("message" in result ? result.message : t("providers.fetchModelsSimple"))
       return
     }
     const previous = new Map(models.map((model) => [model.id, model]))
@@ -114,7 +116,7 @@ export function PresetProviderForm({
     const id = manualId.trim()
     if (!id) return
     if (models.some((model) => model.id === id)) {
-      setError(`模型 ${id} 已经存在`)
+      setError(t("providers.modelExists", { id }))
       return
     }
     setModels((current) => [...current, { id, name: id, enabled: true }])
@@ -127,15 +129,15 @@ export function PresetProviderForm({
     const bento = window.bento
     if (!bento) return
     if (!name.trim()) {
-      setError("请输入显示名称")
+      setError(t("providers.errorDisplayName"))
       return
     }
     if (models.length === 0) {
-      setError("请先获取模型列表，或手动添加模型 ID")
+      setError(t("providers.errorFetchFirst"))
       return
     }
     if (selectedCount === 0) {
-      setError("至少展示一个模型")
+      setError(t("providers.errorShowOne"))
       return
     }
     setSaving(true)
@@ -160,7 +162,7 @@ export function PresetProviderForm({
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-5 p-5">
           <label className="block space-y-1.5">
-            <span className="text-xs text-muted-foreground">显示名称</span>
+            <span className="text-xs text-muted-foreground">{t("providers.displayName")}</span>
             <Input value={name} onChange={(event) => setName(event.target.value)} />
           </label>
 
@@ -172,7 +174,7 @@ export function PresetProviderForm({
                   type={showKey ? "text" : "password"}
                   value={apiKey}
                   onChange={(event) => setApiKey(event.target.value)}
-                  placeholder={editing?.hasCredential ? "已保存，留空不修改" : "输入 API Key"}
+                  placeholder={editing?.hasCredential ? t("providers.keySavedPlaceholder") : t("providers.keyPlaceholder")}
                   className="pr-9"
                   autoComplete="off"
                 />
@@ -181,7 +183,7 @@ export function PresetProviderForm({
                   variant="ghost"
                   size="icon-sm"
                   className="absolute right-1 top-1/2 -translate-y-1/2"
-                  aria-label={showKey ? "隐藏 API Key" : "显示 API Key"}
+                  aria-label={showKey ? t("providers.hideKey") : t("providers.showKey")}
                   onClick={() => setShowKey((visible) => !visible)}
                 >
                   {showKey ? <EyeOff /> : <Eye />}
@@ -203,23 +205,23 @@ export function PresetProviderForm({
               rel="noreferrer"
               className="inline-flex items-center gap-1 text-muted-foreground underline underline-offset-4 hover:text-foreground"
             >
-              接入文档 <ExternalLink className="size-3" />
+              {t("providers.integrationDocs")} <ExternalLink className="size-3" />
             </a>
           </div>
 
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               {manualDiscovery ? (
-                <span className="text-xs text-muted-foreground">该供应商不提供可验证的模型列表，请手动添加模型 ID。</span>
+                <span className="text-xs text-muted-foreground">{t("providers.manualDiscoveryHint")}</span>
               ) : (
                 <Button type="button" variant="outline" disabled={loading || !canConnect} onClick={() => void discover()}>
                   {loading && <Loader2 className="animate-spin" />}
-                  {fetched ? "刷新模型" : "获取模型列表"}
+                  {fetched ? t("providers.refreshModels") : t("providers.fetchModels")}
                 </Button>
               )}
               {models.length > 0 && (
                 <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-                  全部展示
+                  {t("providers.showAll")}
                   <Switch
                     checked={allEnabled}
                     onCheckedChange={(checked) => setModels((current) => current.map((model) => ({ ...model, enabled: checked })))}
@@ -231,7 +233,7 @@ export function PresetProviderForm({
             {models.length > 8 && (
               <div className="relative">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="在清单里搜索" className="h-8 pl-8 text-xs" />
+                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("providers.searchInList")} className="h-8 pl-8 text-xs" />
               </div>
             )}
 
@@ -246,7 +248,7 @@ export function PresetProviderForm({
                     <span className="text-right text-xs tabular-nums text-muted-foreground">{contextLabel(model.contextWindow)}</span>
                     <Switch
                       checked={model.enabled}
-                      aria-label={`展示 ${model.name}`}
+                      aria-label={t("providers.showModel", { name: model.name })}
                       onCheckedChange={(checked) => setModels((current) => current.map((item) => item.id === model.id ? { ...item, enabled: checked } : item))}
                     />
                   </div>
@@ -264,9 +266,9 @@ export function PresetProviderForm({
                     addManualModel()
                   }
                 }}
-                placeholder="手动添加模型 ID"
+                placeholder={t("providers.manualModelIdPlaceholder")}
               />
-              <Button type="button" variant="outline" size="icon" onClick={addManualModel} aria-label="添加模型">
+              <Button type="button" variant="outline" size="icon" onClick={addManualModel} aria-label={t("providers.addModel")}>
                 <Plus />
               </Button>
             </div>
@@ -277,10 +279,10 @@ export function PresetProviderForm({
       </ScrollArea>
 
       <footer className="flex items-center justify-end gap-2 border-t border-border px-5 py-3">
-        <Button variant="ghost" onClick={onCancel}>取消</Button>
+        <Button variant="ghost" onClick={onCancel}>{t("providers.cancel")}</Button>
         <Button disabled={saving || !canSave} onClick={() => void save()}>
           {saving && <Loader2 className="animate-spin" />}
-          {editing ? "保存" : "添加"}
+          {editing ? t("providers.save") : t("providers.add")}
         </Button>
       </footer>
     </div>

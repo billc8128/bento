@@ -13,6 +13,11 @@ import type { AddPanelOptions, DockviewApi } from "dockview"
 import { deriveUiAdjacency } from "@/core/collaboration"
 import type { UiSessionAdjacency, UiSessionRect } from "@/core/collaboration"
 import { liveMeta } from "@/lib/live-store"
+import { loadPreference, resolveLocale, translate } from "@/lib/i18n"
+
+function t(key: string, vars?: Record<string, string | number>): string {
+  return translate(resolveLocale(loadPreference()), key, vars)
+}
 
 type PanelPosition = AddPanelOptions["position"]
 
@@ -244,7 +249,7 @@ export function openAppsView() {
   api.addPanel({
     id: APPS_PANEL_ID,
     component: "view",
-    title: "应用",
+    title: t("app.appsPanelTitle"),
     params: { viewId: "core.apps" },
     ...(active ? { position: { referenceGroup: active.group } } : {}),
   })
