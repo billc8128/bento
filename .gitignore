@@ -34,3 +34,16 @@ build/*
 prototypes/
 artifacts/
 .visualizations/
+
+# 内部文档:调研、计划、产品设计笔记,不进开源仓库
+docs/
+research/
+ARCHITECTURE.md
+DESIGN.md
+PRODUCT.md
+*_PLAN.md
+
+# 本地 agent 配置
+.codex/
+.claude/
+.spike-kimi/
