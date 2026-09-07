@@ -47,3 +47,6 @@ PRODUCT.md
 .codex/
 .claude/
 .spike-kimi/
+
+# Electron 构建产物(连同 dist/ 一律不进仓库)
+dist-electron/
