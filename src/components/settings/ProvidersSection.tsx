@@ -649,20 +649,20 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
         <main className="flex min-w-0 flex-1 flex-col">
           {selectedGroup ? (
             <>
-              <header className="flex min-h-24 items-center gap-3 border-b border-border px-6">
+              <header className="flex min-h-24 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-6 py-3">
                 <ItemMark group={selectedGroup} large />
-                <div className="min-w-0 flex-1">
+                <div className="min-w-40 flex-1">
                   <h2 className="truncate text-lg font-semibold">{selectedGroup.name}</h2>
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     {selectedGroup.sources.map((source) => (
                       <span
                         key={source.id}
-                        className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground"
+                        className="whitespace-nowrap rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground"
                       >
                         {sourceTabLabel(source, t)}
                       </span>
                     ))}
-                    <span className="ml-1 text-xs text-muted-foreground">
+                    <span className="ml-1 whitespace-nowrap text-xs text-muted-foreground">
                       {t("providers.statusSummary", {
                         status: selectedGroup.sources.some((source) => source.connected) ? t("providers.available") : t("providers.notConnected"),
                         count: models.filter((model) => model.enabled !== false).length,
