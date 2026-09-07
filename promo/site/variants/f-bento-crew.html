@@ -9,7 +9,7 @@
 <meta property="og:title" content="Bento — Have fun with your agents">
 <meta property="og:description" content="An open-source, local-first agent workbench. Mix and match harnesses and models, let your agents work together — everything stays on your disk.">
 <link rel="icon" href="assets/favicon.svg">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Caveat:wght@600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Caveat:wght@500;600&display=swap">
 <style>
   :root {
     --paper: #ffffff;
@@ -27,23 +27,14 @@
   }
   a { color: inherit; text-decoration: none; }
 
-  /* ===== 云海 shader 背景:罩住 nav+hero+舞台 ===== */
-  .sky { position: relative; padding-top: 77px; }
+  /* ===== 奶油纸底:手绘便当 hero(原型 F) ===== */
+  .sky { position: relative; padding-top: 77px; background: #f6f0e2; }
   .sky > *:not(nav) { position: relative; z-index: 2; }
-  #skyCanvas {
-    position: absolute; inset: 0; z-index: 0 !important;
-    width: 100%; height: 100%; pointer-events: none;
-  }
-  .sky::before {
-    /* 文字区柔光垫,保住可读性 */
-    content: ""; position: absolute; z-index: 1; inset: 0 0 40% 0;
-    background: radial-gradient(58% 80% at 50% 32%, rgba(255,255,255,.62), rgba(255,255,255,0) 72%);
-    pointer-events: none;
-  }
+  #skyCanvas { display: none; }
   .sky::after {
     /* 底部融回白纸 */
-    content: ""; position: absolute; z-index: 1; inset: auto 0 0 0; height: 160px;
-    background: linear-gradient(to bottom, rgba(255,255,255,0), var(--paper));
+    content: ""; position: absolute; z-index: 1; inset: auto 0 0 0; height: 120px;
+    background: linear-gradient(to bottom, rgba(246,240,226,0), var(--paper));
     pointer-events: none;
   }
 
@@ -79,7 +70,39 @@
   }
   nav.cta-out .nav-r .pill { opacity: 1; transform: none; pointer-events: auto; }
 
-  .hero { text-align: center; max-width: 1240px; margin: 0 auto; padding: 38px 28px 24px; }
+  .hero { max-width: 1240px; margin: 0 auto; padding: 40px 28px 0; }
+  .eyebrow {
+    font-family: "Caveat", cursive; font-weight: 600; font-size: 27px;
+    color: #e2701d; letter-spacing: .01em; margin-bottom: 6px;
+  }
+  .hero-grid { display: flex; align-items: flex-end; justify-content: space-between; gap: 48px; }
+  .hero-side { max-width: 300px; padding-bottom: 8px; }
+  .hero-side p { font-size: 15.5px; color: var(--dim); }
+  .hero-actions { margin-top: 18px; display: flex; gap: 12px; flex-wrap: wrap; }
+  @media (max-width: 860px) {
+    .hero-grid { flex-direction: column; align-items: flex-start; gap: 18px; }
+    .hero-side { max-width: 520px; }
+  }
+
+  /* ===== 手绘便当场景 ===== */
+  .crew { max-width: 1240px; margin: 6px auto 0; padding: 0 28px; }
+  .crew svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .crew .lbl { font-family: "Caveat", cursive; font-weight: 600; font-size: 30px; fill: #2b2823; }
+  .crew .lbl.note { font-size: 25px; fill: #e2701d; }
+  .crew .cloud { animation: cloudDrift 26s ease-in-out infinite alternate; }
+  .crew .cloud.c2 { animation-duration: 34s; animation-delay: -12s; }
+  @keyframes cloudDrift { from { transform: translateX(-46px); } to { transform: translateX(46px); } }
+  .crew .food { animation: bob 3.4s ease-in-out infinite alternate; }
+  .crew .food.f2 { animation-delay: -.6s; } .crew .food.f3 { animation-delay: -1.2s; }
+  .crew .food.f4 { animation-delay: -1.8s; } .crew .food.f5 { animation-delay: -.9s; }
+  .crew .food.f6 { animation-delay: -1.5s; } .crew .food.f7 { animation-delay: -2.2s; }
+  @keyframes bob { from { transform: translateY(0); } to { transform: translateY(-6px); } }
+  .crew .steam { stroke-dasharray: 42 18; animation: steamRise 3.2s linear infinite; }
+  .crew .steam.s2 { animation-delay: -1.1s; } .crew .steam.s3 { animation-delay: -2.2s; }
+  @keyframes steamRise { from { stroke-dashoffset: 60; opacity: .15; } 40% { opacity: .55; } to { stroke-dashoffset: 0; opacity: .15; } }
+  @media (prefers-reduced-motion: reduce) {
+    .crew .cloud, .crew .food, .crew .steam { animation: none !important; }
+  }
   h1 {
     font-size: clamp(36px, 4.6vw, 58px); font-weight: 650; letter-spacing: -.035em;
     line-height: 1.14;
@@ -122,22 +145,17 @@
   @media (prefers-reduced-motion: reduce) {
     h1 .w, .logo-mark rect { animation: none !important; opacity: 1 !important; transform: none !important; filter: none !important; }
   }
-  .hero p { margin: 14px auto 0; max-width: 620px; font-size: 17px; color: var(--dim); }
-  .hero-actions { margin-top: 20px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
   .btn-main { background: var(--ink); color: #fff; font-weight: 600; font-size: 15px; padding: 12px 26px; border-radius: 11px; }
   .btn-main:hover { background: #000; }
-  .btn-arc {
-    position: relative; display: inline-block; border-radius: 999px; padding: 3px;
-    background: rgba(245,168,59,.22); /* 均匀浅琥珀描边 */
-    box-shadow: 0 12px 30px -10px rgba(26,26,24,.28);
-    transition: transform .2s ease, box-shadow .2s ease;
+  .btn-glass {
+    background: rgba(255,255,255,.45); color: var(--ink);
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    border: 1px solid rgba(26,26,24,.14); font-weight: 600; font-size: 15px;
+    padding: 12px 26px; border-radius: 11px;
+    box-shadow: 0 10px 28px -10px rgba(26,26,24,.22);
+    transition: background .2s ease, border-color .2s ease, box-shadow .2s ease;
   }
-  .btn-arc:hover { transform: translateY(-1px); box-shadow: 0 16px 36px -10px rgba(26,26,24,.32); }
-  .btn-arc-face {
-    position: relative; z-index: 1; display: block;
-    background: #fff; color: var(--ink); border-radius: 999px;
-    font-weight: 600; font-size: 16px; padding: 12px 33px;
-  }
+  .btn-glass:hover { background: rgba(255,255,255,.66); border-color: rgba(26,26,24,.22); }
   .btn-line { border: 1px solid var(--line); font-size: 15px; padding: 11px 22px; border-radius: 11px; }
   .btn-line:hover { border-color: var(--faint); }
 
@@ -193,85 +211,23 @@
     }
   }
 
-  /* ===== 利益点:每个独立成区 ===== */
+  .trusted {
+    text-align: center; padding: 40px 28px 24px;
+    font-size: 13.5px; color: var(--faint); letter-spacing: .01em;
+  }
+  .trusted b { color: var(--dim); font-weight: 500; }
+
+  .cols {
+    max-width: 1240px; margin: 80px auto 0; padding: 0 28px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 56px;
+  }
   #features { scroll-margin-top: 90px; }
-  .feat { max-width: 1240px; margin: 120px auto 0; padding: 0 28px; }
-  .feat-head { max-width: 620px; }
-  .feat-head.center { margin: 0 auto; text-align: center; }
-  .feat h3 { font-size: clamp(24px, 2.6vw, 32px); font-weight: 700; letter-spacing: -.02em; }
-  .feat h3 i { font-style: normal; color: var(--amber); margin-right: 10px; font-size: .7em; }
-  .feat .sub { margin-top: 12px; font-size: 16px; color: var(--dim); }
-  .feat-row { display: flex; align-items: center; gap: 64px; }
-  .feat-row .feat-head { flex: 0 0 360px; }
-  .feat-row .feat-vis { flex: 1; min-width: 0; }
-  .feat-row.flip .feat-head { order: 2; }
-  .feat-row.flip .feat-vis { order: 1; }
+  .col h3 { font-size: 15.5px; font-weight: 650; margin-bottom: 8px; letter-spacing: -.01em; }
+  .col h3 i { font-style: normal; color: var(--amber); margin-right: 8px; }
+  .col p { font-size: 14px; color: var(--dim); }
 
-  /* 手绘便当盒:harness 居中,模型环绕 */
-  .bento-board { margin-top: 44px; width: 100%; height: auto; display: block; overflow: visible; }
-  .bento-board .lbl { font-family: "Caveat", cursive; font-weight: 600; font-size: 30px; fill: #2b2823; }
-  .bento-board .lbl.note { font-size: 25px; fill: #e2701d; }
-  .bento-board .hname { font-family: "Caveat", cursive; font-weight: 600; font-size: 21px; fill: #2b2823; }
-  .bento-board .steam { stroke-dasharray: 42 18; animation: steamRise 3.2s linear infinite; }
-  .bento-board .steam.s2 { animation-delay: -1.1s; } .bento-board .steam.s3 { animation-delay: -2.2s; }
-  @keyframes steamRise { from { stroke-dashoffset: 60; opacity: .15; } 40% { opacity: .55; } to { stroke-dashoffset: 0; opacity: .15; } }
-  @media (prefers-reduced-motion: reduce) { .bento-board .steam { animation: none; } }
-  .bento-board .dot { animation: dotBob 3s ease-in-out infinite alternate; transform-box: fill-box; }
-  @keyframes dotBob { from { transform: translateY(0); } to { transform: translateY(-3px); } }
-  @media (prefers-reduced-motion: reduce) { .bento-board .dot { animation: none; } }
-  /* 静帧视觉 */
-  /* 协作:真实截图,微斜摆放,hover 回正微放大 */
-  .shot2 {
-    border-radius: 18px; overflow: hidden; border: 1px solid var(--line);
-    box-shadow: 0 30px 60px -30px rgba(26,26,24,.35);
-    transform: rotate(1.2deg);
-    transition: transform .45s cubic-bezier(.3,1.2,.4,1), box-shadow .45s ease;
-  }
-  .shot2:hover {
-    transform: rotate(0deg) scale(1.025);
-    box-shadow: 0 44px 84px -34px rgba(26,26,24,.42);
-  }
-  .shot2 img { width: 100%; display: block; }
-  .shot2.portrait { max-width: 76%; margin: 0 auto; }
-
-  @media (max-width: 860px) {
-    .feat { margin-top: 80px; }
-    .feat-row { flex-direction: column; gap: 32px; }
-    .feat-row .feat-head { flex: none; }
-    .feat-row.flip .feat-head { order: 0; }
-    .feat-row.flip .feat-vis { order: 1; }
-  }
-
-  .outro {
-    text-align: center; margin-top: 72px; padding: 96px 28px 104px;
-    background: linear-gradient(to bottom, #ffffff 0%, #e9f2f9 38%, #d9e9f4 100%);
-  }
-  .outro .mark { width: 72px; height: 72px; overflow: visible; }
-  .outro-hero { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
-  /* 复刻产品 WelcomeHero:进入视口自动播放 —— 三格带旋转飞入 + 逐字弹簧 + 琥珀波 */
-  .outro .mark rect {
-    opacity: 0; transform: translate(var(--wx), var(--wy)) rotate(var(--wr));
-    transform-box: fill-box; transform-origin: center;
-  }
-  .outro .mark .c-l { --wx: -30px; --wy: 0px; --wr: -8deg; }
-  .outro .mark .c-t { --wx: 20px; --wy: -25px; --wr: 10deg; }
-  .outro .mark .c-b { --wx: 20px; --wy: 25px; --wr: 6deg; }
-  .outro.in-view .mark rect { animation: oBlockIn 550ms cubic-bezier(0.34, 1.4, 0.64, 1) forwards; }
-  .outro.in-view .mark .c-t { animation-delay: 120ms; }
-  .outro.in-view .mark .c-b { animation-delay: 220ms; }
-  @keyframes oBlockIn { to { opacity: 1; transform: none; } }
-  .outro h2 { font-size: clamp(32px, 4vw, 46px); font-weight: 800; letter-spacing: -.02em; }
-  .outro h2 .wchar { display: inline-block; opacity: 0; white-space: pre; }
-  .outro h2 .w-word .wchar:nth-child(odd) { transform: translateY(-0.45em) rotate(-6deg); }
-  .outro h2 .w-word .wchar:nth-child(even) { transform: translateY(0.45em) rotate(6deg); }
-  .outro.in-view h2 .wchar {
-    animation:
-      oCharIn 600ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards,
-      oWave 1.4s ease-in-out;
-    animation-delay: var(--cd, 0ms), var(--wd, 0ms);
-  }
-  @keyframes oCharIn { to { opacity: 1; transform: none; } }
-  @keyframes oWave { 0% { color: var(--ink); } 6% { color: #c47f00; } 14% { color: var(--ink); } 100% { color: var(--ink); } }
+  .outro { text-align: center; padding: 120px 28px 96px; }
+  .outro h2 { font-size: clamp(26px, 3.2vw, 38px); font-weight: 650; letter-spacing: -.03em; }
   .outro .hero-actions { margin-top: 26px; justify-content: center; }
   footer { border-top: 1px solid var(--line); }
   .foot { max-width: 1240px; margin: 0 auto; padding: 22px 28px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; font-size: 12.5px; color: var(--faint); }
@@ -304,26 +260,145 @@
 </nav>
 
 <header class="hero">
-  <h1 id="headline">
-    <span class="line">
-      <span class="w" style="--d:.05s">Have </span><span class="w w-fun" id="wFun" style="--d:.13s">fun </span><span class="w" style="--d:.21s">with </span><span class="w" style="--d:.29s">your </span><span class="w" style="--d:.37s">agents,</span>
-    </span>
-    <br>
-    <span class="brandline">
-      <span class="w" style="--d:.55s">in </span>
-      <svg class="logo-mark" id="logoMark" viewBox="19 19 62 62" aria-hidden="true">
-        <rect class="c-l" x="21.9" y="21.9" width="25.8" height="56.2" rx="7" fill="#26231f"/>
-        <rect class="c-t" x="52.3" y="21.9" width="25.8" height="25.8" rx="7" fill="#f5a83b"/>
-        <rect class="c-b" x="52.3" y="52.3" width="25.8" height="25.8" rx="7" fill="#26231f"/>
-      </svg>
-      <span class="w" style="--d:.66s">Bento.</span>
-    </span>
-  </h1>
-  <p>An open-source, local-first agent workbench. Mix and match harnesses and models, let your agents work together — everything stays on your disk.</p>
-  <div class="hero-actions">
-    <a class="btn-arc" href="https://github.com/billc8128/bento/releases/latest" target="_blank" rel="noopener"><span class="btn-arc-face">Download for macOS</span></a>
+  <p class="eyebrow">Multi-harness, multi-model</p>
+  <div class="hero-grid">
+    <div>
+      <h1 id="headline">
+        <span class="line">
+          <span class="w" style="--d:.05s">Have </span><span class="w w-fun" id="wFun" style="--d:.13s">fun </span><span class="w" style="--d:.21s">with </span><span class="w" style="--d:.29s">your </span><span class="w" style="--d:.37s">agents,</span>
+        </span>
+        <br>
+        <span class="brandline">
+          <span class="w" style="--d:.55s">in </span>
+          <svg class="logo-mark" id="logoMark" viewBox="19 19 62 62" aria-hidden="true">
+            <rect class="c-l" x="21.9" y="21.9" width="25.8" height="56.2" rx="7" fill="#26231f"/>
+            <rect class="c-t" x="52.3" y="21.9" width="25.8" height="25.8" rx="7" fill="#f5a83b"/>
+            <rect class="c-b" x="52.3" y="52.3" width="25.8" height="25.8" rx="7" fill="#26231f"/>
+          </svg>
+          <span class="w" style="--d:.66s">Bento.</span>
+        </span>
+      </h1>
+      <div class="hero-actions">
+        <a class="btn-main" href="https://github.com/billc8128/bento/releases/latest" target="_blank" rel="noopener">Download for macOS</a>
+      </div>
+    </div>
+    <div class="hero-side">
+      <p>Choose from a growing crew of harnesses and models, each in its own little compartment — everything stays on your disk.</p>
+    </div>
   </div>
 </header>
+
+<section class="crew" aria-label="Harnesses in a bento box">
+  <svg viewBox="0 52 1240 508" role="img" aria-label="A hand-drawn bento box: Codex, Claude Code, Kimi Code, OpenCode, Pi, OMP and Hermes each in a compartment">
+    <defs>
+      <filter id="wob" x="-8%" y="-8%" width="116%" height="116%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.016" numOctaves="2" seed="7" result="n"/>
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="4.5"/>
+      </filter>
+      <clipPath id="ocClip" clipPathUnits="userSpaceOnUse">
+        <rect x="1011" y="252" width="58" height="58" rx="15"/>
+      </clipPath>
+    </defs>
+
+    <!-- 云 -->
+    <g class="cloud" filter="url(#wob)" stroke="#1a1a18" stroke-width="2.5" fill="#fffdf6" stroke-linecap="round">
+      <path d="M150 96 a26 26 0 0 1 26 -24 a30 30 0 0 1 56 -10 a24 24 0 0 1 40 12 a20 20 0 0 1 22 22 z"/>
+    </g>
+    <g class="cloud c2" filter="url(#wob)" stroke="#1a1a18" stroke-width="2.5" fill="#fffdf6" stroke-linecap="round">
+      <path d="M930 70 a22 22 0 0 1 22 -20 a26 26 0 0 1 48 -8 a20 20 0 0 1 34 10 a17 17 0 0 1 18 18 z"/>
+    </g>
+
+    <!-- 蒸汽 -->
+    <g fill="none" stroke="#1a1a18" stroke-width="2.5" stroke-linecap="round">
+      <path class="steam"    d="M420 176 c-8 -14 8 -22 0 -36 c-8 -14 8 -22 0 -34" filter="url(#wob)"/>
+      <path class="steam s2" d="M640 168 c-8 -14 8 -22 0 -36 c-8 -14 8 -22 0 -34" filter="url(#wob)"/>
+      <path class="steam s3" d="M880 176 c-8 -14 8 -22 0 -36 c-8 -14 8 -22 0 -34" filter="url(#wob)"/>
+    </g>
+
+    <!-- 筷子 -->
+    <g filter="url(#wob)" stroke="#1a1a18" stroke-width="3" stroke-linecap="round">
+      <line x1="1062" y1="150" x2="1186" y2="196"/>
+      <line x1="1074" y1="136" x2="1198" y2="182"/>
+    </g>
+
+    <!-- 整个盒子微倾,打破死板 -->
+    <g transform="rotate(-1.3 620 356)">
+      <!-- 松散的底影 -->
+      <rect x="102" y="216" width="1056" height="300" rx="30" fill="#e9e0c9" filter="url(#wob)"/>
+
+      <!-- 便当盒体 -->
+      <g filter="url(#wob)">
+        <rect x="92" y="206" width="1056" height="300" rx="30" fill="#fffdf6" stroke="#1a1a18" stroke-width="3.5"/>
+        <line x1="500" y1="206" x2="500" y2="506" stroke="#1a1a18" stroke-width="3"/>
+        <line x1="717" y1="206" x2="717" y2="506" stroke="#1a1a18" stroke-width="3"/>
+        <line x1="933" y1="206" x2="933" y2="506" stroke="#1a1a18" stroke-width="3"/>
+        <line x1="500" y1="356" x2="1148" y2="356" stroke="#1a1a18" stroke-width="3"/>
+      </g>
+
+      <!-- Codex -->
+      <g class="food f1">
+        <ellipse cx="296" cy="330" rx="72" ry="64" fill="#ffffff" stroke="#1a1a18" stroke-width="2.5" filter="url(#wob)"/>
+        <image href="logos/codex.svg" x="250" y="284" width="92" height="92"/>
+        <text class="lbl" x="266" y="474" transform="rotate(-2 266 474)">Codex</text>
+      </g>
+
+      <!-- Claude Code -->
+      <g class="food f2">
+        <ellipse cx="608" cy="281" rx="50" ry="45" fill="#ffffff" stroke="#1a1a18" stroke-width="2.5" filter="url(#wob)"/>
+        <image href="logos/claude-code.svg" x="579" y="252" width="58" height="58"/>
+        <text class="lbl" x="530" y="342" transform="rotate(1.5 530 342)">Claude Code</text>
+      </g>
+
+      <!-- Kimi Code -->
+      <g class="food f3">
+        <ellipse cx="825" cy="281" rx="50" ry="45" fill="#ffffff" stroke="#1a1a18" stroke-width="2.5" filter="url(#wob)"/>
+        <image href="logos/kimi.png" x="796" y="252" width="58" height="58"/>
+        <text class="lbl" x="782" y="342" transform="rotate(-1.5 782 342)">Kimi Code</text>
+      </g>
+
+      <!-- OpenCode -->
+      <g class="food f4">
+        <ellipse cx="1040" cy="281" rx="50" ry="45" fill="#ffffff" stroke="#1a1a18" stroke-width="2.5" filter="url(#wob)"/>
+        <image href="logos/opencode.svg" x="1011" y="252" width="58" height="58" clip-path="url(#ocClip)"/>
+        <text class="lbl" x="1006" y="342" transform="rotate(2 1006 342)">OpenCode</text>
+      </g>
+
+      <!-- Pi -->
+      <g class="food f5">
+        <ellipse cx="608" cy="428" rx="50" ry="45" fill="#ffffff" stroke="#1a1a18" stroke-width="2.5" filter="url(#wob)"/>
+        <text x="608" y="452" text-anchor="middle" font-family="Georgia, serif" font-style="italic" font-size="66" fill="#1a1a18">π</text>
+        <text class="lbl" x="592" y="492" transform="rotate(-2 592 492)">Pi</text>
+      </g>
+
+      <!-- OMP(自家 logo 内联,白色形改墨色) -->
+      <g class="food f6">
+        <ellipse cx="825" cy="428" rx="50" ry="45" fill="#ffffff" stroke="#1a1a18" stroke-width="2.5" filter="url(#wob)"/>
+        <g transform="translate(789 401) scale(0.6)">
+          <rect x="10" y="8" width="100" height="12" rx="2" fill="#1a1a18"/>
+          <rect x="25" y="20" width="12" height="62" rx="2" fill="#1a1a18"/>
+          <rect x="75" y="20" width="12" height="45" rx="2" fill="#1a1a18"/>
+          <rect x="71" y="55" width="20" height="16" rx="3" fill="#f97316"/>
+          <rect x="76" y="59" width="3" height="8" rx="1" fill="#fffdf6"/>
+          <rect x="82" y="59" width="3" height="8" rx="1" fill="#fffdf6"/>
+          <circle cx="18" cy="14" r="2" fill="#f97316" opacity="0.8"/>
+          <circle cx="102" cy="14" r="2" fill="#f97316" opacity="0.8"/>
+        </g>
+        <text class="lbl" x="790" y="492" transform="rotate(1.5 790 492)">OMP</text>
+      </g>
+
+      <!-- Hermes -->
+      <g class="food f7">
+        <ellipse cx="1040" cy="428" rx="50" ry="45" fill="#ffffff" stroke="#1a1a18" stroke-width="2.5" filter="url(#wob)"/>
+        <image href="logos/hermes.svg" x="1011" y="399" width="58" height="58"/>
+        <text class="lbl" x="1008" y="492" transform="rotate(-1 1008 492)">Hermes</text>
+      </g>
+    </g>
+
+    <!-- 手写注脚 -->
+    <text class="lbl note" x="958" y="548" transform="rotate(-2.5 958 548)">…and more to come</text>
+  </svg>
+</section>
+
 
 <div class="stagewrap">
   <div class="stagebox">
@@ -353,84 +428,25 @@
 
 </div><!-- /sky -->
 
-<section class="feat" id="features">
-  <div class="feat-head center">
-    <h3><i>◆</i>Mix &amp; match</h3>
-    <p class="sub">Any harness × any model — every combination works. Codex on GPT, Claude Code on Kimi, Pi on GLM. Mix and match freely; your logins stay yours.</p>
+<p class="trusted" style="display:none">Works with <b>Codex · Claude Code · Kimi Code · OpenCode · Pi · OMP · Hermes</b> — and more to come</p>
+
+<section class="cols" id="features">
+  <div class="col">
+    <h3><i>◆</i>Compose freely</h3>
+    <p>Harness, provider and model are three independent choices. Use the harness you know, plug in the model you want — your logins stay yours.</p>
   </div>
-  <svg class="bento-board" id="bentoBoard" viewBox="0 90 1240 470" role="img" aria-label="A hand-drawn bento box: each harness in a compartment, orbited by every model">
-    <defs>
-      <filter id="wob" x="-8%" y="-8%" width="116%" height="116%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.016" numOctaves="2" seed="7" result="n"/>
-        <feDisplacementMap in="SourceGraphic" in2="n" scale="4.5"/>
-      </filter>
-    </defs>
-
-    <!-- 蒸汽 -->
-    <g fill="none" stroke="#1a1a18" stroke-width="2.5" stroke-linecap="round">
-      <path class="steam"    d="M420 176 c-8 -14 8 -22 0 -36 c-8 -14 8 -22 0 -34" filter="url(#wob)"/>
-      <path class="steam s2" d="M640 168 c-8 -14 8 -22 0 -36 c-8 -14 8 -22 0 -34" filter="url(#wob)"/>
-      <path class="steam s3" d="M880 176 c-8 -14 8 -22 0 -36 c-8 -14 8 -22 0 -34" filter="url(#wob)"/>
-    </g>
-
-    <!-- 筷子 -->
-    <g filter="url(#wob)" stroke="#1a1a18" stroke-width="3" stroke-linecap="round">
-      <line x1="1062" y1="150" x2="1186" y2="196"/>
-      <line x1="1074" y1="136" x2="1198" y2="182"/>
-    </g>
-
-    <!-- 盒体 + 分隔 -->
-    <g transform="rotate(-1.3 620 356)">
-      <rect x="102" y="216" width="1056" height="300" rx="30" fill="#f1ede2" filter="url(#wob)"/>
-      <g filter="url(#wob)">
-        <rect x="92" y="206" width="1056" height="300" rx="30" fill="#fffdf6" stroke="#1a1a18" stroke-width="3.5"/>
-        <line x1="500" y1="206" x2="500" y2="506" stroke="#1a1a18" stroke-width="3"/>
-        <line x1="717" y1="206" x2="717" y2="506" stroke="#1a1a18" stroke-width="3"/>
-        <line x1="933" y1="206" x2="933" y2="506" stroke="#1a1a18" stroke-width="3"/>
-        <line x1="500" y1="356" x2="1148" y2="356" stroke="#1a1a18" stroke-width="3"/>
-      </g>
-      <g id="bentoCells"></g>
-    </g>
-
-    <text class="lbl note" x="958" y="548" transform="rotate(-2.5 958 548)">…and more to come</text>
-  </svg>
-
-</section>
-
-<section class="feat">
-  <div class="feat-row">
-    <div class="feat-head">
-      <h3><i>◆</i>Sessions that collaborate</h3>
-      <p class="sub">Inspired by herdr, your agents know each other with bento MCP, so they collaborate as you need.</p>
-    </div>
-    <div class="feat-vis">
-      <div class="shot2"><img src="assets/collab-shot.png" alt="A main session and a pi agent collaborating side by side in Bento"></div>
-    </div>
+  <div class="col">
+    <h3><i>◆</i>Sessions that collaborate</h3>
+    <p>One sentence opens a second agent right next to the first, with the full delegation visible. Replies flow back to the main session.</p>
   </div>
-</section>
-
-<section class="feat">
-  <div class="feat-row flip">
-    <div class="feat-head">
-      <h3><i>◆</i>Works with your own agent plans</h3>
-      <p class="sub">Already paying for agent plans? Sign in with OAuth or paste an API key — Bento runs on your subscriptions, locally.</p>
-    </div>
-    <div class="feat-vis">
-      <div class="shot2 portrait"><img src="assets/providers-shot.png" alt="Bento providers settings: your own plans and models"></div>
-    </div>
-    </div>
+  <div class="col">
+    <h3><i>◆</i>Local-first</h3>
+    <p>Every session is a JSONL log on your own disk — replayable, resumable. No account, no proxying your model APIs.</p>
   </div>
 </section>
 
 <section class="outro">
-  <div class="outro-hero">
-    <svg class="mark" id="outroMark" viewBox="19 19 62 62" aria-hidden="true">
-      <rect class="c-l" x="21.9" y="21.9" width="25.8" height="56.2" rx="7" fill="#26231f"/>
-      <rect class="c-t" x="52.3" y="21.9" width="25.8" height="25.8" rx="7" fill="#f5a83b"/>
-      <rect class="c-b" x="52.3" y="52.3" width="25.8" height="25.8" rx="7" fill="#26231f"/>
-    </svg>
-    <h2 id="outroTitle">Have fun with Bento</h2>
-  </div>
+  <h2>Organize AI into your workbench.</h2>
   <div class="hero-actions">
     <a class="btn-main" href="https://github.com/billc8128/bento/releases/latest" target="_blank" rel="noopener">Download for macOS</a>
     <a class="btn-line" href="https://github.com/billc8128/bento" target="_blank" rel="noopener">GitHub</a>
@@ -453,33 +469,6 @@
     nav.classList.toggle("scrolled", scrollY > 6);
     nav.classList.toggle("cta-out", heroActs.getBoundingClientRect().bottom < 77);
   };
-
-  /* ===== outro:复刻产品 WelcomeHero,进入视口自动播放,离开重置(再进重播) ===== */
-  const outro = document.querySelector(".outro");
-  const outroTitle = document.getElementById("outroTitle");
-  let ci = 0;
-  const words = outroTitle.textContent.split(" ");
-  outroTitle.textContent = "";
-  words.forEach((word, wi) => {
-    const w = document.createElement("span");
-    w.className = "w-word";
-    w.style.display = "inline-block"; w.style.whiteSpace = "pre";
-    [...word].forEach((ch) => {
-      const s = document.createElement("span");
-      s.className = "wchar";
-      s.textContent = ch;
-      const enter = 550 + ci * 38; /* 等三格拼完再起字 */
-      s.style.setProperty("--cd", `${enter}ms`);
-      s.style.setProperty("--wd", `${enter + 700}ms`); /* 琥珀波接力 */
-      ci++;
-      w.appendChild(s);
-    });
-    outroTitle.appendChild(w);
-    if (wi < words.length - 1) outroTitle.appendChild(document.createTextNode(" "));
-  });
-  new IntersectionObserver((entries) => {
-    entries.forEach((en) => outro.classList.toggle("in-view", en.isIntersecting));
-  }, { threshold: 0.35 }).observe(outro);
   addEventListener("scroll", onScroll, { passive: true });
   onScroll();
 
@@ -621,6 +610,7 @@ void main() {
 }`;
 
   const canvas = document.getElementById("skyCanvas");
+  if (!canvas || canvas.clientWidth === 0) return;
   const gl = canvas.getContext("webgl", { alpha: false, antialias: false, premultipliedAlpha: false });
   if (!gl) return;
 
@@ -682,67 +672,6 @@ void main() {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     if (!reduceMotion) requestAnimationFrame(draw);
   })(performance.now());
-})();
-</script>
-
-<script>
-/* ===== Mix & match:便当盒 —— 每格 harness 居中,6 个模型 logo 环绕慢转 ===== */
-(function () {
-  const cellsHost = document.getElementById("bentoCells");
-  if (!cellsHost) return;
-  const NS = "http://www.w3.org/2000/svg";
-  const MODELS = [
-    "assets/logos/models/openai.svg",
-    "assets/logos/models/claude-color.svg",
-    "assets/logos/models/kimi.svg",
-    "assets/logos/models/zhipu-color.svg",
-    "assets/logos/models/qwen-color.svg",
-    "assets/logos/models/gemini-color.svg",
-  ];
-  /* cx/cy 格中心;hw harness 尺寸;rx/ry 轨道;ms 模型尺寸;ny 名字 y */
-  const CELLS = [
-    { cx: 296,  cy: 356, hw: 58, rx: 118, ry: 96, ms: 17, name: "Codex",       img: "assets/logos/codex.svg",       ny: 482 },
-    { cx: 608,  cy: 281, hw: 38, rx: 61,  ry: 45, ms: 12, name: "Claude Code", img: "assets/logos/claude-code.svg", ny: 342 },
-    { cx: 825,  cy: 281, hw: 38, rx: 61,  ry: 45, ms: 12, name: "Kimi Code",   img: "assets/logos/kimi.png",        ny: 342 },
-    { cx: 1040, cy: 281, hw: 38, rx: 61,  ry: 45, ms: 12, name: "OpenCode",    img: "assets/logos/opencode.svg",    ny: 342 },
-    { cx: 608,  cy: 431, hw: 38, rx: 61,  ry: 45, ms: 12, name: "Pi",          pi: true,                            ny: 492 },
-    { cx: 825,  cy: 431, hw: 38, rx: 61,  ry: 45, ms: 12, name: "OMP",         img: "assets/logos/omp.svg",         ny: 492 },
-    { cx: 1040, cy: 431, hw: 38, rx: 61,  ry: 45, ms: 12, name: "Hermes",      img: "assets/logos/hermes.svg",      ny: 492 },
-  ];
-  const mk = (tag, attrs, parent) => {
-    const e = document.createElementNS(NS, tag);
-    for (const k in attrs) e.setAttribute(k, attrs[k]);
-    (parent || cellsHost).appendChild(e);
-    return e;
-  };
-
-  const orbiters = [];
-  CELLS.forEach((c, ci) => {
-    const g = mk("g", {});
-    /* 手绘盘子 */
-    mk("ellipse", { cx: c.cx, cy: c.cy, rx: c.hw * 0.78, ry: c.hw * 0.72, fill: "#ffffff", stroke: "#1a1a18", "stroke-width": 2.5, filter: "url(#wob)" }, g);
-    /* 中心 harness */
-    if (c.pi) {
-      const t = mk("text", { x: c.cx, y: c.cy + 14, "text-anchor": "middle", "font-family": "Georgia, serif", "font-style": "italic", fontSize: 40, "font-size": 40, fill: "#1a1a18" }, g);
-      t.textContent = "π";
-    } else {
-      mk("image", { href: c.img, x: c.cx - c.hw / 2, y: c.cy - c.hw / 2, width: c.hw, height: c.hw, style: "clip-path: inset(0 round 12px)" }, g);
-    }
-    /* 名字 */
-    const rot = ci % 2 ? 1.5 : -1.5;
-    const lbl = mk("text", { class: "hname", x: c.cx, y: c.ny, "text-anchor": "middle", transform: `rotate(${rot} ${c.cx} ${c.ny})` }, g);
-    lbl.textContent = c.name;
-    /* 模型 = 撒在盘子周围的配料:固定位置,各自轻微起伏 */
-    MODELS.forEach((m, mi) => {
-      const a = (mi / MODELS.length) * Math.PI * 2 + (ci % 3) * 0.5; /* 逐格转个角度,避免雷同 */
-      const img = mk("image", {
-        href: m, width: c.ms, height: c.ms, class: "dot",
-        x: c.cx + c.rx * Math.cos(a) - c.ms / 2,
-        y: c.cy + c.ry * Math.sin(a) - c.ms / 2,
-        style: `clip-path: inset(0 round 3px); animation-delay: ${-(ci * 0.7 + mi * 0.5).toFixed(2)}s; animation-duration: ${(2.6 + ((ci + mi) % 3) * 0.4).toFixed(2)}s`,
-      }, g);
-    });
-  });
 })();
 </script>
 
