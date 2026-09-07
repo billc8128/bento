@@ -72,6 +72,11 @@ if (app.isPackaged) {
   }
 }
 
+/** 隔离实例(录素材/并行测试):BENTO_USER_DATA 指向独立数据目录,必须在各 store 初始化前 set。 */
+if (process.env.BENTO_USER_DATA) {
+  app.setPath("userData", process.env.BENTO_USER_DATA)
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 let win: BrowserWindow | null = null
