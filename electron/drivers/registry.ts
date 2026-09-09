@@ -10,6 +10,7 @@ const drivers = new Map<DriverId, HarnessDriver>([
   ["opencode", createAcpDriver("opencode")],
   ["omp", createAcpDriver("omp")],
   ["hermes", createAcpDriver("hermes")],
+  ["trae", createAcpDriver("trae")],
   ["pi", piDriver],
   ["codex", codexDriver],
 ])

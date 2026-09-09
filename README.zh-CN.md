@@ -35,7 +35,7 @@
 
 Agent 很强，但它们的会话、模型、权限和项目上下文往往散落在不同终端中。Bento 把这些工作收进同一个桌面，同时保留你已经在使用的 Harness。
 
-- **一个工作台，多种 Harness**：在 Pi、Codex、Claude Code、Kimi Code、OpenCode、OMP 与 Hermes 之间切换。
+- **一个工作台，多种 Harness**：在 Pi、Codex、Claude Code、Kimi Code、OpenCode、OMP、Hermes 与 Trae Code 之间切换。
 - **真正的多 Agent 工作**：并排打开多个 Agent，并在会话和项目之间委派任务。
 - **使用自己的模型与 Provider**：发现本地凭证、连接受支持的 Provider、选择模型，并把推理配置真实传给底层 Harness。
 - **工作区工具集中呈现**：聊天、终端、文件、预览与浏览器共用同一套桌面布局。
@@ -53,6 +53,7 @@ Agent 很强，但它们的会话、模型、权限和项目上下文往往散�
 | OpenCode | Agent Client Protocol（ACP） |
 | OMP | Agent Client Protocol（ACP） |
 | Hermes | Agent Client Protocol（ACP） |
+| Trae Code | Agent Client Protocol（ACP） |
 
 模型行为与登录状态仍由各 Harness 负责。对于受支持的运行时，Bento 会内置或按固定版本下载，并在使用前校验下载产物。
 
@@ -100,7 +101,7 @@ Electron Main Process
     │
 统一 Harness Driver + 事件契约
     │
-Pi · Codex · Claude Code · Kimi · OpenCode · OMP · Hermes
+Pi · Codex · Claude Code · Kimi · OpenCode · OMP · Hermes · Trae
 ```
 
 “本地优先”不等于完全离线：Prompt 与工具调用仍可能发送给你通过 Harness 选择的模型 Provider。

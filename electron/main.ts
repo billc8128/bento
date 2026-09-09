@@ -37,6 +37,7 @@ import { OpenCodeBentoConfigAdapter } from "./session-config/opencode"
 import { OmpBentoConfigAdapter } from "./session-config/omp"
 import { PiBentoConfigAdapter } from "./session-config/pi"
 import { HermesBentoConfigAdapter } from "./session-config/hermes"
+import { TraeBentoConfigAdapter } from "./session-config/trae"
 import { RoutedBentoConfigAdapter } from "./session-config/routed"
 import { SessionConfigRegistry } from "./session-config/registry"
 import type { SessionProviderRuntime } from "./session-config/types"
@@ -317,7 +318,7 @@ app.whenReady().then(async () => {
     // 内置 OAuth Provider 与 user Provider 一起进入目标 Harness 的完整注册表。
     // credential handle 闭包只在 main 解析 safeStorage,绝不回 renderer。
     const BENTO_FULL_REGISTRY_HARNESSES = [
-      "claude-code", "codex", "kimi", "opencode", "omp", "pi", "hermes",
+      "claude-code", "codex", "kimi", "opencode", "omp", "pi", "hermes", "trae",
     ] as const
     if (!BENTO_FULL_REGISTRY_HARNESSES.includes(harnessId as typeof BENTO_FULL_REGISTRY_HARNESSES[number])) return []
     const configs = [...builtinProvidersForHarness(harnessId), ...customProviders.list()]
@@ -355,6 +356,7 @@ app.whenReady().then(async () => {
   configAdapters.register(new OmpBentoConfigAdapter("omp", activeRouting, app.getPath("userData")))
   configAdapters.register(new PiBentoConfigAdapter("pi", activeRouting, app.getPath("userData")))
   configAdapters.register(new HermesBentoConfigAdapter("hermes", activeRouting, app.getPath("userData")))
+  configAdapters.register(new TraeBentoConfigAdapter("trae", activeRouting, app.getPath("userData")))
   configAdapters.register(new RoutedBentoConfigAdapter("claude-code", activeRouting, app.getPath("userData")))
   configAdapters.register(new RoutedBentoConfigAdapter("codex", activeRouting, app.getPath("userData")))
 

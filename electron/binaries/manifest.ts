@@ -1,9 +1,10 @@
-export type ManagedBinaryName = "codex" | "codex-code-mode-host" | "kimi" | "opencode" | "omp" | "uv" | "uvx"
+export type ManagedBinaryName = "codex" | "codex-code-mode-host" | "kimi" | "opencode" | "omp" | "uv" | "uvx" | "trae"
 
 export type BinaryArtifact = {
   url: string
   sha256: string
-  archive: "tar.gz" | "zip" | "binary"
+  /** "gz" = 单文件 gzip 产物(如 traex),解压即得可执行文件。 */
+  archive: "tar.gz" | "zip" | "binary" | "gz"
   /** 解包后的入口;bundle=true 时是目录,整目录入 installDir。 */
   archiveEntry: string
   executable: string
@@ -113,6 +114,21 @@ export const BINARY_MANIFEST: Record<ManagedBinaryName, BinaryManifestEntry> = {
         archive: "zip",
         archiveEntry: "uv-0.12.6.data/scripts/uv",
         executable: "uv",
+      },
+    },
+  },
+  trae: {
+    // TraeCode CLI(traecli)官方 ToB 发行通道,首次使用时从官方 CDN 下载;
+    // 摘要与 install 脚本 install_v2.sh 的 manifest 校验同一来源。
+    version: "0.202.1-tob",
+    overrideEnv: "BENTO_TRAE_PATH",
+    platforms: {
+      "darwin-arm64": {
+        url: "https://lf-cdn.trae.com.cn/obj/trae-com-cn/trae-cli/v2/releases/0.202.1-tob/traex-macos-aarch64.gz",
+        sha256: "6f8e0bf7b233123ef1a623409aed2f7ef7bebbac2d6a0a51b02d25edc0700cf3",
+        archive: "gz",
+        archiveEntry: "traex",
+        executable: "traex",
       },
     },
   },

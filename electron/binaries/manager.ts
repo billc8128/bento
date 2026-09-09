@@ -6,6 +6,7 @@ import { Readable } from "node:stream"
 import type { ReadableStream as NodeReadableStream } from "node:stream/web"
 import { pipeline } from "node:stream/promises"
 import { promisify } from "node:util"
+import zlib from "node:zlib"
 
 import { BINARY_MANIFEST, type ManagedBinaryName } from "./manifest"
 import type { BinaryProgress } from "./progress"
@@ -91,7 +92,13 @@ export class BinaryManager {
       tempDir = await fs.promises.mkdtemp(path.join(this.rootDir, `.${name}-`))
       const archive = path.join(
         tempDir,
-        artifact.archive === "zip" ? "download.zip" : artifact.archive === "tar.gz" ? "download.tar.gz" : "download",
+        artifact.archive === "zip"
+          ? "download.zip"
+          : artifact.archive === "tar.gz"
+            ? "download.tar.gz"
+            : artifact.archive === "gz"
+              ? "download.gz"
+              : "download",
       )
       await this.download(artifact.url, archive, (received, total) => {
         this.onProgress({
@@ -117,7 +124,16 @@ export class BinaryManager {
 
       const extracted = path.join(tempDir, "extracted")
       let source = archive
-      if (artifact.archive !== "binary") {
+      if (artifact.archive === "gz") {
+        // 单文件 gzip 产物:解压即得到可执行文件本身
+        await fs.promises.mkdir(extracted)
+        await pipeline(
+          fs.createReadStream(archive),
+          zlib.createGunzip(),
+          fs.createWriteStream(path.join(extracted, artifact.executable)),
+        )
+        source = path.join(extracted, artifact.executable)
+      } else if (artifact.archive !== "binary") {
         await fs.promises.mkdir(extracted)
         if (artifact.archive === "zip") {
           await execFileAsync("unzip", ["-q", archive, "-d", extracted])

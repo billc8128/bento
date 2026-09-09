@@ -73,7 +73,7 @@ export async function sendLegacySessionModel(
   await channel.sendRequest("session/set_model", { sessionId, modelId })
 }
 
-type AcpDriverId = Extract<DriverId, "kimi" | "opencode" | "omp" | "hermes">
+type AcpDriverId = Extract<DriverId, "kimi" | "opencode" | "omp" | "hermes" | "trae">
 
 type AcpOpenResult = {
   child: ChildProcess
@@ -98,16 +98,17 @@ type AcpOpen = (
 ) => Promise<AcpOpenResult>
 
 async function harnessCommand(id: AcpDriverId): Promise<SpawnSpec> {
+  const acpArgs = id === "trae" ? ["acp", "serve"] : ["acp"]
   return resolveHarnessRuntime(
     id,
     "managed",
-    (cmd) => ({ cmd, args: ["acp"] }),
+    (cmd) => ({ cmd, args: acpArgs }),
     async () => id === "hermes"
       ? {
           cmd: await managedUvxBinary(),
           args: ["--python", "3.12", "--from", `hermes-agent[acp]==${HERMES_AGENT_VERSION}`, "hermes-acp"],
         }
-      : { cmd: await managedBinary(id), args: ["acp"] },
+      : { cmd: await managedBinary(id), args: acpArgs },
   )
 }
 
@@ -399,7 +400,7 @@ class AcpDriver implements HarnessDriver {
       capabilities: {
         modelSwitch: selection.setModel ? "live" : "none",
         effortSwitch: selection.setEffort ? "live" : "none",
-        permissionSwitch: "live",
+        permissionSwitch: this.id === "trae" ? "none" : "live",
       },
       prompt: async (input) => {
         const request = normalizePromptInput(input)
@@ -443,9 +444,11 @@ class AcpDriver implements HarnessDriver {
       },
       ...(selection.setModel ? { setModel: async (modelId: string) => { await selection.setModel!(modelId) } } : {}),
       ...(selection.setEffort ? { setEffort: async (effort) => { await selection.setEffort!(effort) } } : {}),
-      async setPermissionProfile(next: PermissionProfile) {
-        permission.current = next
-      },
+      ...(this.id === "trae" ? {} : {
+        async setPermissionProfile(next: PermissionProfile) {
+          permission.current = next
+        },
+      }),
       resolveApproval(id: string, decision: ApprovalDecision) {
         const waiter = approvals.waiters.get(id)
         if (!waiter) return

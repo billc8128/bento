@@ -2,6 +2,7 @@ import type { HTMLAttributes } from "react"
 import { Pi } from "lucide-react"
 
 import hermesIcon from "@lobehub/icons-static-svg/icons/hermesagent.svg"
+import traeIcon from "@lobehub/icons-static-svg/icons/trae.svg"
 
 import claudeCodeIcon from "@/assets/harnesses/claude-code.svg"
 import codexIcon from "@/assets/harnesses/codex.svg"
@@ -29,6 +30,7 @@ const OPTICAL_SCALE: Partial<Record<HarnessId, number>> = {
   codex: 1.25, // 40 网格,字形 ~32:四周留白 10%
   "claude-code": 1.25, // 同上
   hermes: 1.1, // lobehub 24 网格,留白 ~1/24
+  trae: 1.1, // lobehub 24 网格,字形占 ~71%,与 hermes 同档
 }
 
 /** 垂直光学补偿(px,向下为正)。几何居中后大多数 mark 与文字质心已对齐
@@ -76,6 +78,24 @@ export function HarnessIcon({ id, className, ...props }: HarnessIconProps) {
           draggable={false}
           className="size-full object-contain dark:invert"
           style={{ transform: opticalTransform("hermes") }}
+        />
+      </span>
+    )
+  }
+
+  if (id === "trae") {
+    return (
+      <span
+        className={cn("inline-flex size-5 shrink-0 items-center justify-center", className)}
+        aria-hidden
+        {...props}
+      >
+        <img
+          src={traeIcon}
+          alt=""
+          draggable={false}
+          className="size-full object-contain dark:invert"
+          style={{ transform: opticalTransform("trae") }}
         />
       </span>
     )

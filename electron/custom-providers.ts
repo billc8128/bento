@@ -85,7 +85,7 @@ export function validateCustomProvider(config: unknown): ValidationResult {
     return { ok: false, message: "runtimePolicy 必须是 preset 或 custom" }
   if (c.disabledHarnesses !== undefined && (
     !Array.isArray(c.disabledHarnesses) ||
-    c.disabledHarnesses.some((id) => !["claude-code", "codex", "pi", "kimi", "opencode", "omp", "hermes"].includes(id))
+    c.disabledHarnesses.some((id) => !["claude-code", "codex", "pi", "kimi", "opencode", "omp", "hermes", "trae"].includes(id))
   )) return { ok: false, message: "disabledHarnesses 包含未知 Harness" }
   if (!c.auth || (c.auth.method !== "none" && c.auth.method !== "apiKey" && c.auth.method !== "oauth"))
     return { ok: false, message: "鉴权方式必须是 none、apiKey 或 oauth" }
@@ -120,7 +120,7 @@ export function validateCustomProvider(config: unknown): ValidationResult {
   const entries = Object.entries(c.runtimes)
   if (entries.length === 0) return { ok: false, message: "至少配置一个 runtime" }
   for (const [agent, runtime] of entries) {
-    if (!["claude-code", "codex", "pi", "kimi", "opencode", "omp", "hermes"].includes(agent))
+    if (!["claude-code", "codex", "pi", "kimi", "opencode", "omp", "hermes", "trae"].includes(agent))
       return { ok: false, message: `不支持的 runtime: ${agent}` }
     if (!runtime || typeof runtime !== "object") return { ok: false, message: "runtime 配置无效" }
     if (typeof runtime.baseUrl !== "string" || !/^https?:\/\//.test(runtime.baseUrl.trim()))
@@ -426,7 +426,7 @@ export class CustomProviderStore {
   remove(providerId: string): void {
     const next = this.list().filter((item) => item.id !== providerId)
     if (next.length === this.list().length) throw new Error(`供应商不存在: ${providerId}`)
-    for (const agent of ["claude-code", "codex", "pi", "kimi", "opencode", "omp", "hermes"]) {
+    for (const agent of ["claude-code", "codex", "pi", "kimi", "opencode", "omp", "hermes", "trae"]) {
       this.secrets.delete(secretKeyOf(providerId, agent))
     }
     this.secrets.delete(providerSecretKeyOf(providerId))

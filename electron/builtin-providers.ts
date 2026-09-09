@@ -35,6 +35,12 @@ export const BUILTIN_PROVIDERS: Record<BuiltinProviderId, CustomProviderConfig> 
         wireProtocol: "anthropic-messages",
         models: [],
       },
+      // trae 自定义模型后端支持 claude(anthropic messages) section,OAuth 路由由代理注入
+      trae: {
+        baseUrl: "https://api.anthropic.com",
+        wireProtocol: "anthropic-messages",
+        models: [],
+      },
     },
   },
   openai: {

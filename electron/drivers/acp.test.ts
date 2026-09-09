@@ -199,3 +199,18 @@ describe("ACP Driver session lifecycle", () => {
     }
   })
 })
+
+
+describe("Trae permission capabilities", () => {
+  it("does not advertise or accept local-only permission switching", async () => {
+    const child = Object.assign(new EventEmitter(), { kill: vi.fn() })
+    const conn = { newSession: async () => ({ sessionId: "trae-test" }) }
+    const connection = await createAcpDriver("trae").start(
+      { cwd: "/workspace", permissionProfile: "restricted" }, vi.fn(),
+      { open: async () => ({ child, conn, init: { agentCapabilities: {} } }) },
+    )
+    expect(connection.capabilities.permissionSwitch).toBe("none")
+    expect(connection.setPermissionProfile).toBeUndefined()
+    connection.close()
+  })
+})

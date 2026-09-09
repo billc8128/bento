@@ -42,4 +42,21 @@ describe("provider catalog", () => {
       .toHaveLength(11)
     expect(JSON.stringify(PROVIDER_PRESETS)).not.toContain('"staticModels"')
   })
+
+  it("trae runtime 只声明受支持的 wire,且与同 preset 的既有 wire 同源", () => {
+    for (const preset of PROVIDER_PRESETS) {
+      const trae = preset.runtimes.trae
+      if (!trae) continue
+      // trae 自定义模型后端只有 open_ai(chat)/claude(anthropic)两种 section
+      expect(["openai-chat", "anthropic-messages"], preset.id).toContain(trae.wireProtocol)
+      // chat wire 与 claude-code 的 chat runtime 同源;anthropic 与 claude-code 的 anthropic runtime 同源
+      const claudeCode = preset.runtimes["claude-code"]
+      if (claudeCode && claudeCode.wireProtocol === trae.wireProtocol) {
+        expect(trae.baseUrl, preset.id).toBe(claudeCode.baseUrl)
+      }
+    }
+    // 直连且可走 chat/anthropic 的 preset 都补齐了 trae;responses-only(actual)除外
+    const withTrae = PROVIDER_PRESETS.filter((preset) => preset.runtimes.trae)
+    expect(withTrae.length).toBeGreaterThan(70)
+  })
 })

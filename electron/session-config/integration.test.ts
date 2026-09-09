@@ -17,6 +17,7 @@ import { OpenCodeBentoConfigAdapter } from "./opencode"
 import { OmpBentoConfigAdapter } from "./omp"
 import { PiBentoConfigAdapter } from "./pi"
 import { HermesBentoConfigAdapter } from "./hermes"
+import { TraeBentoConfigAdapter } from "./trae"
 import { SessionConfigRegistry } from "./registry"
 
 function memorySecrets(): SecretStore {
@@ -37,7 +38,7 @@ afterEach(() => {
 })
 
 /** 按 harnessId 生成含单个 runtime 的 user config。 */
-function userConfig(harnessId: "kimi" | "opencode" | "omp" | "pi" | "hermes", id: string, models: ProviderModel[]): CustomProviderConfig {
+function userConfig(harnessId: "kimi" | "opencode" | "omp" | "pi" | "hermes" | "trae", id: string, models: ProviderModel[]): CustomProviderConfig {
   return {
     id,
     name: id,
@@ -57,8 +58,8 @@ function userConfig(harnessId: "kimi" | "opencode" | "omp" | "pi" | "hermes", id
   }
 }
 
-/** fake driver(kimi/opencode/omp/pi/hermes 通用):记录 start options 与 setModel 调用;可注入进程 exit。 */
-function fakeDriver(id: "kimi" | "opencode" | "omp" | "pi" | "hermes" = "kimi") {
+/** fake driver(kimi/opencode/omp/pi/hermes/trae 通用):记录 start options 与 setModel 调用;可注入进程 exit。 */
+function fakeDriver(id: "kimi" | "opencode" | "omp" | "pi" | "hermes" | "trae" = "kimi") {
   const starts: HarnessStartOptions[] = []
   const setModelCalls: string[] = []
   let exitListener: ((code: number | null) => void) | undefined
@@ -90,7 +91,7 @@ function fakeDriver(id: "kimi" | "opencode" | "omp" | "pi" | "hermes" = "kimi") 
 }
 
 /** bento 模式 runtime resolver(main 侧逻辑镜像,含 credential handle)。 */
-function bentoRuntimes(harnessId: "kimi" | "opencode" | "omp" | "pi" | "hermes", store: CustomProviderStore) {
+function bentoRuntimes(harnessId: "kimi" | "opencode" | "omp" | "pi" | "hermes" | "trae", store: CustomProviderStore) {
   return async () => store.list()
     .filter((config) =>
       config.runtimes[harnessId] &&
@@ -670,5 +671,67 @@ describe("Pi bento adapter 集成", () => {
     expect(
       fs.readdirSync(path.join(dir, "providers")).filter((name) => name.startsWith("pi-bento-")),
     ).toHaveLength(0)
+  })
+})
+
+describe("Trae bento adapter 集成", () => {
+  it("start 失败立即回收租约与状态:无目录/route 泄漏", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-sm-trae-fail-"))
+    dirs.push(dir)
+    const store = new CustomProviderStore(dir, memorySecrets())
+    store.upsert(userConfig("trae", "user-alpha", [{ id: "m-a1", name: "A1", reasoning: false }]), { "*": "sk-a" })
+    const routing = new ProviderRoutingService(dir, () => store)
+    routings.push(routing)
+    const registry = new SessionConfigRegistry()
+    registry.register(new TraeBentoConfigAdapter("trae", routing, dir))
+
+    let attemptedHome = ""
+    const failingDriver: HarnessDriver = {
+      id: "trae",
+      async start(options) {
+        attemptedHome = options.proxyEnv?.env.TRAE_HOME ?? ""
+        throw new Error("trae spawn 失败")
+      },
+    }
+    const manager = new SessionManager(dir, () => {}, () => failingDriver, routing, null, registry, bentoRuntimes("trae", store))
+    await expect(manager.createSession({
+      harnessId: "trae", cwd: dir, providerId: "user-alpha", modelId: "m-a1",
+    })).rejects.toThrow(/trae spawn 失败/)
+
+    expect(fs.existsSync(attemptedHome)).toBe(false)
+    expect(routing.sessionsUsing("user-alpha")).toBe(0)
+  })
+
+  it("进程异常退出后隔离目录保留(revive 可恢复)", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-sm-trae-exit-"))
+    dirs.push(dir)
+    const store = new CustomProviderStore(dir, memorySecrets())
+    store.upsert(userConfig("trae", "user-alpha", [{ id: "m-a1", name: "A1", reasoning: false }]), { "*": "sk-a" })
+    const routing = new ProviderRoutingService(dir, () => store)
+    routings.push(routing)
+    const registry = new SessionConfigRegistry()
+    registry.register(new TraeBentoConfigAdapter("trae", routing, dir))
+    const { driver, starts, triggerExit } = fakeDriver("trae")
+    const manager = new SessionManager(
+      dir, () => {}, () => driver, routing,
+      async (record) => ({ providerId: record.providerId!, modelId: record.modelId! }),
+      registry, bentoRuntimes("trae", store),
+    )
+    const { key } = await manager.createSession({
+      harnessId: "trae", cwd: dir, providerId: "user-alpha", modelId: "m-a1",
+    })
+    await manager.prompt(key, "第一轮")
+    const home = starts[0]!.proxyEnv!.env.TRAE_HOME!
+    expect(fs.existsSync(path.join(home, "traecli.toml"))).toBe(true)
+
+    // 进程异常退出:routes 回收但 TRAE_HOME 保留,revive 复用同一目录
+    triggerExit(1)
+    expect(routing.sessionsUsing("user-alpha")).toBe(0)
+    expect(fs.existsSync(home)).toBe(true)
+    await manager.prompt(key, "续聊")
+    expect(starts).toHaveLength(2)
+    expect(starts[1]!.proxyEnv!.env.TRAE_HOME).toBe(home)
+    await manager.removeSession(key)
+    expect(fs.existsSync(home)).toBe(false)
   })
 })

@@ -8,7 +8,7 @@
 
 import type { Effort } from "./types"
 
-export type HarnessId = "claude-code" | "kimi" | "codex" | "opencode" | "pi" | "omp" | "hermes"
+export type HarnessId = "claude-code" | "kimi" | "codex" | "opencode" | "pi" | "omp" | "hermes" | "trae"
 export const DEFAULT_HARNESS_ID: HarnessId = "pi"
 
 export type Harness = {
@@ -41,7 +41,7 @@ export type HarnessRuntimeStatus = {
 }
 
 /** 选择器里的规范排序(pi 在最前,是开箱即用的默认) */
-export const HARNESS_ORDER: HarnessId[] = ["pi", "codex", "claude-code", "kimi", "opencode", "omp", "hermes"]
+export const HARNESS_ORDER: HarnessId[] = ["pi", "codex", "claude-code", "kimi", "opencode", "omp", "hermes", "trae"]
 
 export const HARNESSES: Harness[] = [
   {
@@ -109,6 +109,16 @@ export const HARNESSES: Harness[] = [
     permissionSwitch: "live",
     name: "Hermes",
     short: "H",
+    live: true,
+    effortSelection: false,
+    efforts: [],
+    defaultEffort: "medium",
+  },
+  {
+    id: "trae",
+    permissionSwitch: "none",
+    name: "Trae Code",
+    short: "TR",
     live: true,
     effortSelection: false,
     efforts: [],

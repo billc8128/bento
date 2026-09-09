@@ -96,15 +96,17 @@ export function RuntimePicker({
   )
   // 权限档位:codex 是 OS 沙箱硬边界;claude/ACP 系是工具集近似(非硬边界);
   // pi 暂无映射(等同放行)。会话中 codex 换档需新会话(thread 级一次性下发)。
-  const permissionLabel = t(PERMISSION_PROFILES.find((p) => p.id === permissionProfile)?.nameKey ?? "core.profileStandardName")
-  const permissionNote = selection.harnessId === "pi"
+  const permissionLabel = selection.harnessId === "trae" ? t("workspace.permissionManagedByTrae") : t(PERMISSION_PROFILES.find((p) => p.id === permissionProfile)?.nameKey ?? "core.profileStandardName")
+  const permissionNote = selection.harnessId === "trae"
+    ? t("workspace.permissionNoteTrae")
+    : selection.harnessId === "pi"
     ? t("workspace.permissionNotePi")
     : !onPermissionChange && session && selection.harnessId === "codex"
       ? t("workspace.permissionNoteCodex")
       : selection.harnessId !== "codex"
         ? t("workspace.permissionNoteApprox")
         : undefined
-  const canTunePermission = Boolean(onPermissionChange) && selection.harnessId !== "pi"
+  const canTunePermission = Boolean(onPermissionChange) && harness.permissionSwitch !== "none"
   const needle = query.trim().toLowerCase()
   const sections = useMemo(
     () => selectableProviders.flatMap((provider) => {
@@ -339,7 +341,7 @@ export function RuntimePicker({
                 {PERMISSION_PROFILES.map((profile) => (
                   <button key={profile.id} type="button" disabled={!canTunePermission} onClick={() => pickPermission(profile.id)} className="flex min-h-12 w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-default disabled:opacity-45">
                     <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{t(profile.nameKey)}</span><span className="block truncate text-xs text-muted-foreground">{t(profile.descKey)}</span></span>
-                    {profile.id === permissionProfile && <Check className="size-4 shrink-0" />}
+                    {canTunePermission && profile.id === permissionProfile && <Check className="size-4 shrink-0" />}
                   </button>
                 ))}
               </div>

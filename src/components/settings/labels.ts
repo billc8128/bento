@@ -7,7 +7,9 @@ export const PROTOCOL_LABELS: Record<WireProtocol, string> = {
   "openai-responses": "OpenAI Responses",
 }
 
-/** 每个 harness 在桥接层真实支持的 wire 协议;codex 走 responses 原生或 chat 桥接。 */
+/** 每个 harness 在桥接层真实支持的 wire 协议;codex 走 responses 原生或 chat 桥接。
+ *  trae 自定义模型后端只有 open_ai(chat completions)/claude(anthropic messages)
+ *  两种 section(spike 实证 wire_api 字段被忽略),不支持 openai-responses。 */
 export const HARNESS_PROTOCOLS: Record<CustomHarnessId, WireProtocol[]> = {
   "claude-code": ["anthropic-messages", "openai-chat"],
   codex: ["openai-responses", "openai-chat"],
@@ -16,10 +18,11 @@ export const HARNESS_PROTOCOLS: Record<CustomHarnessId, WireProtocol[]> = {
   opencode: ["openai-chat", "openai-responses", "anthropic-messages"],
   omp: ["openai-chat", "openai-responses", "anthropic-messages"],
   hermes: ["openai-chat", "openai-responses", "anthropic-messages"],
+  trae: ["openai-chat", "anthropic-messages"],
 }
 
 export const CUSTOM_HARNESSES: CustomHarnessId[] = [
-  "claude-code", "codex", "pi", "kimi", "opencode", "omp", "hermes",
+  "claude-code", "codex", "pi", "kimi", "opencode", "omp", "hermes", "trae",
 ]
 
 type FetchFailure =
