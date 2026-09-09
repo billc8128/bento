@@ -131,7 +131,7 @@ export type CustomProviderConfig = {
 export type CustomHarnessId = HarnessId
 
 const CUSTOM_HARNESS_ORDER: readonly CustomHarnessId[] = [
-  "claude-code", "codex", "pi", "kimi", "opencode", "omp", "hermes",
+  "claude-code", "codex", "pi", "kimi", "opencode", "omp", "hermes", "trae",
 ]
 
 /**

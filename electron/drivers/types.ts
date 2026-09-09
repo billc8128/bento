@@ -3,7 +3,7 @@ import type { ApprovalDecision } from "../../src/core/events"
 import type { PermissionProfile } from "../../src/core/permission"
 import type { Effort, PromptInput } from "../../src/core/types"
 
-export type HarnessId = "claude-code" | "kimi" | "codex" | "opencode" | "pi" | "omp" | "hermes"
+export type HarnessId = "claude-code" | "kimi" | "codex" | "opencode" | "pi" | "omp" | "hermes" | "trae"
 
 /** 旧版本曾把 GLM Coding Plan 当成 Harness；仅保留用于恢复历史会话。 */
 export type DriverId = HarnessId | "glm"

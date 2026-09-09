@@ -344,11 +344,11 @@ export class AppRuntimeHost {
     server.registerTool("model_list", {
       description: "列出目标 Harness 在当前或指定已有 Workspace 中可执行的 Provider/Model；仅返回已连接且启用的选项。",
       inputSchema: {
-        harnessId: z.enum(["claude-code", "codex", "kimi", "opencode", "pi", "omp", "hermes"]),
+        harnessId: z.enum(["claude-code", "codex", "kimi", "opencode", "pi", "omp", "hermes", "trae"]),
         cwd: z.string().optional(),
       },
     }, wrap(async (args) => requireService().modelList(caller, {
-      harnessId: args.harnessId as "claude-code" | "codex" | "kimi" | "opencode" | "pi" | "omp" | "hermes",
+      harnessId: args.harnessId as "claude-code" | "codex" | "kimi" | "opencode" | "pi" | "omp" | "hermes" | "trae",
       ...(typeof args.cwd === "string" ? { cwd: args.cwd } : {}),
     })))
 
@@ -359,7 +359,7 @@ export class AppRuntimeHost {
         prompt: z.string().optional(),
         scope: z.enum(["chat", "project"]).optional(),
         cwd: z.string().optional(),
-        harnessId: z.enum(["claude-code", "codex", "kimi", "opencode", "pi", "omp", "hermes"]).optional(),
+        harnessId: z.enum(["claude-code", "codex", "kimi", "opencode", "pi", "omp", "hermes", "trae"]).optional(),
         providerId: z.string().optional(),
         modelId: z.string().optional(),
         effort: z.enum(["off", "auto", "low", "medium", "high", "max"]).optional(),

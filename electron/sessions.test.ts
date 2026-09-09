@@ -12,6 +12,7 @@ import { SessionConfigRegistry } from "./session-config/registry"
 import type { SessionConfigAdapter } from "./session-config/types"
 import { selectionKey } from "./session-config/types"
 import type { HarnessId } from "../src/core/harness"
+import { traeModelName, TraeBentoConfigAdapter } from "./session-config/trae"
 
 let tempDir = ""
 
@@ -643,6 +644,101 @@ describe("SessionManager session-config adapter 路由", () => {
     expect(setModelCalls).toBe(0)
     expect(manager.listSessions()[0]).toMatchObject({ providerId: "user-relay-a", modelId: "m1" })
     await manager.disposeAll()
+    routing.dispose()
+  })
+
+  it("trae 会话经 Trae adapter 隔离 TRAE_HOME/app-server 后端;live 跨 Provider 切换;失败回滚;删除清理目录", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-trae-session-"))
+    const store = new CustomProviderStore(tempDir, memorySecrets())
+    store.upsert({
+      id: "user-trae-a",
+      name: "Trae A",
+      auth: { method: "apiKey" },
+      runtimes: {
+        trae: {
+          baseUrl: "https://a.example.com/v1", wireProtocol: "openai-chat",
+          models: [{ id: "ta1", name: "TA1" }, { id: "ta2", name: "TA2" }],
+        },
+      },
+    }, { "*": "sk-trae-a" })
+    store.upsert({
+      id: "user-trae-b",
+      name: "Trae B",
+      auth: { method: "apiKey" },
+      runtimes: {
+        trae: {
+          baseUrl: "https://b.example.com/v1", wireProtocol: "anthropic-messages",
+          models: [{ id: "tb1", name: "TB1" }],
+        },
+      },
+    }, { "*": "sk-trae-b" })
+    const routing = new ProviderRoutingService(tempDir, () => store)
+    const registry = new SessionConfigRegistry()
+    registry.register(new TraeBentoConfigAdapter("trae", routing, tempDir))
+
+    const starts: HarnessStartOptions[] = []
+    const setModelCalls: string[] = []
+    let setModelShouldFail = false
+    const driver: HarnessDriver = {
+      id: "trae",
+      async start(options) {
+        starts.push(options)
+        return {
+          nativeSessionId: `trae-native-${starts.length}`,
+          capabilities: { modelSwitch: "live", effortSwitch: "none" },
+          prompt: async () => ({ stopReason: "end_turn" }),
+          cancel: async () => {},
+          close: () => {},
+          onExit: () => () => {},
+          setModel: async (modelId) => {
+            if (setModelShouldFail) throw new Error("set_model failed")
+            setModelCalls.push(modelId)
+          },
+        }
+      },
+    }
+    const manager = new SessionManager(tempDir, () => {}, () => driver, null, null, registry, bentoRuntimes("trae", store))
+
+    const { key } = await manager.createSession({
+      harnessId: "trae",
+      cwd: tempDir,
+      providerId: "user-trae-a",
+      modelId: "ta1",
+    })
+    await manager.prompt(key, "第一轮")
+
+    // 启动隔离三件套 + wire model id = [[models]].name
+    expect(starts[0]!.proxyEnv!.env).toMatchObject({
+      TRAE_ACP_BACKEND: "app-server",
+    })
+    const traeHome = starts[0]!.proxyEnv!.env.TRAE_HOME!
+    expect(traeHome).toContain("trae-bento-")
+    expect(starts[0]!.proxyEnv!.env.TRAECLI_HOME).toBe(traeHome)
+    expect(starts[0]!.proxyEnv!.strip).toEqual(["TRAE_HOME", "TRAECLI_HOME", "TRAE_ACP_BACKEND"])
+    expect(starts[0]!.modelId).toBe(traeModelName("user-trae-a", "ta1"))
+    expect(fs.existsSync(path.join(traeHome, "traecli.toml"))).toBe(true)
+
+    // live 跨 Provider 切换:底层收到 β 的 [[models]].name,记录同步更新
+    await manager.setModel(key, "user-trae-b", "tb1")
+    expect(setModelCalls.at(-1)).toBe(traeModelName("user-trae-b", "tb1"))
+    expect(manager.listSessions()[0]).toMatchObject({ providerId: "user-trae-b", modelId: "tb1" })
+
+    // 失败回滚:底层 set_model 抛错时记录不变,lease 选择恢复为 β
+    setModelShouldFail = true
+    await expect(manager.setModel(key, "user-trae-a", "ta2")).rejects.toThrow(/set_model failed/)
+    expect(manager.listSessions()[0]).toMatchObject({ providerId: "user-trae-b", modelId: "tb1" })
+    setModelShouldFail = false
+
+    // 生命周期:close 保留隔离目录,revive 复用同一 TRAE_HOME,删除彻底清理
+    await manager.closeSession(key)
+    expect(fs.existsSync(traeHome)).toBe(true)
+    await manager.prompt(key, "续聊")
+    expect(starts.length).toBe(2)
+    expect(starts[1]!.proxyEnv!.env.TRAE_HOME).toBe(traeHome)
+    await manager.removeSession(key)
+    expect(fs.existsSync(traeHome)).toBe(false)
+    expect(routing.sessionsUsing("user-trae-a")).toBe(0)
+    expect(routing.sessionsUsing("user-trae-b")).toBe(0)
     routing.dispose()
   })
 

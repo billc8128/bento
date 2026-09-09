@@ -73,7 +73,7 @@ export async function sendLegacySessionModel(
   await channel.sendRequest("session/set_model", { sessionId, modelId })
 }
 
-type AcpDriverId = Extract<DriverId, "kimi" | "opencode" | "omp" | "hermes">
+type AcpDriverId = Extract<DriverId, "kimi" | "opencode" | "omp" | "hermes" | "trae">
 
 type AcpOpenResult = {
   child: ChildProcess
@@ -98,16 +98,17 @@ type AcpOpen = (
 ) => Promise<AcpOpenResult>
 
 async function harnessCommand(id: AcpDriverId): Promise<SpawnSpec> {
+  const acpArgs = id === "trae" ? ["acp", "serve"] : ["acp"]
   return resolveHarnessRuntime(
     id,
     "managed",
-    (cmd) => ({ cmd, args: ["acp"] }),
+    (cmd) => ({ cmd, args: acpArgs }),
     async () => id === "hermes"
       ? {
           cmd: await managedUvxBinary(),
           args: ["--python", "3.12", "--from", `hermes-agent[acp]==${HERMES_AGENT_VERSION}`, "hermes-acp"],
         }
-      : { cmd: await managedBinary(id), args: ["acp"] },
+      : { cmd: await managedBinary(id), args: acpArgs },
   )
 }
 

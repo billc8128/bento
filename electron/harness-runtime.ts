@@ -40,6 +40,7 @@ const DEFINITIONS: Record<HarnessId, RuntimeDefinition> = {
   omp: { command: "omp", overrideEnv: "BENTO_OMP_PATH", fallback: "managed", pathFallback: true },
   pi: { command: "pi", overrideEnv: "BENTO_PI_PATH", fallback: "bundled", pathFallback: true },
   hermes: { command: "hermes", overrideEnv: "BENTO_HERMES_PATH", fallback: "managed", pathFallback: true },
+  trae: { command: "traecli", overrideEnv: "BENTO_TRAE_PATH", fallback: "managed", pathFallback: true },
 }
 
 function executableOnPath(command: string, env: NodeJS.ProcessEnv = process.env): string | null {

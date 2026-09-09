@@ -65,6 +65,7 @@ function openAI(input: {
       opencode: runtime,
       omp: runtime,
       hermes: runtime,
+      trae: runtime,
     },
     modelDiscovery: input.modelsUrl === false
       ? { method: "manual" }
@@ -122,6 +123,8 @@ function dual(input: {
         baseUrl: input.codexBaseUrl,
         wireProtocol: input.codexProtocol ?? "openai-chat",
       },
+      // trae 不支持 responses wire:统一走 anthropic 端(与 claude-code 同一 base)
+      trae: { baseUrl: input.claudeBaseUrl, wireProtocol: "anthropic-messages" },
     },
     modelDiscovery: input.modelsUrl === false
       ? { method: "manual" }
@@ -184,6 +187,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       opencode: { baseUrl: "https://api.anthropic.com", wireProtocol: "anthropic-messages" },
       omp: { baseUrl: "https://api.anthropic.com", wireProtocol: "anthropic-messages" },
       hermes: { baseUrl: "https://api.anthropic.com", wireProtocol: "anthropic-messages" },
+      trae: { baseUrl: "https://api.anthropic.com", wireProtocol: "anthropic-messages" },
     },
     modelDiscovery: httpModels("https://api.anthropic.com/v1/models", "anthropic-list"),
   }),
@@ -234,6 +238,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       opencode: { baseUrl: "https://api.openai.com/v1", wireProtocol: "openai-responses" },
       omp: { baseUrl: "https://api.openai.com/v1", wireProtocol: "openai-responses" },
       hermes: { baseUrl: "https://api.openai.com/v1", wireProtocol: "openai-responses" },
+      trae: { baseUrl: "https://api.openai.com/v1", wireProtocol: "openai-chat" },
     },
     modelDiscovery: httpModels("https://api.openai.com/v1/models"),
   }),
@@ -270,6 +275,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       "claude-code": { baseUrl: "https://api.x.ai/v1", wireProtocol: "openai-chat" },
       codex: { baseUrl: "https://api.x.ai/v1", wireProtocol: "openai-responses", requestPath: "/responses" },
       pi: { baseUrl: "https://api.x.ai/v1", wireProtocol: "openai-responses" },
+      trae: { baseUrl: "https://api.x.ai/v1", wireProtocol: "openai-chat" },
     },
     modelDiscovery: httpModels("https://api.x.ai/v1/models"),
   }),

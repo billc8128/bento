@@ -26,6 +26,7 @@ const ADAPTERS: Record<HarnessId, HarnessAppAdapter> = {
   opencode: nativeMcp,
   omp: nativeMcp,
   hermes: nativeMcp,
+  trae: nativeMcp,
   pi: piExtension,
 }
 

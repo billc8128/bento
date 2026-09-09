@@ -35,7 +35,7 @@
 
 Agent tools are powerful, but their sessions, models, permissions, and project context often live in separate terminals. Bento gives them one home without replacing the harnesses you already use.
 
-- **One workspace, many harnesses** — switch between Pi, Codex, Claude Code, Kimi Code, OpenCode, OMP, and Hermes.
+- **One workspace, many harnesses** — switch between Pi, Codex, Claude Code, Kimi Code, OpenCode, OMP, Hermes, and Trae Code.
 - **Real multi-agent work** — open agents side by side and delegate work across sessions and projects.
 - **Your models and providers** — discover local credentials, connect supported providers, choose models, and pass reasoning settings to the underlying harness.
 - **Workspace tools included** — keep chat, terminal, files, previews, and a browser in the same desktop layout.
@@ -53,6 +53,7 @@ Agent tools are powerful, but their sessions, models, permissions, and project c
 | OpenCode | Agent Client Protocol (ACP) |
 | OMP | Agent Client Protocol (ACP) |
 | Hermes | Agent Client Protocol (ACP) |
+| Trae Code | Agent Client Protocol (ACP) |
 
 Bento keeps the harness responsible for model behavior and authentication. Managed runtimes are bundled or downloaded at pinned versions where supported, and downloaded artifacts are verified before use.
 
@@ -100,7 +101,7 @@ Electron main process
       │
 Shared harness driver + event contract
       │
-Pi · Codex · Claude Code · Kimi · OpenCode · OMP · Hermes
+Pi · Codex · Claude Code · Kimi · OpenCode · OMP · Hermes · Trae
 ```
 
 This is **local-first**, not necessarily offline: prompts and tool calls may still reach the model provider selected through your harness.
