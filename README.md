@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://bento-ai.app">Website</a> ·
-  <a href="https://github.com/billc8128/bento/releases/latest">Download</a> ·
+  <a href="https://github.com/billc8128/bento/releases/download/v0.4.1/Bento-0.4.1-arm64.dmg">Download</a> ·
   <a href="README.zh-CN.md">简体中文</a>
 </p>
 
@@ -59,7 +59,7 @@ Bento keeps the harness responsible for model behavior and authentication. Manag
 
 ## Install
 
-[Download Bento v0.4.1 for macOS (Apple silicon)](https://github.com/billc8128/bento/releases/latest/download/Bento-0.4.1-arm64.dmg), open the DMG, and move Bento to Applications.
+[Download Bento v0.4.1 for macOS (Apple silicon)](https://github.com/billc8128/bento/releases/download/v0.4.1/Bento-0.4.1-arm64.dmg), open the DMG, and move Bento to Applications.
 
 On first launch:
 
