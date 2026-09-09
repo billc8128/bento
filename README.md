@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://bento-ai.app">Website</a> ·
-  <a href="https://github.com/billc8128/bento/releases/download/v0.4.1/Bento-0.4.1-arm64.dmg">Download</a> ·
+  <a href="https://github.com/billc8128/bento/releases/download/v0.4.2/Bento-0.4.2-arm64.dmg">Download</a> ·
   <a href="README.zh-CN.md">简体中文</a>
 </p>
 
@@ -28,7 +28,7 @@
 </p>
 
 > [!NOTE]
-> Bento is under active development. The current release is **v0.4.1** for
+> Bento is under active development. The current release is **v0.4.2** for
 > **Apple silicon Macs**. Expect the product and extension contracts to evolve.
 
 ## Why Bento?
@@ -59,7 +59,9 @@ Bento keeps the harness responsible for model behavior and authentication. Manag
 
 ## Install
 
-[Download Bento v0.4.1 for macOS (Apple silicon)](https://github.com/billc8128/bento/releases/download/v0.4.1/Bento-0.4.1-arm64.dmg), open the DMG, and move Bento to Applications.
+[Download Bento v0.4.2 for macOS (Apple silicon)](https://github.com/billc8128/bento/releases/download/v0.4.2/Bento-0.4.2-arm64.dmg), open the DMG, and move Bento to Applications.
+
+From v0.4.2 onward, an amber update icon appears beside the theme toggle when a new version is available. Clicking it downloads the update and restarts Bento automatically, ending any running tasks. Users on older versions need to install v0.4.2 manually once.
 
 On first launch:
 
