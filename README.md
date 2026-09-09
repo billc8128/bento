@@ -28,7 +28,7 @@
 </p>
 
 > [!NOTE]
-> Bento is under active development. The current release is **v0.4.0** for
+> Bento is under active development. The current release is **v0.4.1** for
 > **Apple silicon Macs**. Expect the product and extension contracts to evolve.
 
 ## Why Bento?
@@ -59,7 +59,7 @@ Bento keeps the harness responsible for model behavior and authentication. Manag
 
 ## Install
 
-[Download Bento v0.4.0 for macOS (Apple silicon)](https://github.com/billc8128/bento/releases/latest/download/Bento-0.4.0-arm64.dmg), open the DMG, and move Bento to Applications.
+[Download Bento v0.4.1 for macOS (Apple silicon)](https://github.com/billc8128/bento/releases/latest/download/Bento-0.4.1-arm64.dmg), open the DMG, and move Bento to Applications.
 
 On first launch:
 

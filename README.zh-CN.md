@@ -28,7 +28,7 @@
 </p>
 
 > [!NOTE]
-> Bento 仍在快速迭代。当前版本为 **v0.4.0**，仅提供 **Apple 芯片 Mac**
+> Bento 仍在快速迭代。当前版本为 **v0.4.1**，仅提供 **Apple 芯片 Mac**
 > 版本；产品形态与扩展契约仍可能调整。
 
 ## 为什么是 Bento？
@@ -59,7 +59,7 @@ Agent 很强，但它们的会话、模型、权限和项目上下文往往散�
 
 ## 安装
 
-[下载 Bento v0.4.0 macOS 版（Apple 芯片）](https://github.com/billc8128/bento/releases/latest/download/Bento-0.4.0-arm64.dmg)，打开 DMG，然后把 Bento 移入“应用程序”。
+[下载 Bento v0.4.1 macOS 版（Apple 芯片）](https://github.com/billc8128/bento/releases/latest/download/Bento-0.4.1-arm64.dmg)，打开 DMG，然后把 Bento 移入“应用程序”。
 
 首次启动后：
 
