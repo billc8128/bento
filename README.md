@@ -1,51 +1,124 @@
-# Bento
+<p align="center">
+  <img src="public/bento-logo.png" alt="Bento logo" width="88" />
+</p>
 
-Bento 是一个本地优先、可自定义的多 Agent 桌面工作台。它把不同 harness 的会话、
-模型、推理强度、工具事件和历史记录收进同一个 Electron 界面。
+<h1 align="center">Bento</h1>
 
-当前版本为 v0.3.1，已包含：
+<p align="center"><strong>Your free agent workspace.</strong></p>
 
-- Claude Code、GLM、Kimi、OpenCode 的 ACP Driver
-- 原生 Codex app-server Driver
-- 模型与推理强度的真实下发、持久化和能力门控
-- Codex、Kimi、OpenCode 固定版本二进制下载与 SHA-256 校验
-- JSONL 会话日志、实时流与历史回放共用 reducer
-- dockview 多会话分栏、布局持久化和五套主题
+<p align="center">
+  Run multiple coding-agent harnesses, models, and projects from one local-first desktop workspace.
+</p>
 
-产品边界见 [`PRODUCT.md`](PRODUCT.md)，分层和扩展契约见
-[`ARCHITECTURE.md`](ARCHITECTURE.md)。UI 开发必须遵守
-[`DESIGN.md`](DESIGN.md) 中的视觉规范（字号/字体/颜色一律走 token）。
+<p align="center">
+  <a href="https://bento-ai.app">Website</a> ·
+  <a href="https://github.com/billc8128/bento/releases/latest">Download</a> ·
+  <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-## 开发
+<p align="center">
+  <a href="https://github.com/billc8128/bento/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/billc8128/bento?style=flat-square&color=f9ad3b" /></a>
+  <img alt="macOS Apple silicon" src="https://img.shields.io/badge/macOS-Apple%20silicon-24211d?style=flat-square&logo=apple&logoColor=white" />
+  <img alt="Electron" src="https://img.shields.io/badge/Electron-desktop-47848f?style=flat-square&logo=electron&logoColor=white" />
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-f9ad3b?style=flat-square" /></a>
+</p>
 
-要求 Node.js 24+ 与 pnpm 10。
+<p align="center">
+  <img src="promo/site/assets/agents-frame.jpg" alt="Bento running multiple agent sessions in a desktop workspace" width="100%" />
+</p>
+
+> [!NOTE]
+> Bento is under active development. The current release is **v0.4.0** for
+> **Apple silicon Macs**. Expect the product and extension contracts to evolve.
+
+## Why Bento?
+
+Agent tools are powerful, but their sessions, models, permissions, and project context often live in separate terminals. Bento gives them one home without replacing the harnesses you already use.
+
+- **One workspace, many harnesses** — switch between Pi, Codex, Claude Code, Kimi Code, OpenCode, OMP, and Hermes.
+- **Real multi-agent work** — open agents side by side and delegate work across sessions and projects.
+- **Your models and providers** — discover local credentials, connect supported providers, choose models, and pass reasoning settings to the underlying harness.
+- **Workspace tools included** — keep chat, terminal, files, previews, and a browser in the same desktop layout.
+- **Local-first state** — sessions, history, layouts, settings, and provider configuration stay on your machine.
+- **A workspace you can shape** — split and rearrange panes, restore layouts, and choose from multiple complete visual themes.
+
+## Supported harnesses
+
+| Harness | Integration |
+| --- | --- |
+| Pi | Bundled RPC runtime |
+| Codex | Native `app-server` driver |
+| Claude Code | Bundled Claude Agent SDK runtime |
+| Kimi Code | Agent Client Protocol (ACP) |
+| OpenCode | Agent Client Protocol (ACP) |
+| OMP | Agent Client Protocol (ACP) |
+| Hermes | Agent Client Protocol (ACP) |
+
+Bento keeps the harness responsible for model behavior and authentication. Managed runtimes are bundled or downloaded at pinned versions where supported, and downloaded artifacts are verified before use.
+
+## Install
+
+[Download Bento v0.4.0 for macOS (Apple silicon)](https://github.com/billc8128/bento/releases/latest/download/Bento-0.4.0-arm64.dmg), open the DMG, and move Bento to Applications.
+
+On first launch:
+
+1. Start a general chat or choose a project folder.
+2. Pick a harness.
+3. Use an existing harness login or configure a provider in Bento.
+4. Choose a model and start working.
+
+Some harnesses and providers require their own account, subscription, API key, or network access. Bento does not provide model inference itself.
+
+## Build from source
+
+Requirements: **Node.js 24+**, **pnpm 10**, and an Apple silicon Mac for the current desktop target.
 
 ```bash
 pnpm install
-pnpm dev       # Electron 桌面版
-pnpm dev:web   # 纯浏览器 UI 预览
+pnpm dev
+```
+
+Useful commands:
+
+```bash
+pnpm dev:web   # Browser-only UI preview
+pnpm test      # Run the test suite
+pnpm lint      # Run static checks
+pnpm build     # Build the application
+pnpm dist:dir  # Build release/mac-arm64/Bento.app
+pnpm dist      # Build the arm64 DMG
+```
+
+## How it works
+
+Bento is an Electron application with a React renderer. Each harness is adapted to a shared driver and event contract, so live output and local history follow the same rendering path. The main process owns harness runtimes, provider routing, local persistence, permissions, and workspace tools; the renderer owns the interface and layout.
+
+```text
+React workspace
+      │
+Electron main process
+      │
+Shared harness driver + event contract
+      │
+Pi · Codex · Claude Code · Kimi · OpenCode · OMP · Hermes
+```
+
+This is **local-first**, not necessarily offline: prompts and tool calls may still reach the model provider selected through your harness.
+
+## Contributing
+
+Issues and pull requests are welcome. For substantial behavior or architecture changes, please open an issue first so the direction can be agreed before implementation.
+
+Before submitting a pull request:
+
+```bash
 pnpm test
 pnpm lint
 pnpm build
 ```
 
-## Harness 与二进制
+Keep changes focused, preserve existing session and provider contracts, and never commit credentials or private session data.
 
-- Claude Code / GLM 使用项目依赖中的 ACP adapter。
-- Kimi / OpenCode 首次使用时从官方 Release 下载固定版本到 Bento 用户数据目录。
-- Codex 使用受管 `codex` 二进制的 `app-server` 协议，不经过 ACP。
-- 所有下载归档都在解压前验证固定 SHA-256。
-- 开发或企业分发可用 `BENTO_CODEX_PATH`、`BENTO_KIMI_PATH`、
-  `BENTO_OPENCODE_PATH` 覆盖受管路径。
-- GLM 配置目录默认为 `~/.bento/claude-glm`，可用
-  `BENTO_GLM_CONFIG_DIR` 覆盖。
+## License
 
-## 打包
-
-```bash
-pnpm dist:dir  # release/mac-arm64/Bento.app
-pnpm dist      # arm64 DMG
-```
-
-会话记录保存在 Electron `userData/sessions`，受管二进制保存在
-`userData/binaries`。模型登录态仍由各 harness 自己管理。
+Bento is available under the [MIT License](LICENSE).

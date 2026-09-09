@@ -2,6 +2,7 @@
   "name": "bento",
   "description": "Local-first multi-harness agent workbench",
   "author": "Bento Contributors",
+  "license": "MIT",
   "private": true,
   "version": "0.4.0",
   "type": "module",
