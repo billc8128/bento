@@ -116,7 +116,7 @@ export const HARNESSES: Harness[] = [
   },
   {
     id: "trae",
-    permissionSwitch: "live",
+    permissionSwitch: "none",
     name: "Trae Code",
     short: "TR",
     live: true,

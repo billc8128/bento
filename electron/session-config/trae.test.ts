@@ -3,7 +3,7 @@ import http from "node:http"
 import os from "node:os"
 import path from "node:path"
 import type { AddressInfo } from "node:net"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { parse as parseToml } from "smol-toml"
 
 import type { CustomProviderConfig } from "../../src/core/provider"
@@ -17,6 +17,7 @@ const upstreams: http.Server[] = []
 const routings: ProviderRoutingService[] = []
 
 afterEach(() => {
+  vi.restoreAllMocks()
   for (const routing of routings.splice(0)) routing.dispose()
   for (const server of upstreams.splice(0)) server.close()
   for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
@@ -311,6 +312,22 @@ describe("TraeBentoConfigAdapter", () => {
       },
     ]
     await expect(adapter.prepare(collide)).rejects.toThrow(/冲突/)
+    expect(routing.sessionsUsing("user-alpha")).toBe(0)
     await adapter.removeSessionState("sess-collide")
   })
+  it("write failure revokes routes and removes the partial directory", async () => {
+    const { routing } = await fixture()
+    const dir = track(fs.mkdtempSync(path.join(os.tmpdir(), "trae-write-fail-")))
+    const adapter = new TraeBentoConfigAdapter("trae", routing, dir)
+    const write = fs.writeFileSync
+    vi.spyOn(fs, "writeFileSync").mockImplementation((file, ...args) => {
+      if (String(file).endsWith("traecli.toml")) throw new Error("disk full")
+      return write(file, ...args)
+    })
+    await expect(adapter.prepare(sessionRequest("write-fail"))).rejects.toThrow("disk full")
+    expect(routing.sessionsUsing("user-alpha")).toBe(0)
+    expect(routing.sessionsUsing("user-beta")).toBe(0)
+    expect(fs.existsSync(path.join(dir, "providers", "trae-bento-write-fail"))).toBe(false)
+  })
+
 })

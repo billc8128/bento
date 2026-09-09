@@ -136,12 +136,6 @@ export class TraeBentoConfigAdapter implements SessionConfigAdapter {
       }
     }
 
-    // 每 Provider 独立 loopback route;auth/requestPath/fixedHeaders/OAuth 由 ProxyRoute 注入。
-    const routeSet = await this.routing.issueRouteSet(
-      request.sessionKey,
-      request.providers.map((provider) => ({ providerId: provider.providerId, harnessId: request.harnessId })),
-    )
-
     const selections = new Map<string, PreparedModelRef>()
     const names = new Set<string>()
     for (const provider of request.providers) {
@@ -165,23 +159,34 @@ export class TraeBentoConfigAdapter implements SessionConfigAdapter {
       normalizeBentoModelId(request.selected.modelId),
     ))
     if (!selected) {
-      this.routing.revokeRoute(request.sessionKey)
       throw new Error(
         `模型 ${request.selected.providerId}/${request.selected.modelId} 不在 Bento 注册表中`,
       )
     }
 
+    // 每 Provider 独立 loopback route;auth/requestPath/fixedHeaders/OAuth 由 ProxyRoute 注入。
+    const routeSet = await this.routing.issueRouteSet(
+      request.sessionKey,
+      request.providers.map((provider) => ({ providerId: provider.providerId, harnessId: request.harnessId })),
+    )
+
     const configDir = path.join(this.userDataDir, "providers", `trae-bento-${request.sessionKey}`)
-    fs.mkdirSync(configDir, { recursive: true, mode: 0o700 })
-    fs.writeFileSync(path.join(configDir, "traecli.toml"), buildTraeSessionConfig(
-      request.providers.map((provider) => ({
-        providerId: provider.providerId,
-        wireProtocol: provider.wireProtocol,
-        models: provider.models,
-        baseUrl: routeSet.get(provider.providerId)?.baseUrl ?? "",
-      })),
-      selected.modelId,
-    ), { mode: 0o600 })
+    try {
+      fs.mkdirSync(configDir, { recursive: true, mode: 0o700 })
+      fs.writeFileSync(path.join(configDir, "traecli.toml"), buildTraeSessionConfig(
+        request.providers.map((provider) => ({
+          providerId: provider.providerId,
+          wireProtocol: provider.wireProtocol,
+          models: provider.models,
+          baseUrl: routeSet.get(provider.providerId)?.baseUrl ?? "",
+        })),
+        selected.modelId,
+      ), { mode: 0o600 })
+    } catch (error) {
+      this.routing.revokeRoute(request.sessionKey)
+      await this.removeSessionState(request.sessionKey)
+      throw error
+    }
 
     const sessionKey = request.sessionKey
     const routing = this.routing

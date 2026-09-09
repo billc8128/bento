@@ -400,7 +400,7 @@ class AcpDriver implements HarnessDriver {
       capabilities: {
         modelSwitch: selection.setModel ? "live" : "none",
         effortSwitch: selection.setEffort ? "live" : "none",
-        permissionSwitch: "live",
+        permissionSwitch: this.id === "trae" ? "none" : "live",
       },
       prompt: async (input) => {
         const request = normalizePromptInput(input)
@@ -444,9 +444,11 @@ class AcpDriver implements HarnessDriver {
       },
       ...(selection.setModel ? { setModel: async (modelId: string) => { await selection.setModel!(modelId) } } : {}),
       ...(selection.setEffort ? { setEffort: async (effort) => { await selection.setEffort!(effort) } } : {}),
-      async setPermissionProfile(next: PermissionProfile) {
-        permission.current = next
-      },
+      ...(this.id === "trae" ? {} : {
+        async setPermissionProfile(next: PermissionProfile) {
+          permission.current = next
+        },
+      }),
       resolveApproval(id: string, decision: ApprovalDecision) {
         const waiter = approvals.waiters.get(id)
         if (!waiter) return
