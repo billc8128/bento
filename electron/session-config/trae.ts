@@ -178,7 +178,7 @@ export class TraeBentoConfigAdapter implements SessionConfigAdapter {
           providerId: provider.providerId,
           wireProtocol: provider.wireProtocol,
           models: provider.models,
-          baseUrl: routeSet.get(provider.providerId)?.baseUrl ?? "",
+          baseUrl: routeSet.get(provider.providerId)!.baseUrl,
         })),
         selected.modelId,
       ), { mode: 0o600 })
