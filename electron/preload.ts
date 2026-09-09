@@ -1,6 +1,7 @@
 /** preload:经 contextBridge 暴露受限 API,renderer 不碰 Electron 原语。 */
 
 import { contextBridge, ipcRenderer, webUtils } from "electron"
+import type { AppUpdateState } from "../src/core/app-update"
 import type { HarnessId } from "../src/core/harness"
 import type { ApprovalDecision } from "../src/core/events"
 import type { PermissionProfile } from "../src/core/permission"
@@ -17,6 +18,13 @@ import type {
 const api = {
   /** renderer 判断自己跑在桌面壳里还是纯 web(纯 web 时 window.bento 不存在) */
   desktop: true as const,
+  getAppUpdate: (): Promise<AppUpdateState> => ipcRenderer.invoke("app-update:get"),
+  downloadAppUpdate: (): Promise<void> => ipcRenderer.invoke("app-update:download"),
+  onAppUpdate: (cb: (state: AppUpdateState) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: AppUpdateState) => cb(state)
+    ipcRenderer.on("app-update:state", handler)
+    return () => ipcRenderer.removeListener("app-update:state", handler)
+  },
 
   createSession: (opts: {
     scope?: SessionScope

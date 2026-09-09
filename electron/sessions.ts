@@ -1,3 +1,4 @@
+import { finished } from "node:stream/promises"
 /**
  * 会话管理(main 侧):编排 HarnessDriver,并把统一事件追加到唯一 JSONL 日志。
  * Driver 不接触持久化和 Electron IPC。
@@ -916,8 +917,12 @@ export class SessionManager {
     session.disposeExit()
     session.connection.close()
     session.logStream.end()
-    await session.configLease.dispose()
-    await session.appLease?.dispose()
+    try {
+      await finished(session.logStream)
+    } finally {
+      await session.configLease.dispose()
+      await session.appLease?.dispose()
+    }
   }
 
   /** 彻底删除会话的 adapter 侧持久状态;按 index 记录定位 adapter(历史会话也适用)。 */

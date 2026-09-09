@@ -1,5 +1,6 @@
 /** preload 暴露的桌面 API。纯 web 模式下 window.bento 不存在,一切须降级。 */
 
+import type { AppUpdateState } from "@/core/app-update"
 import type { LogRecord } from "@/core/replay"
 import type { HarnessId, HarnessRuntimeStatus } from "@/core/harness"
 import type { CustomModelConfig, CustomProviderConfig, ProviderView } from "@/core/provider"
@@ -55,6 +56,9 @@ declare global {
   interface Window {
     bento?: {
       desktop: true
+      getAppUpdate(): Promise<AppUpdateState>
+      downloadAppUpdate(): Promise<void>
+      onAppUpdate(cb: (state: AppUpdateState) => void): () => void
       createSession(opts: {
         scope?: SessionScope
         harnessId: string

@@ -26,6 +26,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { AppUpdatePill } from "@/components/AppUpdatePill"
 import { BentoLogo } from "@/components/BentoLogo"
 import { Button } from "@/components/ui/button"
 import {
@@ -636,6 +637,7 @@ export function AppSidebar() {
                 {profile.name}
               </span>
             </button>
+            <AppUpdatePill />
             <button
               type="button"
               title={theme.dark ? t("sidebar.switchToLight") : t("sidebar.switchToDark")}

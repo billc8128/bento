@@ -6,6 +6,11 @@ import type { LocaleBundle } from "../core"
 
 const bundle: LocaleBundle = {
   "zh-CN": {
+    "sidebar.update.available": "发现 Bento {version}，点击更新并自动重启（将结束当前运行任务）",
+    "sidebar.update.downloading": "正在下载更新，完成后自动重启",
+    "sidebar.update.downloaded": "更新已下载，即将重启",
+    "sidebar.update.installing": "正在重启并安装更新",
+    "sidebar.update.error": "更新未完成，点击重试",
     "sidebar.newChat": "新对话",
     "sidebar.apps": "应用",
     "sidebar.chats": "对话",
@@ -43,6 +48,11 @@ const bundle: LocaleBundle = {
     "sidebar.timeYesterday": "昨天",
   },
   "en-US": {
+    "sidebar.update.available": "Bento {version} is available. Click to update and restart (ends running tasks)",
+    "sidebar.update.downloading": "Downloading update. Bento will restart automatically",
+    "sidebar.update.downloaded": "Update downloaded. Restarting shortly",
+    "sidebar.update.installing": "Restarting to install update",
+    "sidebar.update.error": "Update failed. Click to retry",
     "sidebar.newChat": "New chat",
     "sidebar.apps": "Apps",
     "sidebar.chats": "Chats",

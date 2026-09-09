@@ -265,7 +265,7 @@ describe("SessionManager model selection", () => {
     await vi.waitFor(() => expect(manager.readEvents(key).some(
       (item) => item.kind === "event" && item.payload.type === "user_message",
     )).toBe(true))
-    manager.disposeAll()
+    await manager.disposeAll()
   })
 
   it("pending 会话启动失败后保留记录并允许重试", async () => {
@@ -298,7 +298,7 @@ describe("SessionManager model selection", () => {
     expect(manager.listSessions().some((item) => item.key === key)).toBe(true)
     await expect(manager.prompt(key, "重试")).resolves.toMatchObject({ stopReason: "end_turn" })
     expect(starts).toBe(2)
-    manager.disposeAll()
+    await manager.disposeAll()
   })
 
   it("create/prompt 事件到达 onEvent 回调且 updatedAt 前进", async () => {
@@ -343,7 +343,10 @@ describe("SessionManager model selection", () => {
     // updatedAt 单调前进且已越过 create 时刻
     const final = manager.listSessions().find((item) => item.key === key)
     expect(final!.updatedAt > updatedAtAtCreate).toBe(true)
-    manager.disposeAll()
+    await manager.disposeAll()
+    // Update installation may quit immediately after disposeAll: the final message must already be on disk.
+    expect(manager.readEvents(key).some((item) => item.kind === "event" &&
+      item.payload.type === "user_message" && item.payload.text === "第二轮")).toBe(true)
   })
 
   it("把 model/effort 传给 driver,持久化并支持 live 切换", async () => {
@@ -393,7 +396,7 @@ describe("SessionManager model selection", () => {
       modelId: "kimi-k2.5",
       effort: "max",
     })
-    manager.disposeAll()
+    await manager.disposeAll()
   })
 
   it("新会话缺少明确 provider/model 时拒绝", async () => {
@@ -434,7 +437,7 @@ describe("SessionManager model selection", () => {
 
     expect(started?.cwd).toBe(os.homedir())
     expect(record.cwd).toBe(os.homedir())
-    manager.disposeAll()
+    await manager.disposeAll()
   })
 
   it("旧会话缺 provider/model 时由 registry resolver 一次性迁移并写回", async () => {
@@ -475,7 +478,7 @@ describe("SessionManager model selection", () => {
       providerId: "moonshot",
       modelId: "kimi-k3",
     })
-    manager.disposeAll()
+    await manager.disposeAll()
   })
 })
 
@@ -879,7 +882,7 @@ describe("SessionManager 错误/中断路径(TRACE_DATA_PLAN §3.4 P0-1)", () =>
       expect(userMessage?.seq).toBe(exitNoticeSeq + 1)
       expect(lastTurnFinished(after)).toMatchObject({ reason: "end_turn" })
     })
-    manager.disposeAll()
+    await manager.disposeAll()
   })
 
   it("cancel 路径补落 cancelled,error 路径补落 error,prompt 入口清零防误标", async () => {
@@ -930,7 +933,7 @@ describe("SessionManager 错误/中断路径(TRACE_DATA_PLAN §3.4 P0-1)", () =>
     await vi.waitFor(() => {
       expect(lastTurnFinished(manager.readEvents(key))).toMatchObject({ reason: "error" })
     })
-    manager.disposeAll()
+    await manager.disposeAll()
   })
 })
 

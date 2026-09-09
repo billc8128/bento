@@ -4,7 +4,7 @@
   "author": "Bento Contributors",
   "license": "MIT",
   "private": true,
-  "version": "0.4.1",
+  "version": "0.4.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -41,6 +41,7 @@
     "clsx": "^2.1.1",
     "dockview": "^8.2.0",
     "dockview-react": "^8.2.0",
+    "electron-updater": "^6.8.9",
     "fix-path": "^5.0.0",
     "lucide-react": "^1.33.0",
     "motion": "^13.1.1",
@@ -110,10 +111,23 @@
           "arch": [
             "arm64"
           ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
         }
       ],
       "icon": "build/bento-icon.png"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "billc8128",
+        "repo": "bento"
+      }
+    ]
   },
   "main": "dist-electron/main.js"
 }

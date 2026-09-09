@@ -22,7 +22,7 @@ export default defineConfig({
               outDir: 'dist-electron',
               rolldownOptions: {
                 // 协议/Agent SDK 留在 node_modules:Agent SDK 需按包目录定位内置 cli.js。
-                external: ['@agentclientprotocol/sdk', '@anthropic-ai/claude-agent-sdk', /^@modelcontextprotocol\/sdk/, 'node-pty'],
+                external: ['electron-updater', '@agentclientprotocol/sdk', '@anthropic-ai/claude-agent-sdk', /^@modelcontextprotocol\/sdk/, 'node-pty'],
               },
             },
           },

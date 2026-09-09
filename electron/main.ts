@@ -1,3 +1,5 @@
+import electronUpdater from "electron-updater"
+import { AppUpdateController } from "./app-update"
 /** Electron 主进程:窗口 + 会话管理 IPC。壳选型依据见 ARCHITECTURE.md §1。 */
 
 import fixPath from "fix-path"
@@ -80,6 +82,7 @@ if (process.env.BENTO_USER_DATA) {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+let updates: AppUpdateController | undefined
 let win: BrowserWindow | null = null
 let sessions: SessionManager
 let providers: ProviderRegistry
@@ -978,7 +981,27 @@ app.whenReady().then(async () => {
   })
 
 
+  electronUpdater.autoUpdater.logger = null
+  updates = new AppUpdateController(
+    electronUpdater.autoUpdater, app.isPackaged && process.platform === "darwin", app.getVersion(),
+    (state) => { if (win && !win.isDestroyed()) win.webContents.send("app-update:state", state) },
+    async () => {
+      await sessions.disposeAll()
+      terminals?.disposeAll()
+      workspaceBrowsers?.disposeAll()
+      workspaceFileWatches?.disposeAll()
+      await appRuntime?.close()
+    },
+  )
+  const assertUpdateCaller = (event: Electron.IpcMainInvokeEvent) => {
+    if (event.sender !== win?.webContents || event.senderFrame !== event.sender.mainFrame) {
+      throw new Error("Unsupported update caller")
+    }
+  }
+  ipcMain.handle("app-update:get", (event) => { assertUpdateCaller(event); return updates!.state })
+  ipcMain.handle("app-update:download", (event) => { assertUpdateCaller(event); return updates!.downloadAndInstall() })
   createWindow()
+  updates.start()
 
   // 冒烟自测:BENTO_SMOKE=1 时起一个会话跑一轮,验证 main 侧栈,然后退出。
   // BENTO_SMOKE_RESUME=1 追加离线续聊阶段:杀进程后再 prompt,应走 lazy 恢复链
@@ -1054,7 +1077,7 @@ app.on("window-all-closed", () => {
   }
 })
 
-app.on("before-quit", () => void appRuntime?.close())
+app.on("before-quit", () => { updates?.dispose(); void appRuntime?.close() })
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()
