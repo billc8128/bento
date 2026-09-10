@@ -1,8 +1,8 @@
 /**
  * TurnActivity 视觉 demo:?demo=turn-activity
- * 阶段摘要栈的三个场景:
- * - S1 live:单工具完成、agent 思考中(末行是流光的「正在思考…」);
- * - S2 live:思考→说话→用了 7 个工具,当前在第 8 步(末行「正在使用工具」);
+ * 阶段摘要栈的场景:
+ * - S1 live:单工具完成、agent 思考中(已完成阶段收进顶部聚合行,末行是流光的「正在思考…」);
+ * - S2 live:思考→说话→8 个工具一组在跑(聚合行只含已闭合 thinking,工具组含 running 留在流里);
  * - S3 settled:回合结束,一行总折叠「已工作 1m12s」,final message 露在外面。
  */
 import { TurnActivity } from "@/components/TurnActivity"

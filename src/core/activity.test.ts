@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   buildPhases,
   cleanToolTarget,
+  liveAggregate,
   livePhaseId,
   liveStatus,
   liveTurnState,
@@ -124,6 +125,72 @@ describe("phaseLabel 阶段行标题", () => {
     // 栈末行被穿插的思考抢走(live=false)时,行内仍有 running 工具 → 现在时
     expect(phaseLabel({ id: "x", kind: "tools", tools: [tool(), tool({ status: "running" })] }, false)).toBe("正在使用工具")
     expect(phaseLabel({ id: "x", kind: "tools", tools: [tool({ status: "running" })] }, true)).toBe("正在使用工具")
+  })
+})
+
+describe("liveAggregate live 聚合行", () => {
+  // 闭合 = durationMs 写死(或旧数据连计时字段都没有);有起点无终点 = 流式
+  const closedThinking = (id: string, durationMs?: number): ActivityItem => durationMs !== undefined
+    ? { id, kind: "thinking", text: "想", startedAtMs: 100, durationMs }
+    : { id, kind: "thinking", text: "想" }
+  const streamingThinking = (id: string): ActivityItem => ({
+    id,
+    kind: "thinking",
+    text: "在想",
+    startedAtMs: 100,
+  })
+
+  it("已闭合的 thinking/tools 收进聚合:耗时求和、工具与失败计数", () => {
+    const rows = buildPhases([
+      closedThinking("th1", 2000),
+      toolItem("t1"),
+      toolItem("t2", { status: "failed" }),
+      progress("p1", "过程"),
+      toolItem("t3"),
+      closedThinking("th2", 1500),
+    ])
+    const agg = liveAggregate(rows)
+    expect(agg.rows.map((r) => r.id)).toEqual(["th1", "t1", "t3", "th2"])
+    expect(agg.thinkingCount).toBe(2)
+    expect(agg.thinkingMs).toBe(3500)
+    expect(agg.toolCount).toBe(3)
+    expect(agg.failedCount).toBe(1)
+  })
+
+  it("流式 thinking 与含 running 的 tools 行留在流里,不进聚合", () => {
+    const rows = buildPhases([
+      toolItem("t1", { status: "running" }),
+      streamingThinking("th1"),
+    ])
+    expect(liveAggregate(rows).rows).toEqual([])
+    // 全部闭合后同一批行全部入聚合
+    const settled = buildPhases([toolItem("t1"), closedThinking("th1", 800)])
+    expect(liveAggregate(settled).rows.map((r) => r.id)).toEqual(["t1", "th1"])
+  })
+
+  it("progress/steer/approval 永不入聚合", () => {
+    const rows = buildPhases([
+      progress("p1", "过程"),
+      { id: "s1", kind: "steer", text: "补充" },
+    ])
+    expect(liveAggregate(rows).rows).toEqual([])
+  })
+
+  it("缺计时的 thinking:thinkingMs 缺席、计数保留;空栈返回空聚合", () => {
+    // 连续 thinking 会被 buildPhases 并成一段,用工具行隔开才是两段
+    const rows = buildPhases([closedThinking("th1"), toolItem("t1"), closedThinking("th2", 1500)])
+    const agg = liveAggregate(rows)
+    expect(agg.thinkingCount).toBe(2)
+    expect(agg.thinkingMs).toBe(1500)
+    const noTiming = liveAggregate(buildPhases([{ id: "th1", kind: "thinking", text: "想" }]))
+    expect(noTiming.thinkingCount).toBe(1)
+    expect(noTiming.thinkingMs).toBeUndefined()
+    expect(liveAggregate([])).toEqual({
+      rows: [],
+      thinkingCount: 0,
+      toolCount: 0,
+      failedCount: 0,
+    })
   })
 })
 

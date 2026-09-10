@@ -1,9 +1,11 @@
 /**
  * TurnActivity:一个回合的活动按「阶段摘要栈」渲染——连续 thinking 并成一段、
- * 连续 tool 并成一组,progress/steer 独立成行;每个阶段一行,默认折叠、点击向下
- * 展开;进行中的阶段(正在思考/正在使用工具)永远在栈末一行,带流光文案。
+ * 连续 tool 并成一组,progress/steer 独立成行。
  *
- * - live:回合运行中,位于消息流末端、紧邻 Composer 上方;没有活跃工作段时
+ * - live:回合运行中,位于消息流末端、紧邻 Composer 上方。已完成的
+ *   thinking/tools 阶段收进顶部一行聚合(实时计数、点击展开完整栈);
+ *   进行中的阶段(正在思考/正在使用工具)与 progress/steer/approval 留在
+ *   流里,进行中的阶段永远在栈末,带流光文案;没有活跃工作段时
  *   (说话中/空栈)由末尾的兜底状态行承接,全窗口唯一的状态标题;
  * - settled:回合落定后折叠到 final 正文上方,一行总折叠「已工作 Xm XXs」,
  *   展开后回看完整阶段栈。
@@ -17,6 +19,7 @@ import {
   ChevronDown,
   FileText,
   Forward,
+  ListCollapse,
   Pencil,
   Search,
   Terminal,
@@ -35,11 +38,13 @@ import { cn } from "@/lib/utils"
 import {
   buildPhases,
   cleanToolTarget,
+  liveAggregate,
   livePhaseId,
   liveStatus,
   phaseLabel,
   settledMasterLabel,
   toolGroupStatus,
+  type LiveAggregate,
   type LiveTurn,
   type PhaseRow,
 } from "@/core/activity"
@@ -457,6 +462,49 @@ function PhaseRowView({
   )
 }
 
+/** live 聚合行:已完成的 thinking/tools 阶段收进 trace 块顶部一行——
+ * 计数实时更新(「已思考 Xs · 已使用 N 个工具 · M 个失败」),点击展开
+ * 回看完整阶段栈(阶段行保持各自可展开)。展开态沿用 TraceCollapsible
+ * 的 sticky 挂载:新完成的阶段在展开中实时追加。 */
+function LiveAggregateRow({
+  agg,
+  onResolveApproval,
+}: {
+  agg: LiveAggregate
+  onResolveApproval?: (id: string, decision: ApprovalDecision) => void
+}) {
+  const { t } = useT()
+  const parts: string[] = []
+  if (agg.thinkingMs !== undefined) {
+    parts.push(t("activity.thoughtWithDuration", { duration: formatDuration(agg.thinkingMs) }))
+  } else if (agg.thinkingCount > 0) {
+    parts.push(t("activity.thought"))
+  }
+  if (agg.toolCount > 0) parts.push(t("activity.usedTools", { count: agg.toolCount }))
+  return (
+    <TraceCollapsible
+      header={
+        <>
+          <ListCollapse className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 truncate text-muted-foreground">
+            {parts.join(" · ")}
+            {agg.failedCount > 0 && (
+              <span className="text-err"> · {t("activity.failedCount", { count: agg.failedCount })}</span>
+            )}
+          </span>
+          <span className="flex-1" />
+        </>
+      }
+    >
+      <DetailRail>
+        {agg.rows.map((row) => (
+          <PhaseRowView key={row.id} row={row} livePhase={false} compact onResolveApproval={onResolveApproval} />
+        ))}
+      </DetailRail>
+    </TraceCollapsible>
+  )
+}
+
 export function TurnActivity({
   turn,
   live,
@@ -486,12 +534,17 @@ export function TurnActivity({
   const [contentMounted, setContentMounted] = useState(false)
 
   if (live) {
-    // 阶段栈逐行渲染;没有活跃工作段时(空栈/说话中/收到补充)由末尾的
-    // 兜底状态行承接——全窗口唯一的状态标题,不再别处补。
+    // 已完成的 thinking/tools 阶段收进顶部聚合行;进行中的阶段与
+    // progress/steer/approval 按时间序留在流里。没有活跃工作段时
+    // (空栈/说话中/收到补充)由末尾的兜底状态行承接——全窗口唯一的状态标题。
+    const agg = liveAggregate(phases)
+    const aggregated = new Set(agg.rows.map((row) => row.id))
+    const flowRows = phases.filter((row) => !aggregated.has(row.id))
     const fallback = liveId === undefined ? liveStatus(turn, t) : undefined
     return (
       <div className="flex min-w-0 max-w-full flex-col gap-0.5">
-        {phases.map((row) => (
+        {agg.rows.length > 0 && <LiveAggregateRow agg={agg} onResolveApproval={onResolveApproval} />}
+        {flowRows.map((row) => (
           <PhaseRowView key={row.id} row={row} livePhase={row.id === liveId} compact onResolveApproval={onResolveApproval} />
         ))}
         {fallback && (

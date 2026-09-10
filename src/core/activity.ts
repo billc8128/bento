@@ -4,8 +4,9 @@
  * 方便不挂 DOM 直接测(阶段栈边界、live 阶段判定、落定主行摘要、无活动占位)。
  *
  * 渲染模型是「阶段摘要栈」:连续 thinking 并成一段、连续 tool 并成一组,
- * progress/steer 独立成行;每个阶段一行,默认折叠、点击向下展开;进行中的阶段
- * (正在思考/正在使用工具)永远在栈末一行。回合结束后 liveTurnState 返回
+ * progress/steer 独立成行。live 回合里,已完成的 thinking/tools 阶段收进顶部
+ * 一行聚合(liveAggregate,实时计数、点击展开完整栈),进行中的阶段与
+ * progress/steer/approval 留在流里;回合结束后 liveTurnState 返回
  * undefined,活动随消息折叠到 final 正文上方的一行总折叠(已工作 Xm XXs)里。
  */
 
@@ -122,6 +123,39 @@ export function livePhaseId(rows: PhaseRow[]): string | undefined {
   }
   if (last?.kind === "thinking") return last.streaming ? last.id : undefined
   return undefined
+}
+
+/** live 回合的聚合行:已完成(闭合)的 thinking/tools 阶段收进 trace 块顶部一行,
+ * 实时计数、点击展开回看完整栈。未闭合的流式 thinking、仍含 running 工具的
+ * tools 行(哪怕栈末行已被穿插思考抢走)以及 progress/steer/approval 都留在
+ * 流里,不进聚合——审批卡可交互、旁白是公开内容。
+ * thinkingMs 聚合所有闭合 thinking 段的耗时(沿用 mergeDurationMs:只有部分段
+ * 有计时也给出已知部分的和);全部缺计时则缺席,标题回退无时长文案。 */
+export type LiveAggregate = {
+  /** 收进聚合的已完成阶段(时间序) */
+  rows: PhaseRow[]
+  thinkingCount: number
+  thinkingMs?: number
+  toolCount: number
+  failedCount: number
+}
+
+export function liveAggregate(rows: PhaseRow[]): LiveAggregate {
+  const agg: LiveAggregate = { rows: [], thinkingCount: 0, toolCount: 0, failedCount: 0 }
+  for (const row of rows) {
+    if (row.kind === "thinking" && !row.streaming) {
+      agg.rows.push(row)
+      agg.thinkingCount += 1
+      agg.thinkingMs = mergeDurationMs(agg.thinkingMs, row.durationMs)
+      continue
+    }
+    if (row.kind === "tools" && !row.tools.some((tool) => tool.status === "running")) {
+      agg.rows.push(row)
+      agg.toolCount += row.tools.length
+      agg.failedCount += row.tools.filter((tool) => tool.status === "failed").length
+    }
+  }
+  return agg
 }
 
 /** 运行态回合的活动数据。running 为假时返回 undefined —— 消息流末端的
