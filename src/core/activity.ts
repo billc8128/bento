@@ -4,10 +4,11 @@
  * 方便不挂 DOM 直接测(阶段栈边界、live 阶段判定、落定主行摘要、无活动占位)。
  *
  * 渲染模型是「阶段摘要栈」:连续 thinking 并成一段、连续 tool 并成一组,
- * progress/steer 独立成行。live 回合里,已完成的 thinking/tools 阶段收进顶部
+ * progress 独立成行。live 回合里,已完成的 thinking/tools 阶段收进顶部
  * 一行聚合(liveAggregate,实时计数、点击展开完整栈),进行中的阶段与
- * progress/steer/approval 留在流里;回合结束后 liveTurnState 返回
+ * progress/approval 留在流里;回合结束后 liveTurnState 返回
  * undefined,活动随消息折叠到 final 正文上方的一行总折叠(已工作 Xm XXs)里。
+ * steer(回合中补充)不进阶段栈:replay 把它拆成真实 user message。
  */
 
 import type { ActivityItem, ApprovalRequest, Message, PlanItem, ToolCall } from "./types"
@@ -22,14 +23,14 @@ type TFn = (key: string, vars?: Record<string, string | number>) => string
 const defaultT: TFn = (key, vars) => translate(resolveLocale(loadPreference()), key, vars)
 
 /** 阶段栈行(渲染的最小单元):连续 thinking 并成一段、连续 tool 并成一组;
- * progress/steer 是公开文字,独立成行、不参与折叠分组;approval 是审批卡片,独立成行。
+ * progress 是公开文字,独立成行、不参与折叠分组;approval 是审批卡片,独立成行。
  * thinking 段聚合整段耗时(合并的子段求和;
  * 都没有计时数据时为 undefined,标题回退到无时长文案)。streaming = 合并的最后一个子段还没闭合
  * (durationMs 未写死),即思考还在流式——合并后 durationMs 可能已有部分和,不能拿它判 live。 */
 export type PhaseRow =
   | { id: string; kind: "thinking"; text: string; durationMs?: number; streaming?: boolean }
   | { id: string; kind: "tools"; tools: ToolCall[] }
-  | { id: string; kind: "progress" | "steer"; text: string }
+  | { id: string; kind: "progress"; text: string }
   | { id: string; kind: "approval"; approval: ApprovalRequest }
 
 /** timeline 解析:新数据用结构化 activity;旧历史缺 activity 时回退
@@ -54,7 +55,7 @@ function mergeDurationMs(a?: number, b?: number): number | undefined {
 }
 
 /** 把 timeline 折成阶段栈:连续 thinking 合并为一段(text 拼接、耗时求和)、连续 tool
- * 合并为一组,progress/steer 切段并独立成行。
+ * 合并为一组,progress 切段并独立成行。
  * 注意:不做增量缓存——draft.activity 的项会被原位改写(thinking 追加文本、
  * tool_updated 替换 tool),任何引用稳定性假设都会吞掉实时更新。 */
 export function buildPhases(items: ActivityItem[]): PhaseRow[] {
@@ -115,7 +116,7 @@ export function phaseLabel(
  * 末段是未闭合的 thinking → 思考还在流式(或刚结束、下一事件未到的间隙)。
  * 末段 thinking 已闭合(streaming 为空,被说话闭合)说明 agent 正在输出正文——思考行落定成
  * 「已思考 Xs」,状态交给 liveStatus 的兜底行,不再把「正在思考…」钉在流式正文上面。
- * 其他情况(末行是 progress/steer,或空栈)没有活跃工作段,调用方回退到 liveStatus。 */
+ * 其他情况(末行是 progress,或空栈)没有活跃工作段,调用方回退到 liveStatus。 */
 export function livePhaseId(rows: PhaseRow[]): string | undefined {
   const last = rows.at(-1)
   if (last?.kind === "tools") {
@@ -127,7 +128,7 @@ export function livePhaseId(rows: PhaseRow[]): string | undefined {
 
 /** live 回合的聚合行:已完成(闭合)的 thinking/tools 阶段收进 trace 块顶部一行,
  * 实时计数、点击展开回看完整栈。未闭合的流式 thinking、仍含 running 工具的
- * tools 行(哪怕栈末行已被穿插思考抢走)以及 progress/steer/approval 都留在
+ * tools 行(哪怕栈末行已被穿插思考抢走)以及 progress/approval 都留在
  * 流里,不进聚合——审批卡可交互、旁白是公开内容。
  * thinkingMs 聚合所有闭合 thinking 段的耗时(沿用 mergeDurationMs:只有部分段
  * 有计时也给出已知部分的和);全部缺计时则缺席,标题回退无时长文案。 */
@@ -181,7 +182,7 @@ export function liveTurnState(messages: Message[], running: boolean): LiveTurn |
   }
 }
 
-/** 兜底状态标题:阶段栈没有活跃工作段时(空栈、说话中、收到补充)的状态文案。
+/** 兜底状态标题:阶段栈没有活跃工作段时(空栈、说话中)的状态文案。
  * 有活跃工作段时状态由该阶段行自己承担(livePhaseId),不走这里。
  * 末段思考已被说话闭合(durationMs 写死)= agent 正在输出正文,正文在下方流式,
  * 状态行如实说「正在回复」,不再假装还在思考。 */
@@ -195,7 +196,6 @@ export function liveStatus(turn: LiveTurn, t: TFn = defaultT): { label: string }
   if (last?.kind === "approval" && last.approval.state === "pending") {
     return { label: t("activity.waitingApproval") }
   }
-  if (last?.kind === "steer") return { label: t("activity.steerReceived") }
   if (last?.kind === "thinking" && last.durationMs !== undefined) return { label: t("activity.replying") }
   if (turn.activity.some((item) => item.kind === "tool" || item.kind === "progress")) {
     return { label: t("activity.working") }

@@ -69,17 +69,17 @@ describe("buildPhases 阶段栈分组", () => {
     expect(noTiming[0]).toEqual({ id: "th1", kind: "thinking", text: "想，想" })
   })
 
-  it("progress/steer 切段并独立成行", () => {
+  it("progress 切段并独立成行", () => {
     const rows = buildPhases([
       progress("p1", "先看一下"),
       toolItem("t1"),
       toolItem("t2"),
       thinking("th1", "再想"),
       toolItem("t3"),
-      { id: "s1", kind: "steer", text: "补充" },
+      progress("p2", "补充说明"),
       toolItem("t4"),
     ])
-    expect(kinds(rows)).toEqual(["progress", "tools", "thinking", "tools", "steer", "tools"])
+    expect(kinds(rows)).toEqual(["progress", "tools", "thinking", "tools", "progress", "tools"])
     const toolRows = rows.filter((r) => r.kind === "tools")
     expect(toolRows.map((r) => r.kind === "tools" && r.tools.length)).toEqual([2, 1, 1])
   })
@@ -103,7 +103,6 @@ describe("livePhaseId 活跃阶段判定", () => {
     // 闭合段 + 新流式段合并后,尾项未闭合 → 整段仍是 live(时长是部分和,不提前露出)
     expect(livePhaseId(buildPhases([closed, streaming]))).toBe("th2")
     expect(livePhaseId(buildPhases([progress("p1", "说话")]))).toBeUndefined()
-    expect(livePhaseId(buildPhases([{ id: "s1", kind: "steer", text: "补充" }]))).toBeUndefined()
     expect(livePhaseId([])).toBeUndefined()
   })
 })
@@ -168,10 +167,9 @@ describe("liveAggregate live 聚合行", () => {
     expect(liveAggregate(settled).rows.map((r) => r.id)).toEqual(["t1", "th1"])
   })
 
-  it("progress/steer/approval 永不入聚合", () => {
+  it("progress/approval 永不入聚合", () => {
     const rows = buildPhases([
       progress("p1", "过程"),
-      { id: "s1", kind: "steer", text: "补充" },
     ])
     expect(liveAggregate(rows).rows).toEqual([])
   })
@@ -299,13 +297,10 @@ describe("liveStatus 兜底状态文案(无活跃工作段时)", () => {
     ).toEqual({ label: "正在使用工具" })
   })
 
-  it("工具落定但回合仍在运行时显示正在工作;末项 steer 显示已收到补充", () => {
+  it("工具落定但回合仍在运行时显示正在工作", () => {
     expect(
       liveStatus({ activity: [toolItem("t1", { target: "b.ts" })], tools: [] }),
     ).toEqual({ label: "正在工作" })
-    expect(
-      liveStatus({ activity: [{ id: "s1", kind: "steer", text: "快点" }], tools: [] }),
-    ).toEqual({ label: "已收到你的补充" })
   })
 
   it("末项是文字:有工具在跑仍显示正在使用工具,已有过程则正在工作", () => {

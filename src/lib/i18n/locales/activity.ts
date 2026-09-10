@@ -14,7 +14,6 @@ const bundle: LocaleBundle = {
     "activity.usedTools": "已使用 {count} 个工具",
     // 兜底状态行(core/activity.ts liveStatus)
     "activity.waitingApproval": "等待你的审批",
-    "activity.steerReceived": "已收到你的补充",
     "activity.replying": "正在回复",
     "activity.working": "正在工作",
     "activity.thinking": "正在思考",
@@ -49,8 +48,7 @@ const bundle: LocaleBundle = {
     "activity.denied": "已拒绝",
     "activity.allowedAlways": "已总是允许",
     "activity.allowed": "已允许",
-    // 补充引导条 / 失败计数(TurnActivity.tsx)
-    "activity.steer": "你补充：{text}",
+    // 失败计数(TurnActivity.tsx)
     "activity.failedCount": "{count} 个失败",
     // 会话状态指示 aria-label(StatusGlyph.tsx)
     "activity.glyphRunning": "进行中",
@@ -64,7 +62,6 @@ const bundle: LocaleBundle = {
     "activity.usingTools": "Using tools",
     "activity.usedTools": "Used {count} tools",
     "activity.waitingApproval": "Waiting for your approval",
-    "activity.steerReceived": "Got your follow-up",
     "activity.replying": "Replying",
     "activity.working": "Working",
     "activity.thinking": "Thinking",
@@ -95,7 +92,6 @@ const bundle: LocaleBundle = {
     "activity.denied": "Denied",
     "activity.allowedAlways": "Always allowed",
     "activity.allowed": "Allowed",
-    "activity.steer": "Your follow-up: {text}",
     "activity.failedCount": "{count} failed",
     "activity.glyphRunning": "Running",
     "activity.glyphAttention": "Approval requested",

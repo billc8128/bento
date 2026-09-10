@@ -6,22 +6,70 @@ const at = "2026-08-24T00:00:00.000Z"
 const T = Date.parse(at)
 
 describe("replay", () => {
-  it("按事件顺序保留 thinking、tool 与 steer 时间线", () => {
+  it("user_steer 拆成真实 user message:前段活动落定,回合在后段继续", () => {
     const acc = createAccumulator()
     const records = [
       { seq: 1, at, kind: "event", payload: { type: "agent_thought_chunk", text: "先分析" } },
       { seq: 2, at, kind: "event", payload: { type: "tool_started", id: "t1", kind: "search", title: "搜索资料", status: "running" } },
-      { seq: 3, at, kind: "event", payload: { type: "agent_thought_chunk", text: "再判断" } },
-      { seq: 4, at, kind: "event", payload: { type: "user_steer", text: "先做移动端", clientMessageId: "c1" } },
+      { seq: 3, at, kind: "event", payload: { type: "tool_updated", id: "t1", status: "completed" } },
+      { seq: 4, at, kind: "event", payload: { type: "agent_thought_chunk", text: "再判断" } },
+      { seq: 5, at, kind: "event", payload: { type: "user_steer", text: "先做移动端", clientMessageId: "c1" } },
+      { seq: 6, at, kind: "event", payload: { type: "agent_message_chunk", text: "好,先做移动端。" } },
+      { seq: 7, at, kind: "event", payload: { type: "turn_finished", reason: "end_turn" } },
     ] as const
     for (const record of records) applyRecord(acc, record)
-    expect(messagesOf(acc)[0]).toMatchObject({
+    const [seg1, steer, seg2] = messagesOf(acc)
+    // 前段:steer 前的活动收成一个已落定 assistant 消息(无 outcome)
+    expect(seg1).toMatchObject({
+      role: "assistant",
       activity: [
         { kind: "thinking", text: "先分析" },
         { kind: "tool", tool: { target: "搜索资料" } },
         { kind: "thinking", text: "再判断" },
-        { kind: "steer", text: "先做移动端" },
       ],
+    })
+    expect(seg1.role === "assistant" && seg1.outcome).toBeUndefined()
+    // steer 本身是消息流里的 user message
+    expect(steer).toMatchObject({ role: "user", text: "先做移动端", clientMessageId: "c1" })
+    // 后段:steer 之后的正文照常落定
+    expect(seg2).toMatchObject({ role: "assistant", text: "好,先做移动端。" })
+  })
+
+  it("user_steer 时仍在跑的工具结转后段,不在前段留下定格的 running", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at, kind: "event", payload: { type: "tool_started", id: "t1", kind: "bash", title: "ls", status: "running" } },
+      { seq: 2, at, kind: "event", payload: { type: "user_steer", text: "顺便看下 dist", clientMessageId: "c1" } },
+      { seq: 3, at, kind: "event", payload: { type: "tool_updated", id: "t1", status: "completed" } },
+      { seq: 4, at, kind: "event", payload: { type: "agent_message_chunk", text: "完了。" } },
+      { seq: 5, at, kind: "event", payload: { type: "turn_finished", reason: "end_turn" } },
+    ] as const
+    for (const record of records) applyRecord(acc, record)
+    const msgs = messagesOf(acc)
+    // 前段没有任何活动内容(唯一的工具还在跑、被结转),不产生空消息
+    expect(msgs[0]).toMatchObject({ role: "user", text: "顺便看下 dist" })
+    // 工具在后段落定完成,tool_updated 照常命中
+    expect(msgs[1]).toMatchObject({
+      role: "assistant",
+      text: "完了。",
+      activity: [{ kind: "tool", tool: { target: "ls", status: "done" } }],
+    })
+  })
+
+  it("user_steer 结转待决议审批,approval_resolved 照常结算", () => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at, kind: "event", payload: { type: "approval_request", id: "a1", title: "rm -rf dist", options: [{ id: "allow_once", label: "允许" }] } },
+      { seq: 2, at, kind: "event", payload: { type: "user_steer", text: "先别删", clientMessageId: "c1" } },
+      { seq: 3, at, kind: "event", payload: { type: "approval_resolved", id: "a1", decision: "deny", source: "user" } },
+      { seq: 4, at, kind: "event", payload: { type: "turn_finished", reason: "end_turn" } },
+    ] as const
+    for (const record of records) applyRecord(acc, record)
+    const msgs = messagesOf(acc)
+    expect(msgs[0]).toMatchObject({ role: "user", text: "先别删" })
+    expect(msgs[1]).toMatchObject({
+      role: "assistant",
+      activity: [{ kind: "approval", approval: { id: "a1", state: { decision: "deny" } } }],
     })
   })
 
@@ -873,12 +921,12 @@ describe("thinking 段计时闭合(step2)", () => {
     ] as const
     for (const r of records) applyRecord(acc, r)
 
-    const m = messagesOf(acc)[0]
-    if (m.role !== "assistant") throw new Error("fixture")
-    expect(m.activity).toEqual([
+    const [seg, steer] = messagesOf(acc)
+    if (seg.role !== "assistant") throw new Error("fixture")
+    expect(seg.activity).toEqual([
       { id: "thinking-1", kind: "thinking", text: "想", startedAtMs: T, durationMs: 2_500 },
-      { id: "steer-c1", kind: "steer", text: "补充" },
     ])
+    expect(steer).toMatchObject({ role: "user", text: "补充" })
   })
 
   it("finalizeTrailing 兜底闭合尾部思考段,非零耗时", () => {

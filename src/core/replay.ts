@@ -147,6 +147,56 @@ function finalizeDraft(acc: Accumulator, atMs: number, options: FinalizeOptions 
   })
 }
 
+/** steer 是回合中插入的真实用户消息:把当前 draft 拆成前后两段——已落定的
+ * 活动收成一条已落定 assistant 消息(无 outcome),steer 文本作为 user message
+ * 跟在后面,回合余下部分在新 draft 里继续。仍在跑的工具与待决议的审批必须
+ * 结转进新 draft:tool_updated / approval_resolved 只查当前 draft,留在旧段里
+ * 会永远挂着 running/pending。plan 是回合级状态,整体移交新 draft。 */
+function splitDraftForSteer(acc: Accumulator, atMs: number) {
+  const d = acc.draft
+  if (!d) return
+  closeThinking(d, atMs)
+  const carriedToolIds = new Set(
+    [...d.toolIndex.entries()].filter(([, i]) => d.tools[i].status === "running").map(([id]) => id),
+  )
+  const carriedTools = d.tools.filter((tool) => tool.status === "running")
+  const isCarried = (item: ActivityItem) =>
+    (item.kind === "tool" && carriedToolIds.has(item.id)) ||
+    (item.kind === "approval" && item.approval.state === "pending")
+  const settledActivity = d.activity.filter((item) => !isCarried(item))
+  const carriedActivity = d.activity.filter(isCarried)
+  const settledTools = d.tools.filter((tool) => tool.status !== "running")
+  if (d.text || d.thinking || settledTools.length > 0 || settledActivity.length > 0) {
+    acc.messages.push({
+      id: `a${acc.messages.length}`,
+      role: "assistant",
+      text: d.text,
+      ...(d.thinking ? { thinking: d.thinking } : {}),
+      ...(settledTools.length ? { tools: settledTools } : {}),
+      ...(settledActivity.length ? { activity: settledActivity } : {}),
+      durationMs: atMs - d.startedAtMs,
+    })
+  }
+  const toolIndex = new Map<string, number>()
+  for (const id of carriedToolIds) {
+    toolIndex.set(id, carriedTools.indexOf(d.tools[d.toolIndex.get(id)!]))
+  }
+  // 没有需要结转的内容就不留空 draft:messagesOf 会把空 draft 加成一条空消息;
+  // 下一个事件到来时由 ensureDraft 重新开场。
+  acc.draft =
+    carriedActivity.length > 0 || d.plan?.length
+      ? {
+          text: "",
+          thinking: "",
+          tools: carriedTools,
+          toolIndex,
+          activity: carriedActivity,
+          startedAtMs: atMs,
+          ...(d.plan?.length ? { plan: d.plan } : {}),
+        }
+      : null
+}
+
 /** 工具边界:把当前累积的公开文本切成一段过程文字留在 timeline 里,
  * 让 final message 只装最后一次工具活动之后的文本。纯空白段丢弃。 */
 function flushProgress(d: Draft, id: string) {
@@ -215,12 +265,14 @@ function applyEvent(acc: Accumulator, event: HarnessEvent, seq: number, atMs: nu
       return
     }
     case "user_steer": {
-      const draft = ensureDraft(acc, atMs)
-      closeThinking(draft, atMs)
-      draft.activity.push({
-        id: `steer-${event.clientMessageId}`,
-        kind: "steer",
+      // steer 是回合中插入的真实用户消息,按消息流渲染:之前的活动收成一段
+      // 已落定 assistant 消息,steer 文本作为 user message,回合在新 draft 继续。
+      splitDraftForSteer(acc, atMs)
+      acc.messages.push({
+        id: `u${seq}`,
+        role: "user",
         text: event.text,
+        clientMessageId: event.clientMessageId,
       })
       return
     }

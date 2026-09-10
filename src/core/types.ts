@@ -81,7 +81,6 @@ export type ActivityItem =
    * 工具活动后的连续文本才是 final,过程段留在 timeline 里可折叠查看 */
   | { id: string; kind: "progress"; text: string }
   | { id: string; kind: "tool"; tool: ToolCall }
-  | { id: string; kind: "steer"; text: string }
   | { id: string; kind: "approval"; approval: ApprovalRequest }
 
 export type Message =
@@ -92,7 +91,7 @@ export type Message =
       text: string
       tools?: ToolCall[]
       thinking?: string
-      /** thinking/tool/steer 按真实事件顺序排列；旧历史缺失时 UI 回退旧字段。 */
+      /** thinking/tool 按真实事件顺序排列；旧历史缺失时 UI 回退旧字段。 */
       activity?: ActivityItem[]
       /** 非正常终结原因；缺省表示收到正常 turn_finished。 */
       outcome?: "cancelled" | "error" | "interrupted"

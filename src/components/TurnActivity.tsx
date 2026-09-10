@@ -1,10 +1,11 @@
 /**
  * TurnActivity:一个回合的活动按「阶段摘要栈」渲染——连续 thinking 并成一段、
- * 连续 tool 并成一组,progress/steer 独立成行。
+ * 连续 tool 并成一组,progress 独立成行。steer(回合中补充)不在这里:
+ * replay 已把它拆成消息流里的真实 user message。
  *
  * - live:回合运行中,位于消息流末端、紧邻 Composer 上方。已完成的
  *   thinking/tools 阶段收进顶部一行聚合(实时计数、点击展开完整栈);
- *   进行中的阶段(正在思考/正在使用工具)与 progress/steer/approval 留在
+ *   进行中的阶段(正在思考/正在使用工具)与 progress/approval 留在
  *   流里,进行中的阶段永远在栈末,带流光文案;没有活跃工作段时
  *   (说话中/空栈)由末尾的兜底状态行承接,全窗口唯一的状态标题;
  * - settled:回合落定后折叠到 final 正文上方,一行总折叠「已工作 Xm XXs」,
@@ -18,7 +19,6 @@ import {
   Check,
   ChevronDown,
   FileText,
-  Forward,
   ListCollapse,
   Pencil,
   Search,
@@ -419,7 +419,7 @@ function ApprovalRow({
   )
 }
 
-/** 阶段栈中的一行:thinking/tools 走折叠阶段行,approval 是审批卡,steer 是引导条,progress 是
+/** 阶段栈中的一行:thinking/tools 走折叠阶段行,approval 是审批卡,progress 是
  * 公开过程文字(比 thinking 亮一档;live 窗口内限三行)。 */
 function PhaseRowView({
   row,
@@ -441,14 +441,6 @@ function PhaseRowView({
   }
   if (row.kind === "approval") {
     return <ApprovalRow approval={row.approval} onResolve={onResolveApproval} />
-  }
-  if (row.kind === "steer") {
-    return (
-      <div className="flex items-start gap-2 rounded-md bg-secondary px-2 py-1.5 text-xs text-secondary-foreground">
-        <Forward className="mt-0.5 size-3.5 shrink-0" />
-        <span className="min-w-0 wrap-anywhere">{t("activity.steer", { text: row.text })}</span>
-      </div>
-    )
   }
   return (
     <p
@@ -535,8 +527,8 @@ export function TurnActivity({
 
   if (live) {
     // 已完成的 thinking/tools 阶段收进顶部聚合行;进行中的阶段与
-    // progress/steer/approval 按时间序留在流里。没有活跃工作段时
-    // (空栈/说话中/收到补充)由末尾的兜底状态行承接——全窗口唯一的状态标题。
+    // progress/approval 按时间序留在流里。没有活跃工作段时
+    // (空栈/说话中)由末尾的兜底状态行承接——全窗口唯一的状态标题。
     const agg = liveAggregate(phases)
     const aggregated = new Set(agg.rows.map((row) => row.id))
     const flowRows = phases.filter((row) => !aggregated.has(row.id))
