@@ -54,6 +54,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
   } else if (frame.type === "abort") {
     output({ id: frame.id, type: "response", command: frame.type, success: true })
     output({ type: "agent_end" })
+    output({ type: "agent_settled" })
   }
 })
 `)
@@ -320,5 +321,69 @@ describe("translatePiEvent 工具输出(TRACE_DATA_PLAN §7 P3)", () => {
       status: "completed",
       detail: '{"text":"第一行","rows":3}',
     })
+  })
+})
+
+describe("Pi RPC run settlement", () => {
+  it.each(["success", "exhausted", "cancelled"])("keeps retries busy until settled (%s)", async (outcome) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-pi-settled-"))
+    const executable = path.join(dir, "pi")
+    fs.writeFileSync(executable, `#!/usr/bin/env node
+const readline = require("node:readline")
+const output = (frame) => process.stdout.write(JSON.stringify(frame) + "\\n")
+readline.createInterface({ input: process.stdin }).on("line", (line) => {
+  const frame = JSON.parse(line)
+  if (frame.type === "steer") {
+    for (const event of JSON.parse(frame.message)) output(event)
+  }
+  if (frame.type === "abort") {
+    output({ type: "auto_retry_end", success: false, finalError: "Retry cancelled" })
+    output({ type: "agent_settled" })
+  }
+  output({ id: frame.id, type: "response", command: frame.type, success: true,
+    data: { sessionId: "pi-test" } })
+})
+`)
+    fs.chmodSync(executable, 0o755)
+    const previousOverride = process.env.BENTO_PI_PATH
+    process.env.BENTO_PI_PATH = executable
+    let connection: Awaited<ReturnType<typeof piDriver.start>> | undefined
+    try {
+      connection = await piDriver.start({ cwd: dir }, () => {})
+      let completed = false
+      const completion = connection.prompt("start").then((result) => {
+        completed = true
+        return result
+      })
+      // The steer response acts as a barrier: all preceding events have been consumed.
+      const events = (frames: Array<Record<string, unknown>>) => connection!.steer!(JSON.stringify(frames))
+      await events([
+        { type: "turn_end", message: { stopReason: "error", errorMessage: "500 network error" } },
+        { type: "agent_end", willRetry: true },
+        { type: "auto_retry_start", attempt: 1, delayMs: 2000 },
+      ])
+      expect(completed).toBe(false)
+      await expect(connection.prompt("continue too early")).rejects.toThrow("Pi 正在处理上一轮请求")
+      await events([{ type: "agent_end", willRetry: false }])
+      // Even willRetry:false isn't final: compaction/queued work may still follow.
+      expect(completed).toBe(false)
+      if (outcome === "cancelled") {
+        await connection.cancel()
+      } else {
+        await events([{ type: "auto_retry_end", success: outcome === "success" }])
+        expect(completed).toBe(false)
+        await events([{ type: "agent_settled" }])
+      }
+      await expect(completion).resolves.toMatchObject({ stopReason: "end_turn" })
+      expect(completed).toBe(true)
+      const next = connection.prompt("continue after settled")
+      await events([{ type: "agent_settled" }])
+      await expect(next).resolves.toMatchObject({ stopReason: "end_turn" })
+    } finally {
+      connection?.close()
+      if (previousOverride === undefined) delete process.env.BENTO_PI_PATH
+      else process.env.BENTO_PI_PATH = previousOverride
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

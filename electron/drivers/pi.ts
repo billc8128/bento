@@ -272,7 +272,8 @@ class PiRpcProcess {
     }
     const event = translatePiEvent(frame)
     if (event) this.emit(event)
-    if (frame.type === "agent_end") {
+    // agent_end only ends one attempt; Pi may still retry, compact, or drain queued work.
+    if (frame.type === "agent_settled") {
       this.turn?.resolve()
       this.turn = undefined
     }
