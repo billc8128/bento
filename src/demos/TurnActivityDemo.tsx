@@ -34,10 +34,10 @@ const s1Activity: ActivityItem[] = [
   { id: "th2", kind: "thinking", text: "返回 200,延迟 38ms,连通性正常。接下来看一下配置文件里 LLM 层是怎么写的…", startedAtMs: 1 },
 ]
 
-/** S2:思考 → 说话 → 7 个工具落定,第 8 步在跑 */
+/** S2:思考 → 说话(带 markdown:粗体/列表/行内代码)→ 7 个工具落定,第 8 步在跑 */
 const s2Activity: ActivityItem[] = [
   { id: "th1", kind: "thinking", text: "config.ts 里 LLM 层是手写 fetch,没有重试和流式处理。重写前先跑一遍现有测试确认基线…", durationMs: 6100 },
-  { id: "p1", kind: "progress", text: "配置找到了,接下来重写 LLM 层。" },
+  { id: "p1", kind: "progress", text: "配置找到了,接下来**重写 LLM 层**:\n- 统一封装流式 client\n- 加重试和超时\n\n完成后跑 `pnpm test` 验证。" },
   ...tools8.map((t, i) => ({ id: `t${i}`, kind: "tool" as const, tool: t })),
 ]
 

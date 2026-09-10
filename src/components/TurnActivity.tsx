@@ -32,6 +32,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { ShiningText } from "@/components/ShiningText"
+import { Markdown } from "@/components/Markdown"
 import { Button } from "@/components/ui/button"
 import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
@@ -420,7 +421,8 @@ function ApprovalRow({
 }
 
 /** 阶段栈中的一行:thinking/tools 走折叠阶段行,approval 是审批卡,progress 是
- * 公开过程文字(比 thinking 亮一档,始终完整展示——它是 agent 说给用户的话)。 */
+ * 公开过程文字——agent 说给用户的话,完整展示并按 markdown 渲染
+ * (比 thinking 亮一档、小半号,密度向 trace 看齐)。 */
 function PhaseRowView({
   row,
   livePhase,
@@ -441,9 +443,10 @@ function PhaseRowView({
     return <ApprovalRow approval={row.approval} onResolve={onResolveApproval} />
   }
   return (
-    <p className="max-w-full px-1.5 py-0.5 text-[13px] leading-relaxed text-foreground/75">
-      {row.text}
-    </p>
+    <Markdown
+      text={row.text}
+      className="px-1.5 py-0.5 text-[13px] text-foreground/75 [&_p]:mb-1.5 [&_ul]:mb-1.5 [&_ol]:mb-1.5 [&_pre]:mb-1.5 [&_blockquote]:mb-1.5"
+    />
   )
 }
 
