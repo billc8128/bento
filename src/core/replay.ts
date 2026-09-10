@@ -121,13 +121,8 @@ function finalizeDraft(acc: Accumulator, atMs: number, options: FinalizeOptions 
   // 文本后面又开了新工具),把最后一段 progress 回退为 final,回答不能消失。
   let text = d.text
   let activity = d.activity
-  if (options.outcome && text.trim()) {
-    activity = [
-      ...activity,
-      { id: `progress-end-${acc.lastSeq}`, kind: "progress", text },
-    ]
-    text = ""
-  } else if (options.promoteProgress !== false && !text.trim()) {
+  // 非正常结束也保留已显示的正文；outcome 单独标记状态，不把回复收进折叠轨迹。
+  if (options.promoteProgress !== false && !text.trim()) {
     for (let i = activity.length - 1; i >= 0; i--) {
       const item = activity[i]
       if (item.kind === "progress") {

@@ -183,7 +183,7 @@ const AssistantMessage = memo(function AssistantMessage({
   return (
     <div className="flex min-w-0 flex-col items-start gap-2.5">
       {/* 轨迹(思考 + 工具)在回答之前:时序如此,正文第一眼就是答案 */}
-      {!running && (activity.length > 0 || (m.plan?.length ?? 0) > 0) && (
+      {!running && (m.outcome || activity.length > 0 || (m.plan?.length ?? 0) > 0) && (
         <div className="w-full min-w-0">
           <TurnActivity
             live={false}

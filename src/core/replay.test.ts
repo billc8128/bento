@@ -961,3 +961,34 @@ describe("replay 审批事件", () => {
     })
   })
 })
+
+describe("异常结束保留已显示正文", () => {
+  it.each(["next-message", "error", "cancelled", "notice", "trailing"] as const)("%s 不把正文移入活动记录，回放一致", (boundary) => {
+    const acc = createAccumulator()
+    const records = [
+      { seq: 1, at, kind: "event", payload: { type: "user_message", text: "开始" } },
+      { seq: 2, at, kind: "event", payload: { type: "agent_message_chunk", text: "已有回复" } },
+    ] as const
+    for (const record of records) applyRecord(acc, record)
+    expect(messagesOf(acc).at(-1)?.text).toBe("已有回复")
+    const finish = (target: ReturnType<typeof createAccumulator>) => {
+      if (boundary === "trailing") finalizeTrailing(target, at)
+      else applyRecord(target, { seq: 3, at, kind: "event", payload:
+        boundary === "next-message" ? { type: "user_message", text: "继续" }
+          : boundary === "notice" ? { type: "notice", text: "上游失败" }
+            : { type: "turn_finished", reason: boundary },
+      })
+    }
+    finish(acc)
+    const message = messagesOf(acc)[1]
+    expect(message).toMatchObject({ role: "assistant", text: "已有回复", outcome:
+      boundary === "next-message" || boundary === "trailing" ? "interrupted"
+        : boundary === "cancelled" ? "cancelled" : "error",
+    })
+    expect(message && message.role === "assistant" && message.activity).toBeUndefined()
+    const replayed = createAccumulator()
+    for (const record of records) applyRecord(replayed, JSON.parse(JSON.stringify(record)))
+    finish(replayed)
+    expect(messagesOf(replayed)).toEqual(messagesOf(acc))
+  })
+})

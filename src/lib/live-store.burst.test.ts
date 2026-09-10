@@ -175,10 +175,9 @@ describe("live-store 流式通知帧级合并", () => {
       (m): m is Extract<Message, { role: "assistant" }> =>
         m.role === "assistant" && m.outcome === "interrupted",
     )
-    // interrupted 收尾:流中文本切成 progress 活动项留在 timeline(reducer 既有语义)
-    const lastActivity = interrupted?.activity?.at(-1)
-    expect(lastActivity?.kind === "progress" || lastActivity?.kind === "thinking"
-      ? lastActivity.text : "").toContain("c100")
+    // 下一条消息到来时，已显示的回复仍留在正文，不移入折叠活动。
+    expect(interrupted?.text).toContain("c100")
+    expect(interrupted?.activity?.some((item) => item.kind === "progress")).not.toBe(true)
     expect(live.liveMeta(key)?.runtime).toBe("working")
   })
 
