@@ -420,16 +420,14 @@ function ApprovalRow({
 }
 
 /** 阶段栈中的一行:thinking/tools 走折叠阶段行,approval 是审批卡,progress 是
- * 公开过程文字(比 thinking 亮一档;live 窗口内限三行)。 */
+ * 公开过程文字(比 thinking 亮一档,始终完整展示——它是 agent 说给用户的话)。 */
 function PhaseRowView({
   row,
   livePhase,
-  compact,
   onResolveApproval,
 }: {
   row: PhaseRow
   livePhase: boolean
-  compact: boolean
   onResolveApproval?: (id: string, decision: ApprovalDecision) => void
 }) {
   const { t } = useT()
@@ -443,12 +441,7 @@ function PhaseRowView({
     return <ApprovalRow approval={row.approval} onResolve={onResolveApproval} />
   }
   return (
-    <p
-      className={cn(
-        "max-w-full px-1.5 py-0.5 text-[13px] leading-relaxed text-foreground/75",
-        compact && "line-clamp-3",
-      )}
-    >
+    <p className="max-w-full px-1.5 py-0.5 text-[13px] leading-relaxed text-foreground/75">
       {row.text}
     </p>
   )
@@ -490,7 +483,7 @@ function LiveAggregateRow({
     >
       <DetailRail>
         {agg.rows.map((row) => (
-          <PhaseRowView key={row.id} row={row} livePhase={false} compact onResolveApproval={onResolveApproval} />
+          <PhaseRowView key={row.id} row={row} livePhase={false} onResolveApproval={onResolveApproval} />
         ))}
       </DetailRail>
     </TraceCollapsible>
@@ -537,7 +530,7 @@ export function TurnActivity({
       <div className="flex min-w-0 max-w-full flex-col gap-0.5">
         {agg.rows.length > 0 && <LiveAggregateRow agg={agg} onResolveApproval={onResolveApproval} />}
         {flowRows.map((row) => (
-          <PhaseRowView key={row.id} row={row} livePhase={row.id === liveId} compact onResolveApproval={onResolveApproval} />
+          <PhaseRowView key={row.id} row={row} livePhase={row.id === liveId} onResolveApproval={onResolveApproval} />
         ))}
         {fallback && (
           <div className="-ml-1.5 flex w-full min-w-0 cursor-default items-center gap-2 overflow-hidden rounded-md px-1.5 py-1 text-sm font-medium text-foreground/70">
@@ -594,7 +587,7 @@ export function TurnActivity({
             <div className="flex min-w-0 flex-col gap-1 py-1">
               {plan.length > 0 && <PlanRows plan={plan} />}
               {phases.map((row) => (
-                <PhaseRowView key={row.id} row={row} livePhase={false} compact={false} />
+                <PhaseRowView key={row.id} row={row} livePhase={false} />
               ))}
             </div>
           </div>
@@ -603,7 +596,7 @@ export function TurnActivity({
           <div className="mt-1 divide-y divide-border overflow-hidden rounded-md border border-border bg-chrome">
             {plan.length > 0 && <PlanRows plan={plan} />}
             {phases.map((row) => (
-              <PhaseRowView key={row.id} row={row} livePhase={false} compact={false} />
+              <PhaseRowView key={row.id} row={row} livePhase={false} />
             ))}
           </div>
         )
