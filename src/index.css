@@ -13,7 +13,6 @@
 @import "@fontsource/ibm-plex-mono/latin-500.css";
 @import "@fontsource/ibm-plex-mono/latin-600.css";
 @import "./styles/themes.css";
-@import "./styles/app-update.css";
 
 @custom-variant dark (&:is(.dark *));
 
