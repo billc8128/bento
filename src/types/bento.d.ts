@@ -57,6 +57,7 @@ declare global {
     bento?: {
       desktop: true
       getAppUpdate(): Promise<AppUpdateState>
+      checkAppUpdate(): Promise<void>
       downloadAppUpdate(): Promise<void>
       onAppUpdate(cb: (state: AppUpdateState) => void): () => void
       createSession(opts: {

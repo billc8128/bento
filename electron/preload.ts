@@ -19,6 +19,7 @@ const api = {
   /** renderer 判断自己跑在桌面壳里还是纯 web(纯 web 时 window.bento 不存在) */
   desktop: true as const,
   getAppUpdate: (): Promise<AppUpdateState> => ipcRenderer.invoke("app-update:get"),
+  checkAppUpdate: (): Promise<void> => ipcRenderer.invoke("app-update:check"),
   downloadAppUpdate: (): Promise<void> => ipcRenderer.invoke("app-update:download"),
   onAppUpdate: (cb: (state: AppUpdateState) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, state: AppUpdateState) => cb(state)

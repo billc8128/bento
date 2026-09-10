@@ -999,6 +999,7 @@ app.whenReady().then(async () => {
     }
   }
   ipcMain.handle("app-update:get", (event) => { assertUpdateCaller(event); return updates!.state })
+  ipcMain.handle("app-update:check", (event) => { assertUpdateCaller(event); return updates!.check() })
   ipcMain.handle("app-update:download", (event) => { assertUpdateCaller(event); return updates!.downloadAndInstall() })
   createWindow()
   updates.start()
