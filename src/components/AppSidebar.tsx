@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   Blocks,
   ChevronDown,
@@ -131,6 +131,18 @@ function relativeTime(iso: string, t: TFn): string {
   return `${d.getMonth() + 1}-${d.getDate()}`
 }
 
+/** 对话/项目两个分区的折叠状态:localStorage 持久化,重启后保持用户的选择。 */
+const SIDEBAR_SECTIONS_KEY = "bento.sidebar.sections"
+
+function readSidebarSections(): { chats: boolean; projects: boolean } {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SIDEBAR_SECTIONS_KEY) ?? "null") as
+      { chats?: unknown; projects?: unknown } | null
+    return { chats: raw?.chats === true, projects: raw?.projects === true }
+  } catch {
+    return { chats: false, projects: false }
+  }
+}
 
 export function AppSidebar() {
   const { t } = useT()
@@ -152,8 +164,10 @@ export function AppSidebar() {
   const [openFolderMenu, setOpenFolderMenu] = useState<string | null>(null)
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null)
   const [closedGroups, setClosedGroups] = useState<Set<string>>(() => new Set())
-  const [chatCollapsed, setChatCollapsed] = useState(false)
-  const [projectsCollapsed, setProjectsCollapsed] = useState(false)
+  const [collapsedSections, setCollapsedSections] = useState(readSidebarSections)
+  useEffect(() => {
+    localStorage.setItem(SIDEBAR_SECTIONS_KEY, JSON.stringify(collapsedSections))
+  }, [collapsedSections])
   const [createProjectOpen, setCreateProjectOpen] = useState(false)
 
   /** 项目区「使用现有文件夹」:选完目录直接进该目录的新会话起始页 */
@@ -407,7 +421,7 @@ export function AppSidebar() {
               {/* 小节标签(Codex 式):muted + 可收展 chevron;hover 右侧出快捷动作。
                   操作区(新对话/应用)保持行样式,内容区用标签分层 */}
               <section className="pb-2">
-                <Collapsible open={!chatCollapsed} onOpenChange={(open) => setChatCollapsed(!open)}>
+                <Collapsible open={!collapsedSections.chats} onOpenChange={(open) => setCollapsedSections((c) => ({ ...c, chats: !open }))}>
                   <div className="group/section relative flex h-7 items-center">
                     <CollapsibleTrigger className="group flex h-full w-full items-center gap-1.5 px-5 pr-9 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
                       {t("sidebar.chats")}
@@ -481,7 +495,7 @@ export function AppSidebar() {
                   </CollapsibleContent>
                 </Collapsible>
               )}
-              <Collapsible open={!projectsCollapsed} onOpenChange={(open) => setProjectsCollapsed(!open)}>
+              <Collapsible open={!collapsedSections.projects} onOpenChange={(open) => setCollapsedSections((c) => ({ ...c, projects: !open }))}>
                 <div className="group/section relative flex h-7 items-center">
                   <CollapsibleTrigger className="group flex h-full w-full items-center gap-1.5 px-5 pr-9 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
                     {t("sidebar.projects")}
