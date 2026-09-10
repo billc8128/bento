@@ -147,7 +147,7 @@ describe("buildKimiSessionConfig", () => {
     ])
   })
 
-  it("v1 布局(kimi ≥1.x):type 改 openai_legacy,capabilities 不含 tool_use", () => {
+  it("v1 布局(kimi ≥1.x):type 改 openai_legacy,capabilities 不含 tool_use,恒带 image_in", () => {
     const config = buildKimiSessionConfig(
       [
         {
@@ -166,8 +166,9 @@ describe("buildKimiSessionConfig", () => {
     )
     expect(config).toContain('type = "openai_legacy"')
     expect(config).not.toContain("tool_use")
-    expect(config.match(/capabilities = \[ "thinking" \]/g)).toHaveLength(1)
-    expect(config).not.toContain("bento-a/m-a2\"]\ncapabilities")
+    // image_in 是 kimi 1.x 的本地带图准入门槛,恒声明;能否看图由上游裁决
+    expect(config.match(/capabilities = \[ "thinking", "image_in" \]/g)).toHaveLength(1)
+    expect(config.match(/capabilities = \[ "image_in" \]/g)).toHaveLength(1)
   })
 })
 

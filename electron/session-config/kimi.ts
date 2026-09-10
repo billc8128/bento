@@ -107,12 +107,17 @@ export function buildKimiSessionConfig(
       if (model.name) lines.push(`display_name = "${escape(model.name)}"`)
       // 0.x:agent 会话恒需要 tool_use;reasoning 模型追加 thinking。
       // 1.x:capabilities 只剩模态/思考标记,tool_use 已非法,仅 reasoning 模型标注。
+      // 1.x 恒声明 image_in:它是本地准入门槛——模型没声明时带图 prompt 直接
+      // Internal error("does not support required capability: image_in",实测);
+      // 目录没有模态元数据,模型能否真看图交给上游裁决。
       if (version === "v0") {
         lines.push(model.reasoning === true
           ? 'capabilities = [ "thinking", "tool_use" ]'
           : 'capabilities = [ "tool_use" ]')
       } else if (model.reasoning === true) {
-        lines.push('capabilities = [ "thinking" ]')
+        lines.push('capabilities = [ "thinking", "image_in" ]')
+      } else {
+        lines.push('capabilities = [ "image_in" ]')
       }
       lines.push("")
     }

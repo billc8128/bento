@@ -461,12 +461,25 @@ app.whenReady().then(async () => {
       return null
     }
   })
+  // ACP/JSON-RPC 错误的可读细节常在 data.error / data.message 里(如 kimi 的
+  // "model does not support required capability: image_in"),裸 message 只有
+  // "Internal error"。透出细节,顶层 message 兜底。
+  const promptErrorMessage = (err: unknown): string => {
+    if (!(err instanceof Error)) return String(err)
+    const data = (err as { data?: unknown }).data
+    if (data && typeof data === "object") {
+      const detail = (data as { error?: unknown; message?: unknown }).error
+        ?? (data as { message?: unknown }).message
+      if (typeof detail === "string" && detail && detail !== err.message) return detail
+    }
+    return err.message
+  }
   ipcMain.handle("session:prompt", async (_e, key: string, input: PromptInput) => {
     try {
       const res = await sessions.prompt(key, input)
       return { stopReason: res.stopReason }
     } catch (err) {
-      return { error: String(err instanceof Error ? err.message : err) }
+      return { error: promptErrorMessage(err) }
     }
   })
   ipcMain.handle("session:queue-prompt", async (
@@ -478,7 +491,7 @@ app.whenReady().then(async () => {
     try {
       return await sessions.queuePrompt(key, input, clientMessageId)
     } catch (err) {
-      return { error: String(err instanceof Error ? err.message : err) }
+      return { error: promptErrorMessage(err) }
     }
   })
   ipcMain.handle("session:steer-queued", async (_e, key: string, clientMessageId: string) => {
@@ -486,7 +499,7 @@ app.whenReady().then(async () => {
       await sessions.steerQueuedPrompt(key, clientMessageId)
       return { ok: true }
     } catch (err) {
-      return { error: String(err instanceof Error ? err.message : err) }
+      return { error: promptErrorMessage(err) }
     }
   })
   ipcMain.handle("session:cancel-queued", (_e, key: string, clientMessageId: string) => {
