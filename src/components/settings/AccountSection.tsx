@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useRef, useState } from "react"
-import { Check, CircleUserRound, RotateCw, Trash2, TriangleAlert } from "lucide-react"
+import { ArrowDownToLine, ArrowUpToLine, Check, CircleUserRound, RotateCw, Trash2, TriangleAlert } from "lucide-react"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -138,8 +138,8 @@ export function AccountSection() {
           <span>Bento · {t("settings.appVersion", { version: update.currentVersion })}</span>
           {update.status === "idle" &&
             (justChecked ? (
-              <span className="inline-flex items-center gap-1">
-                <Check className="size-3.5 text-ok" />
+              <span className="inline-flex h-5 items-center gap-1 rounded-full bg-ok/10 px-2 text-[11px] font-medium text-ok">
+                <Check className="size-3" />
                 {t("settings.updateLatest")}
               </span>
             ) : (
@@ -153,14 +153,17 @@ export function AccountSection() {
               </button>
             ))}
           {update.status === "checking" && (
-            <span className="inline-flex items-center gap-1">
+            <span className="inline-flex h-5 items-center gap-1 rounded-full bg-muted px-2 text-[11px] font-medium text-muted-foreground">
               <RotateCw className="size-3 animate-spin motion-reduce:animate-none" />
               {t("settings.updateChecking")}
             </span>
           )}
           {update.status === "available" && update.version && (
             <>
-              <span>{t("settings.updateAvailable", { version: update.version })}</span>
+              <span className="inline-flex h-5 items-center gap-1 rounded-full bg-brand/12 px-2 text-[11px] font-medium text-brand">
+                <ArrowUpToLine className="size-3" />
+                {t("settings.updateAvailable", { version: update.version })}
+              </span>
               <Button
                 size="sm"
                 className="h-6 px-2 text-xs"
@@ -172,18 +175,27 @@ export function AccountSection() {
             </>
           )}
           {update.status === "downloading" && (
-            <span className="tabular-nums">{t("settings.updateDownloading", { percent: Math.floor(update.percent) })}</span>
+            <span className="inline-flex h-5 items-center gap-1.5 rounded-full bg-brand/12 px-2 text-[11px] font-medium text-brand">
+              <ArrowDownToLine className="size-3" />
+              <span className="relative h-1 w-16 overflow-hidden rounded-full bg-brand/20">
+                <span
+                  className="absolute inset-y-0 left-0 rounded-full bg-brand transition-[width] duration-200 motion-reduce:transition-none"
+                  style={{ width: `${update.percent}%` }}
+                />
+              </span>
+              <span className="tabular-nums">{Math.floor(update.percent)}%</span>
+            </span>
           )}
           {(update.status === "downloaded" || update.status === "installing") && (
-            <span className="inline-flex items-center gap-1">
+            <span className="inline-flex h-5 items-center gap-1 rounded-full bg-brand/12 px-2 text-[11px] font-medium text-brand">
               <RotateCw className="size-3 animate-spin motion-reduce:animate-none" />
               {t("settings.updateInstalling")}
             </span>
           )}
           {update.status === "error" && (
             <>
-              <span className="inline-flex items-center gap-1 text-err">
-                <TriangleAlert className="size-3.5" />
+              <span className="inline-flex h-5 items-center gap-1 rounded-full bg-err/10 px-2 text-[11px] font-medium text-err">
+                <TriangleAlert className="size-3" />
                 {t("settings.updateFailed")}
               </span>
               <button
