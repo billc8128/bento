@@ -6,18 +6,21 @@ type FolderPreferences = {
   pinned: string[]
   hidden: string[]
   aliases: Record<string, string>
+  /** 收折起来的文件夹分组(cwd);缺省全部展开 */
+  collapsed: string[]
 }
 
 const STORAGE_KEY = "bento.folder-preferences"
-const EMPTY: FolderPreferences = { pinned: [], hidden: [], aliases: {} }
+const EMPTY: FolderPreferences = { pinned: [], hidden: [], aliases: {}, collapsed: [] }
 let cache: FolderPreferences | null = null
 const listeners = new Set<() => void>()
 
 function load(): FolderPreferences {
   if (cache) return cache
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as FolderPreferences | null
-    cache = saved ?? EMPTY
+    // 旧存档缺新字段(如 collapsed),与 EMPTY 合并补齐
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as Partial<FolderPreferences> | null
+    cache = saved ? { ...EMPTY, ...saved } : EMPTY
   } catch {
     cache = EMPTY
   }
@@ -56,6 +59,15 @@ export function showFolder(cwd: string) {
   const current = load()
   if (!current.hidden.includes(cwd)) return
   persist({ ...current, hidden: current.hidden.filter((item) => item !== cwd) })
+}
+
+export function setFolderCollapsed(cwd: string, collapsed: boolean) {
+  const current = load()
+  if (current.collapsed.includes(cwd) === collapsed) return
+  const next = new Set(current.collapsed)
+  if (collapsed) next.add(cwd)
+  else next.delete(cwd)
+  persist({ ...current, collapsed: [...next] })
 }
 
 export function useFolderPreferences(): FolderPreferences {

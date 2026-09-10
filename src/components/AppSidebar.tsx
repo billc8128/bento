@@ -75,6 +75,7 @@ import { NewProjectDialog } from "@/components/ProjectPicker"
 import {
   hideFolder,
   renameFolder,
+  setFolderCollapsed,
   toggleFolderPin,
   useFolderPreferences,
 } from "@/lib/folder-preferences"
@@ -163,7 +164,6 @@ export function AppSidebar() {
   const [openSessionMenu, setOpenSessionMenu] = useState<string | null>(null)
   const [openFolderMenu, setOpenFolderMenu] = useState<string | null>(null)
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null)
-  const [closedGroups, setClosedGroups] = useState<Set<string>>(() => new Set())
   const [collapsedSections, setCollapsedSections] = useState(readSidebarSections)
   useEffect(() => {
     localStorage.setItem(SIDEBAR_SECTIONS_KEY, JSON.stringify(collapsedSections))
@@ -527,21 +527,14 @@ export function AppSidebar() {
                 <CollapsibleContent className="collapsible-section">
               <div className="space-y-1">
                 {groups.map((g) => {
-                  const open = !closedGroups.has(g.cwd)
+                  const open = !folderPreferences.collapsed.includes(g.cwd)
                   const label = folderPreferences.aliases[g.cwd] ?? dirLabel(g.cwd)
                   const isPinnedFolder = folderPreferences.pinned.includes(g.cwd)
                   return (
                     <Collapsible
                       key={g.cwd}
                       open={open}
-                      onOpenChange={(next) => {
-                        setClosedGroups((previous) => {
-                          const updated = new Set(previous)
-                          if (next) updated.delete(g.cwd)
-                          else updated.add(g.cwd)
-                          return updated
-                        })
-                      }}
+                      onOpenChange={(next) => setFolderCollapsed(g.cwd, !next)}
                     >
                       {/* 分组小节标题:点击名称收折;hover 时右侧出现管理与新对话。 */}
                       {renamingFolder === g.cwd ? (
