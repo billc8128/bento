@@ -35,6 +35,11 @@ prototypes/
 artifacts/
 .visualizations/
 
+# 市场与视频制作工作区:部署和成片发布独立处理,不属于产品源码
+promo/bento-remotion/
+promo/bento-studio/
+videos/
+
 # 内部文档:调研、计划、产品设计笔记,不进开源仓库
 docs/
 research/
