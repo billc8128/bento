@@ -5,7 +5,7 @@ import { useT } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 /** 消息快速检索条:贴在聊天区右缘的一列小刻度,一根对应一条用户指令。
- * 平时隐藏,鼠标接近右缘(HOT_EDGE px)才浮现;划过刻度有波浪动效,
+ * 至少三条用户指令时启用;平时隐藏,鼠标在右缘(HOT_EDGE px)停留后浮现;划过刻度有波浪动效,
  * 同时浮出的指令列表高亮并对齐到对应条目;点刻度或条目都平滑跳转。 */
 type PromptEntry = { id: string; text: string; collab: boolean }
 
@@ -13,7 +13,8 @@ const TICK_W = 8
 const TICK_W_MAX = 15
 const WAVE_SIGMA = 13
 const HOT_EDGE = 48
-const HIDE_DELAY = 120
+const SHOW_DELAY = 300
+const HIDE_DELAY = 200
 
 export function PromptRail({ containerRef, messages }: {
   /** ChatView 最外层相对定位容器:热区监听、浮卡定位、消息元素查找都锚在它身上 */
@@ -41,6 +42,7 @@ export function PromptRail({ containerRef, messages }: {
   const listRef = useRef<HTMLDivElement>(null)
   const tickRefs = useRef<(HTMLButtonElement | null)[]>([])
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const showTimerRef = useRef(0)
   const hideTimerRef = useRef(0)
   const activeRef = useRef(false)
 
@@ -58,7 +60,7 @@ export function PromptRail({ containerRef, messages }: {
 
   const evaluate = (x: number, y: number) => {
     const el = containerRef.current
-    if (!el) return
+    if (!el || !railRef.current) return
     const r = el.getBoundingClientRect()
     const inHot = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom && r.right - x <= HOT_EDGE
     // 几何判断鼠标是否在浮卡上,不依赖 mouseenter——浮卡滑动盖住
@@ -68,11 +70,14 @@ export function PromptRail({ containerRef, messages }: {
     const overPop = !!pr && x >= pr.left && x <= pr.right && y >= pr.top && y <= pr.bottom
     if (inHot || overPop) {
       window.clearTimeout(hideTimerRef.current)
-      if (!activeRef.current) {
-        activeRef.current = true
-        setActive(true)
-        const cur = listRef.current?.querySelector<HTMLElement>("[data-current='1']")
-        if (cur) scrollListTo(cur)
+      if (!activeRef.current && !showTimerRef.current) {
+        showTimerRef.current = window.setTimeout(() => {
+          showTimerRef.current = 0
+          activeRef.current = true
+          setActive(true)
+          const cur = listRef.current?.querySelector<HTMLElement>("[data-current='1']")
+          if (cur) scrollListTo(cur)
+        }, SHOW_DELAY)
       }
     } else {
       scheduleHide()
@@ -90,7 +95,6 @@ export function PromptRail({ containerRef, messages }: {
     }
     // 点到检索区以外的任何地方:立即收起,不等延迟
     const onPointerDown = (e: PointerEvent) => {
-      if (!activeRef.current) return
       const t = e.target as Node
       if (railRef.current?.contains(t) || popRef.current?.contains(t)) return
       hideNow()
@@ -103,11 +107,14 @@ export function PromptRail({ containerRef, messages }: {
       document.removeEventListener("pointerdown", onPointerDown, true)
       document.documentElement.removeEventListener("mouseleave", onLeave)
       window.clearTimeout(hideTimerRef.current)
+      window.clearTimeout(showTimerRef.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function hideNow() {
+    window.clearTimeout(showTimerRef.current)
+    showTimerRef.current = 0
     window.clearTimeout(hideTimerRef.current)
     activeRef.current = false
     setActive(false)
@@ -115,6 +122,8 @@ export function PromptRail({ containerRef, messages }: {
   }
 
   function scheduleHide() {
+    window.clearTimeout(showTimerRef.current)
+    showTimerRef.current = 0
     window.clearTimeout(hideTimerRef.current)
     hideTimerRef.current = window.setTimeout(hideNow, HIDE_DELAY)
   }
@@ -177,9 +186,7 @@ export function PromptRail({ containerRef, messages }: {
 
   // 切会话(live-store 同实例复用)时收起浮卡、清掉 hover
   useEffect(() => {
-    activeRef.current = false
-    setActive(false)
-    setHoverIdx(null)
+    hideNow()
   }, [promptsKey])
 
   // ---------- 波浪 + 列表跟随 ----------
@@ -242,7 +249,7 @@ export function PromptRail({ containerRef, messages }: {
     hideNow()
   }
 
-  if (prompts.length < 2) return null
+  if (prompts.length < 3) return null
 
   return (
     <>
@@ -255,7 +262,7 @@ export function PromptRail({ containerRef, messages }: {
         }}
         className={cn(
           "absolute top-1/2 right-1.5 z-10 flex w-[22px] -translate-y-1/2 cursor-pointer flex-col items-end py-3 transition-all duration-200",
-          active ? "translate-x-0 opacity-100" : "translate-x-1.5 opacity-0",
+          active ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-1.5 opacity-0",
         )}
         style={{ gap }}
       >
