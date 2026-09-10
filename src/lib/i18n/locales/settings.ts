@@ -88,6 +88,7 @@ const bundle: LocaleBundle = {
 
     "settings.changeAvatar": "更换头像",
     "settings.displayName": "显示名",
+    "settings.appVersion": "版本 {version}",
     "settings.removeAvatar": "移除头像",
     "settings.avatarReadFailed": "图片读取失败",
 
@@ -177,6 +178,7 @@ const bundle: LocaleBundle = {
 
     "settings.changeAvatar": "Change avatar",
     "settings.displayName": "Display name",
+    "settings.appVersion": "Version {version}",
     "settings.removeAvatar": "Remove avatar",
     "settings.avatarReadFailed": "Failed to read the image",
 
