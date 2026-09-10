@@ -26,7 +26,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { AppUpdatePill } from "@/components/AppUpdatePill"
+import { AppUpdateBanner } from "@/components/AppUpdateBanner"
 import { BentoLogo } from "@/components/BentoLogo"
 import { Button } from "@/components/ui/button"
 import {
@@ -627,7 +627,9 @@ export function AppSidebar() {
       </SidebarContent>
 
         <SidebarFooter className="px-3 pb-3">
-          {/* 底栏是一个整体:hover 整行一起亮;明暗切换与设置是行内嵌的两个小钮 */}
+          {/* 有更新时底栏上方先出一条横幅(可下载/进度/失败重试),无更新不占位 */}
+          <AppUpdateBanner />
+          {/* 底栏是一个整体:hover 整行一起亮;明暗切换是行内嵌的小钮 */}
           <div className="flex items-center rounded-lg transition-colors hover:bg-sidebar-accent">
             <button
               type="button"
@@ -644,7 +646,6 @@ export function AppSidebar() {
                 {profile.name}
               </span>
             </button>
-            <AppUpdatePill />
             <button
               type="button"
               title={theme.dark ? t("sidebar.switchToLight") : t("sidebar.switchToDark")}
