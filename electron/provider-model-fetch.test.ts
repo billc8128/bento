@@ -7,6 +7,7 @@ import {
   parseModelsResponse,
   type FetchModelsResult,
 } from "./provider-model-fetch"
+import { OPENCODE_SESSION_HEADER } from "./opencode-session"
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -97,5 +98,30 @@ describe("fetchProviderModels", () => {
     expect(seen?.get("x-api-key")).toBe("sk-ant")
     expect(seen?.get("anthropic-version")).toBe("2023-06-01")
     expect(seen?.get("authorization")).toBeNull()
+  })
+
+  it("OpenCode Go/Zen 端点自动附带 x-opencode-session,且进程内稳定(issue #3)", async () => {
+    const seen: Array<string | null> = []
+    const fetchImpl = async (_url: string, init: RequestInit) => {
+      seen.push(new Headers(init.headers).get(OPENCODE_SESSION_HEADER))
+      return jsonResponse(200, { data: [{ id: "m1" }] })
+    }
+    await fetchProviderModels({
+      modelsUrl: "https://opencode.ai/zen/go/v1/models",
+      apiKey: "sk",
+      auth: { header: "Authorization", prefix: "Bearer " },
+    }, "", fetchImpl)
+    await fetchProviderModels({ modelsUrl: "https://opencode.ai/zen/v1/models", apiKey: "sk" }, "", fetchImpl)
+    expect(seen[0]).toMatch(/^[0-9a-f-]{36}$/)
+    expect(seen[1]).toBe(seen[0])
+  })
+
+  it("非 OpenCode 端点不附带 x-opencode-session", async () => {
+    let seen: Headers | undefined
+    await fetchProviderModels("https://api.x.com/v1/models", "sk", async (_url, init) => {
+      seen = new Headers(init.headers)
+      return jsonResponse(200, { data: [{ id: "m1" }] })
+    })
+    expect(seen?.get(OPENCODE_SESSION_HEADER)).toBeNull()
   })
 })
