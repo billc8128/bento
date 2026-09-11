@@ -19,6 +19,7 @@ import path from "node:path"
 import type { CustomProviderConfig } from "../src/core/provider"
 import type { OAuthTokens, CustomProviderStore } from "./custom-providers"
 import { RouteRegistry, startLocalModelProxy, type LocalModelProxy, type ProxyRoute } from "./model-proxy"
+import { isOpenCodeUpstream, OPENCODE_SESSION_HEADER } from "./opencode-session"
 import { refreshOAuthToken } from "./oauth-runner"
 import { discoverCodexModels } from "./drivers/codex"
 import { discoverClaudeModels } from "./drivers/claude-agent-sdk"
@@ -52,6 +53,7 @@ export class ProviderRoutingService {
     private readonly refreshToken: typeof refreshOAuthToken = refreshOAuthToken,
     private readonly discoverCodex: typeof discoverCodexModels = discoverCodexModels,
     private readonly discoverClaude: typeof discoverClaudeModels = discoverClaudeModels,
+    private readonly isOpenCode: (baseUrl: string) => boolean = isOpenCodeUpstream,
   ) {}
 
   private refreshOAuthInBackground(
@@ -96,7 +98,7 @@ export class ProviderRoutingService {
    * 一个有效 token,revive 重 spawn 的旧 token 立即作废。
    */
   async issueRoute(sessionKey: string, providerId: string, harnessId: string): Promise<SessionRoute> {
-    const route = await this.resolveRoute(providerId, harnessId)
+    const route = await this.resolveRoute(providerId, harnessId, sessionKey)
     const proxy = await this.ensureProxy()
     this.revokeRoute(sessionKey)
     const token = randomUUID()
@@ -116,7 +118,7 @@ export class ProviderRoutingService {
   ): Promise<Map<string, SessionRoute>> {
     const resolved = await Promise.all(entries.map(async ({ providerId, harnessId }) => ({
       providerId,
-      route: await this.resolveRoute(providerId, harnessId),
+      route: await this.resolveRoute(providerId, harnessId, sessionKey),
     })))
     const proxy = await this.ensureProxy()
     this.revokeRoute(sessionKey)
@@ -136,7 +138,7 @@ export class ProviderRoutingService {
     // 独立 token,切换由 Adapter 直接下发对应 baseUrl)。
     const [token] = this.tokensBySession.get(sessionKey) ?? []
     if (!token) throw new Error("会话路由不存在,无法切换供应商")
-    this.routes.issue(token, await this.resolveRoute(providerId, harnessId))
+    this.routes.issue(token, await this.resolveRoute(providerId, harnessId, sessionKey))
   }
 
   private tokensOf(sessionKey: string): Set<string> {
@@ -148,7 +150,11 @@ export class ProviderRoutingService {
     return tokens
   }
 
-  private async resolveRoute(providerId: string, harnessId: string): Promise<ProxyRoute> {
+  /**
+   * @param sessionKey 持久化会话标识(session record 的 key,app 重启/离线
+   * resume 不变);OpenCode 上游直接拿它做 x-opencode-session 亲和 ID。
+   */
+  private async resolveRoute(providerId: string, harnessId: string, sessionKey?: string): Promise<ProxyRoute> {
     const config = this.providers().getProviderConfig(providerId)
     if (!config) throw new Error(`供应商不存在: ${providerId}`)
     const runtime = config.runtimes[harnessId as keyof CustomProviderConfig["runtimes"]]
@@ -183,6 +189,14 @@ export class ProviderRoutingService {
       if (tokens.expiresAt - Date.now() < 5 * 60 * 1_000) {
         this.refreshOAuthInBackground(providerId, config.auth.oauth, tokens)
       }
+    }
+
+    // OpenCode Go/Zen(issue #3):上游强制 x-opencode-session——按最终
+    // baseUrl 判定(OAuth 的 oauthProxyUrl 覆写后),值直接用持久化的
+    // sessionKey(本身是随机 UUID):重签发/切模型/app 重启后恢复会话,
+    // ID 都稳定,正好满足「每会话一个稳定 ID」。
+    if (sessionKey && this.isOpenCode(baseUrl)) {
+      headerOverrides = { ...headerOverrides, [OPENCODE_SESSION_HEADER]: sessionKey }
     }
 
     return {

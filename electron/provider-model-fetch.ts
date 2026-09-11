@@ -3,10 +3,23 @@
  * 错误分类(401/404/网络/解析)供表单字段级显示。
  */
 
+import { randomUUID } from "node:crypto"
+
 import type { CustomModelConfig } from "../src/core/provider"
 import type { ProviderDiscoveryParser, ProviderHeaderRule } from "../src/core/provider-preset"
+import { isOpenCodeUpstream, OPENCODE_SESSION_HEADER } from "./opencode-session"
 
 export const FETCH_TIMEOUT_MS = 10_000
+
+/**
+ * 模型列表拉取用的进程级 OpenCode 会话 ID(issue #3):列模型不是真实
+ * 会话,但 Go/Zen 端点同样要求该头存在;进程内稳定即可,无需按会话区分。
+ */
+let discoverySessionId: string | undefined
+function openCodeDiscoverySessionId(): string {
+  discoverySessionId ??= randomUUID()
+  return discoverySessionId
+}
 
 export type FetchModelsError =
   | { kind: "unauthorized"; message: string }
@@ -78,9 +91,14 @@ export type FetchProviderModelsOptions = {
   parser?: ProviderDiscoveryParser
 }
 
-function discoveryHeaders(apiKey: string | undefined, auth: ProviderHeaderRule | undefined): Record<string, string> {
+function discoveryHeaders(
+  modelsUrl: string,
+  apiKey: string | undefined,
+  auth: ProviderHeaderRule | undefined,
+): Record<string, string> {
   const headers = { ...(auth?.fixedHeaders ?? {}) }
   if (apiKey && auth) headers[auth.header] = `${auth.prefix ?? ""}${apiKey}`
+  if (isOpenCodeUpstream(modelsUrl)) headers[OPENCODE_SESSION_HEADER] = openCodeDiscoverySessionId()
   return headers
 }
 
@@ -96,7 +114,7 @@ export async function fetchProviderModels(
   let response: Response
   try {
     response = await fetchImpl(options.modelsUrl, {
-      headers: discoveryHeaders(options.apiKey, options.auth),
+      headers: discoveryHeaders(options.modelsUrl, options.apiKey, options.auth),
       signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (error) {

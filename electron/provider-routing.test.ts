@@ -318,3 +318,79 @@ describe("ProviderRoutingService OAuth", () => {
     routing.dispose()
   })
 })
+
+describe("ProviderRoutingService OpenCode 会话头(issue #3)", () => {
+  const config = (id: string, baseUrl: string): CustomProviderConfig => ({
+    id,
+    name: id,
+    auth: { method: "apiKey" },
+    runtimes: {
+      codex: {
+        baseUrl,
+        requestPath: "/responses",
+        wireProtocol: "openai-responses",
+        models: [{ id: "m", name: "M" }],
+      },
+    },
+  })
+
+  it("OpenCode 上游注入 x-opencode-session:值即 sessionKey,重签发/服务重建保持稳定,跨会话区分", async () => {
+    const seenSessions: string[] = []
+    const upstream = http.createServer((request, response) => {
+      seenSessions.push(String(request.headers["x-opencode-session"] ?? ""))
+      response.writeHead(200).end("ok")
+    })
+    servers.push(upstream)
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
+    const baseUrl = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-opencode-"))
+    dirs.push(dir)
+    const store = new CustomProviderStore(dir, memorySecrets())
+    store.upsert(config("user-opencode-go", baseUrl), { codex: "key-go" })
+    // 本地 upstream 不是 opencode.ai,注入谓词模拟命中(判定本身由
+    // opencode-session.test.ts 的 URL 矩阵覆盖)。
+    const openCode = () => true
+    const routing = new ProviderRoutingService(dir, () => store, undefined, undefined, undefined, openCode)
+
+    const first = await routing.issueRoute("session-a", "user-opencode-go", "codex")
+    await fetch(`${first.baseUrl}/v1/responses`, { method: "POST", body: "{}" })
+    // 同会话重签发(revive 重 spawn):token 轮换,亲和 ID 不变
+    const reissued = await routing.issueRoute("session-a", "user-opencode-go", "codex")
+    await fetch(`${reissued.baseUrl}/v1/responses`, { method: "POST", body: "{}" })
+    // 另一个会话:不同亲和 ID
+    const other = await routing.issueRoute("session-b", "user-opencode-go", "codex")
+    await fetch(`${other.baseUrl}/v1/responses`, { method: "POST", body: "{}" })
+
+    // 服务重建(模拟 app 重启后恢复同一会话):亲和 ID 仍不变
+    routing.dispose()
+    const rebuilt = new ProviderRoutingService(dir, () => store, undefined, undefined, undefined, openCode)
+    const revived = await rebuilt.issueRoute("session-a", "user-opencode-go", "codex")
+    await fetch(`${revived.baseUrl}/v1/responses`, { method: "POST", body: "{}" })
+
+    expect(seenSessions).toEqual(["session-a", "session-a", "session-b", "session-a"])
+    rebuilt.dispose()
+  })
+
+  it("非 OpenCode 上游不注入 x-opencode-session", async () => {
+    let seen = "<unset>"
+    const upstream = http.createServer((request, response) => {
+      seen = String(request.headers["x-opencode-session"] ?? "")
+      response.writeHead(200).end("ok")
+    })
+    servers.push(upstream)
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
+    const baseUrl = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-non-opencode-"))
+    dirs.push(dir)
+    const store = new CustomProviderStore(dir, memorySecrets())
+    store.upsert(config("user-relay", baseUrl), { codex: "key" })
+    // 默认谓词:127.0.0.1 不命中,不注入
+    const routing = new ProviderRoutingService(dir, () => store)
+    const route = await routing.issueRoute("session", "user-relay", "codex")
+    await fetch(`${route.baseUrl}/v1/responses`, { method: "POST", body: "{}" })
+    expect(seen).toBe("")
+    routing.dispose()
+  })
+})
