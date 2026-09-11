@@ -262,8 +262,36 @@ describe("KimiBentoConfigAdapter", () => {
     // 彻底删除:removeSessionState 清掉稳定 kimi-bento-<sessionKey> 目录
     await adapter.removeSessionState!("sess-3")
     expect(fs.existsSync(home)).toBe(false)
-    await adapter.removeSessionState!("sess-3") // 幂等
+    // 幂等
+    await adapter.removeSessionState!("sess-3")
     expect(fs.existsSync(home)).toBe(false)
+  })
+
+  it("Skills 投递:--skills-dir 传 curated + 项目级目录;主开关关闭只传项目级;无计划不传", async () => {
+    const { routing, adapterProviders } = await fixture([
+      { id: "user-alpha", key: "sk-a", models: [{ id: "m-a1", name: "a1", reasoning: false }] },
+    ])
+    const adapter = new KimiBentoConfigAdapter("kimi", routing, track(fs.mkdtempSync(path.join(os.tmpdir(), "kimi-home-"))))
+    const curated = track(fs.mkdtempSync(path.join(os.tmpdir(), "kimi-curated-")))
+    const projectDir = track(fs.mkdtempSync(path.join(os.tmpdir(), "kimi-proj-")))
+
+    const enabled = await adapter.prepare(bentoRequest("sess-sk-1", adapterProviders, {
+      skills: { curatedRoot: curated, projectSkillDirs: [projectDir] },
+    }))
+    expect(enabled.args).toEqual([
+      "--skills-dir", path.join(curated, "skills"),
+      "--skills-dir", projectDir,
+    ])
+
+    // 主开关关闭:curatedRoot 缺省,项目级目录补传(--skills-dir 会替换项目级发现)
+    const disabled = await adapter.prepare(bentoRequest("sess-sk-2", adapterProviders, {
+      skills: { projectSkillDirs: [projectDir] },
+    }))
+    expect(disabled.args).toEqual(["--skills-dir", projectDir])
+
+    // 未装配 SkillsService(main 缺省)时完全不传
+    const absent = await adapter.prepare(bentoRequest("sess-sk-3", adapterProviders))
+    expect(absent.args).toBeUndefined()
   })
 })
 

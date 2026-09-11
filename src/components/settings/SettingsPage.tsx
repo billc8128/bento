@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState } from "react"
-import { ChevronLeft, CircleUserRound, FlaskConical, Keyboard, KeyRound, Palette } from "lucide-react"
+import { ChevronLeft, CircleUserRound, FlaskConical, FolderCog, Keyboard, KeyRound, Palette } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -19,12 +19,14 @@ import { AppearanceSection } from "./AppearanceSection"
 import { LayoutSection } from "./LayoutSection"
 import { HarnessesSection } from "./HarnessesSection"
 import { ProvidersSection } from "./ProvidersSection"
+import { SkillsSection } from "./SkillsSection"
 import { ShortcutsSection } from "./ShortcutsSection"
 
 const SECTIONS: { id: SettingsSection; labelKey: string; icon: React.ComponentType<{ className?: string }>; beta?: boolean }[] = [
   { id: "account", labelKey: "settings.sectionAccount", icon: CircleUserRound },
   { id: "providers", labelKey: "settings.sectionProviders", icon: KeyRound },
   { id: "harnesses", labelKey: "settings.sectionHarnesses", icon: HorseIcon },
+  { id: "skills", labelKey: "settings.sectionSkills", icon: FolderCog },
   { id: "appearance", labelKey: "settings.sectionAppearance", icon: Palette },
   { id: "layout", labelKey: "settings.sectionLayout", icon: FlaskConical, beta: true },
   { id: "shortcuts", labelKey: "settings.sectionShortcuts", icon: Keyboard },
@@ -130,6 +132,7 @@ export function SettingsPage() {
                 <ProvidersSection addProviderIntent={settings.addProvider} />
               )}
               {section === "harnesses" && <HarnessesSection />}
+              {section === "skills" && <SkillsSection />}
               {section === "appearance" && <AppearanceSection />}
               {section === "layout" && <LayoutSection />}
               {section === "shortcuts" && <ShortcutsSection />}

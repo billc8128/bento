@@ -34,6 +34,23 @@ export type CredentialHandle = {
   resolve(): string | null
 }
 
+/**
+ * 会话级全局 skills 投递计划(SkillsService 在 adapter.prepare 前物化)。
+ * 快照语义:物化即复制不软链,新会话生效;进行中会话不受后续勾选变化影响。
+ */
+export type SessionSkillsPlan = {
+  /**
+   * 已物化的 curated 根(含 skills/<name>/… 与 claude-plugin/)。
+   * 主开关关闭或没有任何启用 skill 时缺省——各 adapter 按缺省走「不注入」分支。
+   */
+  curatedRoot?: string
+  /**
+   * cwd 到 git root 之间实际存在的项目级 skills 目录。kimi 的 --skills-dir 会
+   * 替换项目级发现,需要把这些目录显式补传;其余 harness 自带项目级发现,忽略。
+   */
+  projectSkillDirs: string[]
+}
+
 /** 一次活跃会话的配置请求。 */
 export type SessionConfigRequest = {
   sessionKey: string
@@ -45,6 +62,8 @@ export type SessionConfigRequest = {
    * 携带完整注册表,不是只有当前选择。
    */
   providers: SessionProviderRuntime[]
+  /** 全局 skills 投递计划;缺省 = 不注入(main 未装配 SkillsService 时)。 */
+  skills?: SessionSkillsPlan
 }
 
 /** 结构化 PreparedModelRef:选择 key 的编码/解码见 selectionKey/parseSelectionKey。 */

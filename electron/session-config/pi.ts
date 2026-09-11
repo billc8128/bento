@@ -114,6 +114,18 @@ export class PiBentoConfigAdapter implements SessionConfigAdapter {
       })),
     ), { mode: 0o600 })
 
+    // Skills 投递:复制进 PI_CODING_AGENT_DIR/skills(pi 把 <agentDir>/skills 当
+    // user 级全局目录)。已知泄露:pi 无条件扫描真实 HOME 的 ~/.agents/skills,
+    // 不跟随 PI_CODING_AGENT_DIR(pi 0.84.2 dist/core/package-manager.js 硬编码
+    // join(homedir(),".agents","skills")),那部分不受 Bento 勾选面控制。
+    if (request.skills?.curatedRoot) {
+      fs.cpSync(
+        path.join(request.skills.curatedRoot, "skills"),
+        path.join(configDir, "skills"),
+        { recursive: true },
+      )
+    }
+
     const sessionKey = request.sessionKey
     const routing = this.routing
     let disposed = false

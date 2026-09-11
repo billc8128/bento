@@ -253,4 +253,33 @@ describe("OmpBentoConfigAdapter", () => {
     await okLease.dispose()
     await adapter.removeSessionState("sess-ok")
   })
+
+  it("Skills 投递:curated 内容复制进 PI_CODING_AGENT_DIR/skills;关闭时不复制", async () => {
+    const { routing } = await fixture()
+    const adapter = new OmpBentoConfigAdapter(
+      "omp", routing,
+      track(fs.mkdtempSync(path.join(os.tmpdir(), "omp-skills-"))),
+    )
+    const curated = track(fs.mkdtempSync(path.join(os.tmpdir(), "omp-curated-")))
+    fs.mkdirSync(path.join(curated, "skills/my-skill"), { recursive: true })
+    fs.writeFileSync(path.join(curated, "skills/my-skill/SKILL.md"), "---\nname: my-skill\n---\n")
+
+    const on = await adapter.prepare({
+      ...sessionRequest("sess-sk-1"),
+      skills: { curatedRoot: curated, projectSkillDirs: [] },
+    } as Parameters<typeof adapter.prepare>[0])
+    expect(
+      fs.readFileSync(path.join(on.env.PI_CODING_AGENT_DIR!, "skills/my-skill/SKILL.md"), "utf8"),
+    ).toContain("name: my-skill")
+    await on.dispose()
+    await adapter.removeSessionState("sess-sk-1")
+
+    const off = await adapter.prepare({
+      ...sessionRequest("sess-sk-2"),
+      skills: { projectSkillDirs: [] },
+    } as Parameters<typeof adapter.prepare>[0])
+    expect(fs.existsSync(path.join(off.env.PI_CODING_AGENT_DIR!, "skills"))).toBe(false)
+    await off.dispose()
+    await adapter.removeSessionState("sess-sk-2")
+  })
 })

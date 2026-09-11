@@ -91,6 +91,22 @@ describe("buildOpenCodeSessionConfig", () => {
     expect(config).toContain("@ai-sdk/openai-compatible")
   })
 
+  it("skillsPaths 写入 skills.paths 对象;空数组不写 skills 键", () => {
+    const base = {
+      providerId: "user-a",
+      modelId: "m-a1",
+      harnessModelId: "bento-a/m-a1",
+    } as const
+    const withSkills = JSON.parse(buildOpenCodeSessionConfig([], base, ["/curated/skills"])) as {
+      skills?: { paths?: string[] }
+    }
+    expect(withSkills.skills).toEqual({ paths: ["/curated/skills"] })
+    const withoutSkills = JSON.parse(buildOpenCodeSessionConfig([], base)) as {
+      skills?: { paths?: string[] }
+    }
+    expect(withoutSkills.skills).toBeUndefined()
+  })
+
   it("normalizeBentoModelId 剥离发布前缀", () => {
     expect(normalizeBentoModelId("bento/m1")).toBe("m1")
     expect(normalizeBentoModelId("m1")).toBe("m1")
@@ -276,5 +292,35 @@ describe("OpenCodeBentoConfigAdapter", () => {
     expect(routing.sessionsUsing("user-beta")).toBe(1)
     await okLease.dispose()
     await adapter.removeSessionState("sess-ok")
+  })
+
+  it("Skills 投递:skills.paths 指向 curated 根;主开关关闭不写 paths;两种情况都注入外部扫描禁用 env", async () => {
+    const { routing } = await fixture()
+    const adapter = new OpenCodeBentoConfigAdapter("opencode", routing, track(fs.mkdtempSync(path.join(os.tmpdir(), "opencode-skills-"))))
+    const curated = track(fs.mkdtempSync(path.join(os.tmpdir(), "opencode-curated-")))
+
+    const enabled = await adapter.prepare({
+      ...sessionRequest("sess-sk-1"),
+      skills: { curatedRoot: curated, projectSkillDirs: [] },
+    } as Parameters<typeof adapter.prepare>[0])
+    const enabledConfig = JSON.parse(fs.readFileSync(enabled.env.OPENCODE_CONFIG!, "utf8")) as {
+      skills?: { paths: string[] }
+    }
+    expect(enabledConfig.skills).toEqual({ paths: [path.join(curated, "skills")] })
+    expect(enabled.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS).toBe("1")
+    await enabled.dispose()
+    await adapter.removeSessionState("sess-sk-1")
+
+    const disabled = await adapter.prepare({
+      ...sessionRequest("sess-sk-2"),
+      skills: { projectSkillDirs: [] },
+    } as Parameters<typeof adapter.prepare>[0])
+    const disabledConfig = JSON.parse(fs.readFileSync(disabled.env.OPENCODE_CONFIG!, "utf8")) as {
+      skills?: { paths: string[] }
+    }
+    expect(disabledConfig.skills).toBeUndefined()
+    expect(disabled.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS).toBe("1")
+    await disabled.dispose()
+    await adapter.removeSessionState("sess-sk-2")
   })
 })

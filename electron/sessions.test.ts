@@ -58,6 +58,102 @@ function sessionConfigFor(...harnessIds: HarnessId[]) {
   return [registry, async () => []] as const
 }
 
+describe("SessionManager skills 投递", () => {
+  it("plan 进入 adapter 请求;claude 拿 skillsPluginDir;lease.args 并入 spawn args;删会话清理物化目录", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-skills-wiring-"))
+    const seenSkills: Array<unknown> = []
+    const registry = new SessionConfigRegistry()
+    registry.register({
+      ...passthroughAdapter("claude-code"),
+      async prepare(request) {
+        seenSkills.push(request.skills)
+        const lease = await passthroughAdapter("claude-code").prepare(request)
+        return { ...lease, args: ["--skills-dir", "/curated/skills"] }
+      },
+    })
+    let started: HarnessStartOptions | undefined
+    const driver: HarnessDriver = {
+      id: "claude-code",
+      async start(options) {
+        started = options
+        return {
+          nativeSessionId: "skills-native",
+          capabilities: { modelSwitch: "none", effortSwitch: "none" },
+          prompt: async () => ({ stopReason: "end_turn" }),
+          cancel: async () => {},
+          close: () => {},
+          onExit: () => () => {},
+        }
+      },
+    }
+    const removed: string[] = []
+    const manager = new SessionManager(
+      tempDir, () => {}, () => driver, null, null,
+      registry, async () => [], undefined, undefined,
+      {
+        plan: async ({ sessionKey }) => {
+          const curatedRoot = path.join(tempDir, "skills", sessionKey)
+          fs.mkdirSync(path.join(curatedRoot, "claude-plugin"), { recursive: true })
+          return { curatedRoot, projectSkillDirs: [] }
+        },
+        removeSessionState: async (sessionKey) => { removed.push(sessionKey) },
+      },
+    )
+    const { key } = await manager.createSession({
+      harnessId: "claude-code",
+      cwd: tempDir,
+      providerId: "anthropic",
+      modelId: "model",
+    })
+
+    expect(seenSkills[0]).toMatchObject({ projectSkillDirs: [] })
+    expect((seenSkills[0] as { curatedRoot?: string }).curatedRoot).toContain(key)
+    expect(started?.skillsPluginDir).toBe(path.join(tempDir, "skills", key, "claude-plugin"))
+    expect(started?.appArgs).toEqual(["--skills-dir", "/curated/skills"])
+
+    await manager.removeSession(key)
+    expect(removed).toEqual([key])
+  })
+
+  it("未装配 skills resolver(main 缺省)时请求不带 skills 键,driver 无 skillsPluginDir", async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-skills-absent-"))
+    const seenSkills: Array<unknown> = []
+    const registry = new SessionConfigRegistry()
+    registry.register({
+      ...passthroughAdapter("kimi"),
+      async prepare(request) {
+        seenSkills.push((request as { skills?: unknown }).skills)
+        return passthroughAdapter("kimi").prepare(request)
+      },
+    })
+    let started: HarnessStartOptions | undefined
+    const driver: HarnessDriver = {
+      id: "kimi",
+      async start(options) {
+        started = options
+        return {
+          nativeSessionId: "absent-native",
+          capabilities: { modelSwitch: "none", effortSwitch: "none" },
+          prompt: async () => ({ stopReason: "end_turn" }),
+          cancel: async () => {},
+          close: () => {},
+          onExit: () => () => {},
+        }
+      },
+    }
+    const manager = new SessionManager(tempDir, () => {}, () => driver, null, null, registry, async () => [])
+    const { key } = await manager.createSession({
+      harnessId: "kimi",
+      cwd: tempDir,
+      providerId: "user-kimi",
+      modelId: "model",
+    })
+    expect(seenSkills[0]).toBeUndefined()
+    expect(started?.skillsPluginDir).toBeUndefined()
+    await manager.closeSession(key)
+  })
+})
+
 describe("SessionManager model selection", () => {
   it("同一 App lease 按 Harness 边界附着：Pi extension，其余 stdio relay", async () => {
     for (const harnessId of ["pi", "codex"] as const) {

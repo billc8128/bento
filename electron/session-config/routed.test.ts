@@ -101,4 +101,65 @@ describe("RoutedBentoConfigAdapter", () => {
     await adapter.removeSessionState("s1")
     expect(fs.existsSync(lease.configDir!)).toBe(false)
   })
+
+  it("Codex Skills 投递:curated 根内容复制进隔离 CODEX_HOME/skills;关闭时不复制", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routed-"))
+    dirs.push(dir)
+    const hits: string[] = []
+    const base = await upstream(hits, "A")
+    const store = new CustomProviderStore(dir, secrets())
+    store.upsert({
+      id: "user-a",
+      name: "user-a",
+      auth: { method: "apiKey" },
+      runtimes: {
+        codex: {
+          baseUrl: base,
+          wireProtocol: "openai-responses",
+          models: [{ id: "a-model", name: "a model" }],
+        },
+      },
+    }, { "*": "key-a" })
+    const routing = new ProviderRoutingService(dir, () => store)
+    routings.push(routing)
+    const adapter = new RoutedBentoConfigAdapter("codex", routing, dir)
+    const providers = store.list().map((item) => ({
+      providerId: item.id,
+      name: item.name,
+      baseUrl: item.runtimes.codex!.baseUrl,
+      wireProtocol: item.runtimes.codex!.wireProtocol,
+      models: item.runtimes.codex!.models.map((model) => ({
+        id: model.id, name: model.name, reasoning: false,
+      })),
+    }))
+    const curated = fs.mkdtempSync(path.join(os.tmpdir(), "bento-curated-"))
+    dirs.push(curated)
+    fs.mkdirSync(path.join(curated, "skills/my-skill"), { recursive: true })
+    fs.writeFileSync(path.join(curated, "skills/my-skill/SKILL.md"), "---\nname: my-skill\n---\n")
+
+    const lease = await adapter.prepare({
+      sessionKey: "s-sk",
+      harnessId: "codex",
+      cwd: dir,
+      selected: { providerId: "user-a", modelId: "a-model" },
+      providers,
+      skills: { curatedRoot: curated, projectSkillDirs: [] },
+    })
+    expect(
+      fs.readFileSync(path.join(lease.env.CODEX_HOME!, "skills/my-skill/SKILL.md"), "utf8"),
+    ).toContain("name: my-skill")
+    await lease.dispose()
+
+    // 主开关关闭:curatedRoot 缺省 → 不复制
+    const offLease = await adapter.prepare({
+      sessionKey: "s-sk-off",
+      harnessId: "codex",
+      cwd: dir,
+      selected: { providerId: "user-a", modelId: "a-model" },
+      providers,
+      skills: { projectSkillDirs: [] },
+    })
+    expect(fs.existsSync(path.join(offLease.env.CODEX_HOME!, "skills"))).toBe(false)
+    await offLease.dispose()
+  })
 })

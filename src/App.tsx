@@ -15,6 +15,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { TraitsProvider } from "@/lib/style-context"
 import { ThemeProvider, type Theme } from "@/lib/theme-context"
 import { initProfileDefault } from "@/lib/profile-store"
+import { syncSkillsPreferences } from "@/lib/skills-preferences"
 import { useIsMobile } from "@/hooks/use-mobile"
 import {
   registerSidebarPanel,
@@ -73,6 +74,8 @@ export default function App() {
   useEffect(() => initCollaborationUi(), [])
   // 本地资料:首次启动用系统用户名做默认显示名
   useEffect(() => initProfileDefault(), [])
+  // 全局 skills:启动即同步开关集合到 main(主进程内存缓存重启即空)
+  useEffect(() => syncSkillsPreferences(), [])
   const workspaceToolsOpen = useWorkspaceToolsOpen()
   const workspaceToolsStarted = useWorkspaceToolsStarted()
   const browserRevealId = useWorkspaceBrowserReveal()

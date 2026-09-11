@@ -213,6 +213,12 @@ export const claudeAgentSdkDriver: HarnessDriver = {
           }),
       persistSession: true,
       settingSources: ["project"],
+      // Skills 投递:curated 根的 local plugin(根下 .claude-plugin/plugin.json +
+      // skills/)。SDK 0.2.112 的 plugins option → CLI --plugin-dir,session 级加载,
+      // 不受 settingSources 门控(调研 /tmp/skills-research.md §1,测试同步验证)。
+      ...(options.skillsPluginDir
+        ? { plugins: [{ type: "local" as const, path: options.skillsPluginDir }] }
+        : {}),
       systemPrompt: { type: "preset", preset: "claude_code" },
       tools: { type: "preset", preset: "claude_code" },
       ...(options.mcpServers?.length ? {

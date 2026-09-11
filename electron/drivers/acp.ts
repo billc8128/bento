@@ -95,6 +95,8 @@ type AcpOpen = (
   usage?: { current: HarnessUsage | undefined },
   permission?: { current: PermissionProfile },
   approvals?: AcpApprovals,
+  /** 追加到 spawn args 末尾(kimi 的 --skills-dir 等 adapter 租约参数)。 */
+  extraArgs?: string[],
 ) => Promise<AcpOpenResult>
 
 async function harnessCommand(id: AcpDriverId): Promise<SpawnSpec> {
@@ -136,6 +138,7 @@ class AcpDriver implements HarnessDriver {
     usage?: { current: HarnessUsage | undefined },
     permission: { current: PermissionProfile } = { current: "standard" },
     approvals: AcpApprovals = { waiters: new Map(), seq: 0 },
+    extraArgs?: string[],
   ) {
     // cwd 同样归一(macOS 的 /tmp 就是 symlink),两侧同口径才能比
     const realCwd = resolveRealPath(cwd)
@@ -148,7 +151,7 @@ class AcpDriver implements HarnessDriver {
           strip: [...new Set([...(spec.strip ?? []), ...(proxyEnv.strip ?? [])])],
         }
       : spec
-    const child = spawn(merged.cmd, merged.args, {
+    const child = spawn(merged.cmd, [...merged.args, ...(extraArgs ?? [])], {
       stdio: ["pipe", "pipe", "pipe"],
       cwd,
       env: cleanEnv(merged),
@@ -258,6 +261,7 @@ class AcpDriver implements HarnessDriver {
       usage,
       permission,
       approvals,
+      options.appArgs,
     )
     if (nativeSessionId && init.agentCapabilities?.sessionCapabilities?.resume) {
       try {

@@ -6,6 +6,7 @@ import type { HarnessId, HarnessRuntimeStatus } from "@/core/harness"
 import type { CustomModelConfig, CustomProviderConfig, ProviderView } from "@/core/provider"
 import type { LocalProviderCandidate, ProviderPresetView } from "@/core/provider-preset"
 import type { BinaryProgress } from "../../electron/binaries/progress"
+import type { GlobalSkill } from "../../electron/skills-types"
 import type { ApprovalDecision } from "@/core/events"
 import type { PermissionProfile } from "@/core/permission"
 import type { Effort, SessionScope } from "@/core/types"
@@ -23,8 +24,9 @@ import type {
   WorkspaceTerminalExit,
 } from "@/types/workspace"
 // BinaryProgress 单源定义在 electron/binaries/progress.ts(纯类型,无 node 依赖),
-// 这里 re-export 供 renderer 引用
+// 这里 re-export 供 renderer 引用;GlobalSkill 同理来自 electron/skills-types.ts
 export type { BinaryProgress }
+export type { GlobalSkill }
 
 export type LiveSessionRecord = {
   key: string
@@ -98,6 +100,8 @@ declare global {
       listHarnessRuntimes(): Promise<HarnessRuntimeStatus[]>
       /** macOS 系统用户名:本地资料的默认显示名 */
       systemUsername(): Promise<string | null>
+      scanSkills(): Promise<GlobalSkill[]>
+      setSkillsPreferences(prefs: { allowGlobal: boolean; disabledSkills: string[] }): Promise<void>
       /** 液态玻璃主题:整窗 NSVisualEffectView 开关(macOS) */
       setGlassVibrancy(on: boolean, dark: boolean): void
       readEvents(key: string): Promise<LogRecord[]>

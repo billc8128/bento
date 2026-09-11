@@ -132,6 +132,18 @@ export class HermesBentoConfigAdapter implements SessionConfigAdapter {
       selected,
     ), { mode: 0o600 })
 
+    // Skills 投递:复制进 HERMES_HOME/skills。TODO:HERMES_HOME/skills 作为
+    // 用户级 skills 目录未经官方文档证实(调研 /tmp/skills-research.md §4:本机
+    // ~/.hermes/skills 实证存在,但无源码确认 HERMES_HOME 隔离下是否同路径生效);
+    // 待 hermes-agent 源码核实后校正。
+    if (request.skills?.curatedRoot) {
+      fs.cpSync(
+        path.join(request.skills.curatedRoot, "skills"),
+        path.join(configDir, "skills"),
+        { recursive: true },
+      )
+    }
+
     const sessionKey = request.sessionKey
     const routing = this.routing
     let disposed = false

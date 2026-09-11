@@ -5,7 +5,7 @@
 
 import { useSyncExternalStore } from "react"
 
-export type SettingsSection = "account" | "providers" | "harnesses" | "appearance" | "layout" | "shortcuts"
+export type SettingsSection = "account" | "providers" | "harnesses" | "skills" | "appearance" | "layout" | "shortcuts"
 
 type SettingsState = {
   open: boolean

@@ -26,6 +26,7 @@ import type {
   SessionConfigAdapter,
   SessionConfigLease,
   SessionConfigRequest,
+  SessionSkillsPlan,
 } from "./session-config/types"
 import type { SessionConfigRegistry } from "./session-config/registry"
 import type {
@@ -112,6 +113,15 @@ type SessionAppsResolver = (request: {
   cwd: string
 }) => Promise<AppSessionLease | null>
 
+/**
+ * main-only:全局 skills 投递(扫描/开关缓存/物化在 SkillsService)。
+ * plan 在 adapter.prepare 前调用;removeSessionState 与 adapter 的同名钩子同时机清理。
+ */
+export type SessionSkillsResolver = {
+  plan(request: { sessionKey: string; harnessId: DriverId; cwd: string }): Promise<SessionSkillsPlan>
+  removeSessionState(sessionKey: string): Promise<void>
+}
+
 function promptInput(value: string | PromptInput): PromptInput {
   const request = typeof value === "string" ? { text: value, attachments: [] } : value
   const text = request.text.trim()
@@ -160,6 +170,8 @@ export class SessionManager {
     private readonly resolveApps: SessionAppsResolver | null = null,
     /** index 变化(create/rename/remove)后通知;main 转发 sessions:changed。 */
     private readonly onSessionsChanged?: () => void,
+    /** 全局 skills 投递(扫描/开关/物化);缺省不注入(纯测试环境)。 */
+    private readonly skills: SessionSkillsResolver | null = null,
   ) {
     this.dir = path.join(userDataDir, "sessions")
     this.chatRoot = path.join(userDataDir, "chat-workspaces")
@@ -305,12 +317,17 @@ export class SessionManager {
       harnessId: record.harnessId,
       cwd: record.cwd,
     })
+    // Skills 投递:物化 curated 根(快照语义——本次会话周期的勾选集合固化在副本里)
+    const skills = this.skills
+      ? await this.skills.plan({ sessionKey: record.key, harnessId: record.harnessId, cwd: record.cwd })
+      : undefined
     const configLease = await adapter.prepare({
       sessionKey: record.key,
       harnessId: record.harnessId as HarnessId,
       cwd: record.cwd,
       selected,
       providers: providers ?? [],
+      ...(skills ? { skills } : {}),
     })
     // 租约 env 为空 = 该 Harness 只需隔离目录不需要 env 注入(routed 形态总会有 env)。
     const proxyEnv = Object.keys(configLease.env).length > 0 || configLease.strip.length > 0
@@ -330,6 +347,9 @@ export class SessionManager {
       // Apps 是附加能力；单个用户 App 启动失败不能阻断核心 Harness 会话。
     }
     let connection: HarnessConnection
+    const appStart = appLease ? appStartOptions(record.harnessId as HarnessId, appLease) : undefined
+    // adapter 租约 args(kimi 的 --skills-dir)与 apps args 合并后统一进 spawn
+    const extraArgs = [...(appStart?.appArgs ?? []), ...(configLease.args ?? [])]
     try {
       connection = await this.resolveDriver(record.harnessId).start(
         {
@@ -344,7 +364,12 @@ export class SessionManager {
             .filter((item) => item.harnessId === record.harnessId)
             .map((item) => item.rule),
           ...(proxyEnv ? { proxyEnv } : {}),
-          ...(appLease ? appStartOptions(record.harnessId as HarnessId, appLease) : {}),
+          ...(appStart ?? {}),
+          ...(extraArgs.length > 0 ? { appArgs: extraArgs } : {}),
+          // claude 的 skills 投递:curated 根的 local plugin 目录交给 driver(SDK plugins)
+          ...(skills?.curatedRoot
+            ? { skillsPluginDir: path.join(skills.curatedRoot, "claude-plugin") }
+            : {}),
         },
         emit,
       )
@@ -354,6 +379,7 @@ export class SessionManager {
       await configLease?.dispose()
       await appLease?.dispose()
       await adapter?.removeSessionState?.(record.key)
+      await this.skills?.removeSessionState(record.key)
       throw error
     }
 
@@ -946,6 +972,7 @@ export class SessionManager {
     await this.stopLive(key)
     this.routing?.revokeRoute(key) // 历史会话从无 live 直接删除时兜底
     await this.removeAdapterState(key)
+    await this.skills?.removeSessionState(key)
     this.removeChatWorkspace(record)
     this.saveIndex(this.listSessions().filter((item) => item.key !== key))
     this.onSessionsChanged?.()

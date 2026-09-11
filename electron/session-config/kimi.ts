@@ -200,6 +200,16 @@ export class KimiBentoConfigAdapter implements SessionConfigAdapter {
       { mode: 0o600 },
     )
 
+    // Skills 投递:--skills-dir 会替换 kimi 的项目级发现,因此项目级目录
+    // (cwd 到 git root 的 .kimi/.claude/.codex/.agents/skills)一并补传;
+    // 主开关关闭时 curatedRoot 缺省,只传项目级目录。
+    const skillsDirs = [
+      ...(request.skills?.curatedRoot
+        ? [path.join(request.skills.curatedRoot, "skills")]
+        : []),
+      ...(request.skills?.projectSkillDirs ?? []),
+    ]
+
     const sessionKey = request.sessionKey
     const routing = this.routing
     let disposed = false
@@ -208,6 +218,7 @@ export class KimiBentoConfigAdapter implements SessionConfigAdapter {
       harnessId: request.harnessId,
       env: { KIMI_CODE_HOME: codeDir, KIMI_SHARE_DIR: shareDir },
       strip: ["KIMI_MODEL_", "KIMI_API_KEY", "KIMI_BASE_URL"],
+      ...(skillsDirs.length > 0 ? { args: skillsDirs.flatMap((dir) => ["--skills-dir", dir]) } : {}),
       configDir,
       selections,
       selected,

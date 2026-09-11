@@ -55,6 +55,9 @@ const api = {
   resolveApproval: (key: string, id: string, decision: ApprovalDecision) =>
     ipcRenderer.invoke("session:resolve-approval", key, id, decision),
   listPermissionRules: () => ipcRenderer.invoke("permission-rules:list"),
+  scanSkills: () => ipcRenderer.invoke("skills:scan"),
+  setSkillsPreferences: (prefs: { allowGlobal: boolean; disabledSkills: string[] }) =>
+    ipcRenderer.invoke("skills:set", prefs),
   removePermissionRule: (cwd: string, harnessId: string, rule: string) =>
     ipcRenderer.invoke("permission-rules:remove", cwd, harnessId, rule),
   renameSession: (key: string, title: string) =>

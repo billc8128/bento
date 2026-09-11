@@ -152,6 +152,49 @@ describe("claudeAgentSdkDriver", () => {
     }, () => {})).rejects.toThrow(/缺少 Bento provider 路由环境/)
   })
 
+  it("Skills 投递:skillsPluginDir → SDK plugins local plugin;不传时不带 plugins", async () => {
+    const calls: Parameters<ClaudeQueryFactory>[0][] = []
+    const query: ClaudeQueryFactory = vi.fn((params) => {
+      calls.push(params)
+      return queryOf([result("s-skills")])
+    })
+    const proxyEnv = {
+      env: {
+        ANTHROPIC_BASE_URL: "http://127.0.0.1:1234/s/route",
+        ANTHROPIC_AUTH_TOKEN: "bento-local-proxy",
+        CLAUDE_CONFIG_DIR: "/tmp/claude-isolated",
+      },
+      strip: ["ANTHROPIC_"],
+    }
+
+    // SDK 0.2.112 类型层接受 plugins(SdkPluginConfig = {type:'local';path}):
+    // 编译期即验证;这里断言 driver 把 curated plugin 目录原样传给 SDK,
+    // 且 settingSources 仍只有 project(local plugin 不受 settingSources 门控)。
+    const connection = await claudeAgentSdkDriver.start({
+      cwd: "/tmp",
+      providerId: "anthropic",
+      modelId: "claude-sonnet-4-6",
+      proxyEnv,
+      skillsPluginDir: "/bento-skills/s1/claude-plugin",
+    }, () => {}, { query })
+    await connection.prompt("go")
+    expect(calls[0]?.options).toMatchObject({
+      settingSources: ["project"],
+      plugins: [{ type: "local", path: "/bento-skills/s1/claude-plugin" }],
+    })
+
+    // 主开关关闭:skillsPluginDir 缺省 → 不携带 plugins 键
+    calls.length = 0
+    const offConnection = await claudeAgentSdkDriver.start({
+      cwd: "/tmp",
+      providerId: "anthropic",
+      modelId: "claude-sonnet-4-6",
+      proxyEnv,
+    }, () => {}, { query })
+    await offConnection.prompt("go")
+    expect(calls[0]?.options?.plugins).toBeUndefined()
+  })
+
   it("权限档位驱动 canUseTool 裁决,切 full 后走 bypassPermissions", async () => {
     const calls: Parameters<ClaudeQueryFactory>[0][] = []
     const query: ClaudeQueryFactory = vi.fn((params) => {

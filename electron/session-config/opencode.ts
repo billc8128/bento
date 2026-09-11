@@ -41,10 +41,15 @@ function npmPackage(wireProtocol: WireProtocol): string {
 export type OpenCodeProviderInput = Pick<SessionConfigRequest["providers"][number],
   "providerId" | "name" | "baseUrl" | "wireProtocol" | "models">
 
-/** 生成完整多 Provider opencode.json(baseURL=各自 route,apiKey 只引用 env 名)。 */
+/**
+ * 生成完整多 Provider opencode.json(baseURL=各自 route,apiKey 只引用 env 名)。
+ * skillsPaths:全局 skills 投递(curated 根下的 skills 目录;opencode 会递归
+ * 扫描其中的 SKILL.md)。
+ */
 export function buildOpenCodeSessionConfig(
   providers: Array<OpenCodeProviderInput & { baseUrl: string }>,
   defaultRef: PreparedModelRef,
+  skillsPaths: string[] = [],
 ): string {
   const registry: Record<string, unknown> = {}
   for (const provider of providers) {
@@ -64,6 +69,7 @@ export function buildOpenCodeSessionConfig(
   return JSON.stringify({
     model: `${stableProviderAlias(defaultRef.providerId)}/${normalizeBentoModelId(defaultRef.modelId)}`,
     provider: registry,
+    ...(skillsPaths.length > 0 ? { skills: { paths: skillsPaths } } : {}),
   }, null, 2)
 }
 
@@ -113,16 +119,27 @@ export class OpenCodeBentoConfigAdapter implements SessionConfigAdapter {
     const configDir = path.join(this.userDataDir, "providers", `opencode-bento-${request.sessionKey}`)
     fs.mkdirSync(configDir, { recursive: true, mode: 0o700 })
     const file = path.join(configDir, "opencode.json")
+    // Skills 投递:开启时写 skills.paths(指向 curated 根,快照语义);主开关
+    // 关闭时不写 paths。两种情况都注入 OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1:
+    // opencode 会自动扫 ~/.claude/skills 与 ~/.agents/skills,那部分绕过 Bento
+    // 勾选面,一律关掉,勾选集合只经 curated 根进入(调研 /tmp/skills-research.md §6)。
+    const skillsPaths = request.skills?.curatedRoot
+      ? [path.join(request.skills.curatedRoot, "skills")]
+      : []
     fs.writeFileSync(file, buildOpenCodeSessionConfig(
       request.providers.map((provider) => ({
         ...provider,
         baseUrl: routeSet.get(provider.providerId)?.baseUrl ?? "",
       })),
       selected,
+      skillsPaths,
     ), { mode: 0o600 })
 
     // env 只有占位凭证;真实密钥由 proxy 按 token 注入
-    const env: Record<string, string> = { OPENCODE_CONFIG: file }
+    const env: Record<string, string> = {
+      OPENCODE_CONFIG: file,
+      OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: "1",
+    }
     for (const provider of request.providers) {
       env[providerKeyEnvName(provider.providerId)] = "bento-session-route"
     }

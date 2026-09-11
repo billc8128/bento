@@ -47,6 +47,11 @@ export type HarnessStartOptions = {
   mcpServers?: HarnessMcpServer[]
   appArgs?: string[]
   appEnv?: Record<string, string>
+  /**
+   * 全局 skills 投递的 claude local plugin 目录(curated 根下的 claude-plugin)。
+   * driver 以 SDK plugins:[{type:'local',path}] 注入;缺省不注入(主开关关闭)。
+   */
+  skillsPluginDir?: string
 }
 
 export type HarnessConnection = {

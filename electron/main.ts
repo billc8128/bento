@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url"
 
 import { getDriver } from "./drivers/registry"
 import { SessionManager } from "./sessions"
+import { SkillsService } from "./skills"
 import { listPermissionRulesByProject, removePermissionRule } from "./permission-rules"
 import type { Effort, SessionScope } from "../src/core/types"
 import type { ApprovalDecision } from "../src/core/events"
@@ -308,6 +309,10 @@ app.whenReady().then(async () => {
   const activeRouting = new ProviderRoutingService(app.getPath("userData"), () => customProviders)
   routing = activeRouting
 
+  // 全局 skills:扫描/开关缓存/会话物化(IPC 见下方 skills:*;会话注入经
+  // SessionManager 末位的 skills resolver)。
+  const skillsService = new SkillsService(app.getPath("userData"))
+
   // session-config adapters:全部 Harness 的 Bento adapter(单键注册)。
   const configAdapters = new SessionConfigRegistry()
   configAdapters.register(new KimiBentoConfigAdapter("kimi", activeRouting, app.getPath("userData")))
@@ -383,6 +388,7 @@ app.whenReady().then(async () => {
     () => {
       if (win && !win.isDestroyed()) win.webContents.send("sessions:changed")
     },
+    skillsService,
   )
 
   // UI 桥:协作命令发主窗口;presence 由 renderer 上报(Phase 2)。
@@ -452,6 +458,12 @@ app.whenReady().then(async () => {
       w.setBackgroundColor("#ffffff")
       nativeTheme.themeSource = "system"
     }
+  })
+  // 全局 skills:扫描列表(设置页)与开关集合缓存(renderer localStorage 持久化,
+  // main 只存内存态供会话 prepare 用)。
+  ipcMain.handle("skills:scan", () => skillsService.scan())
+  ipcMain.handle("skills:set", (_event, prefs: unknown) => {
+    skillsService.setPreferences(prefs)
   })
   // 本地资料的默认显示名:macOS 系统用户名(无账户系统,纯装饰)
   ipcMain.handle("system:username", () => {

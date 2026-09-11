@@ -48,9 +48,22 @@ export class RoutedBentoConfigAdapter implements SessionConfigAdapter {
       const isolated = this.routing.claudeCodeEnv(route)
       env = { ...isolated.env, CLAUDE_CONFIG_DIR: configDir }
       strip = isolated.strip
+      // claude 的 skills 投递不走 adapter:curated 根的 claude-plugin 由
+      // SessionManager 经 HarnessStartOptions.skillsPluginDir 交给 driver,
+      // 以 SDK plugins:[{type:'local',path}] 注入(local plugin 不受
+      // settingSources 门控,settingSources=['project'] 时仍加载)。
     } else {
       env = this.routing.codexHomeEnv(request.sessionKey, route, selected.providerId).env
       configDir = env.CODEX_HOME!
+      // Skills 投递:codex 用户级 skills = $CODEX_HOME/skills(默认 ~/.codex/skills,
+      // 0.149.1 二进制 strings 证实);复制进会话隔离 CODEX_HOME 即注入。
+      if (request.skills?.curatedRoot) {
+        fs.cpSync(
+          path.join(request.skills.curatedRoot, "skills"),
+          path.join(configDir, "skills"),
+          { recursive: true },
+        )
+      }
     }
 
     const sessionKey = request.sessionKey
