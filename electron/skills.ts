@@ -13,8 +13,10 @@
  *            (调研:/tmp/skills-research.md §1)
  *   codex    复制进会话隔离 CODEX_HOME/skills(routed adapter)
  *   pi/omp   复制进 PI_CODING_AGENT_DIR/skills
- *   hermes   复制进 HERMES_HOME/skills(路径未证实——TODO 见 adapter)
- *   trae     复制进 TRAE_HOME/skills(同上)
+ *   hermes   复制进 HERMES_HOME/skills(0.19.0 源码证实:get_skills_dir 跟随
+ *            HERMES_HOME;external_dirs 默认空,无 ~/.agents 泄露)
+ *   trae     复制进 TRAE_HOME/skills(traex 0.202.1 二进制证实:skills 根跟随
+ *            TRAE_HOME)
  *   kimi     spawn args 追加 --skills-dir(会替换项目级发现,项目级目录需补传)
  *   opencode opencode.json 写 skills.paths + env OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1
  *

@@ -132,10 +132,10 @@ export class HermesBentoConfigAdapter implements SessionConfigAdapter {
       selected,
     ), { mode: 0o600 })
 
-    // Skills 投递:复制进 HERMES_HOME/skills。TODO:HERMES_HOME/skills 作为
-    // 用户级 skills 目录未经官方文档证实(调研 /tmp/skills-research.md §4:本机
-    // ~/.hermes/skills 实证存在,但无源码确认 HERMES_HOME 隔离下是否同路径生效);
-    // 待 hermes-agent 源码核实后校正。
+    // Skills 投递:复制进 HERMES_HOME/skills。已证实(hermes-agent 0.19.0 源码,
+    // hermes_constants.py: get_skills_dir() = get_hermes_home()/"skills",
+    // get_hermes_home 读 HERMES_HOME env)。另:hermes 的 external_dirs 配置默认
+    // 为空,不会自动扫 ~/.agents/skills,勾选面完全受控。
     if (request.skills?.curatedRoot) {
       fs.cpSync(
         path.join(request.skills.curatedRoot, "skills"),

@@ -182,10 +182,9 @@ export class TraeBentoConfigAdapter implements SessionConfigAdapter {
         })),
         selected.modelId,
       ), { mode: 0o600 })
-      // Skills 投递:复制进 TRAE_HOME/skills。TODO:TraeCode CLI 文档只证实了
-      // 全局目录 ~/.traecli/skills(docs.trae.cn/cli_skills),TRAE_HOME 隔离下
-      // 是否读取 <TRAE_HOME>/skills 未证实(调研 /tmp/skills-research.md §5);
-      // 待官方确认后校正。
+      // Skills 投递:复制进 TRAE_HOME/skills。已证实(traex 0.202.1-tob 二进制:
+      // _trae_home() = os.environ.get("TRAE_HOME", "~/.trae"),skills 根 =
+      // _trae_home()/"skills";其内置 skill 安装说明亦写 $TRAE_HOME/skills)。
       if (request.skills?.curatedRoot) {
         fs.cpSync(
           path.join(request.skills.curatedRoot, "skills"),
