@@ -3,8 +3,8 @@
  * opencode.ai/zen* 的请求必须携带 x-opencode-session 头——一个会话一个
  * 稳定 ID,上游用它做路由亲和与 prompt 缓存,缺失直接报错。
  *
- * 这里只负责「上游是不是 OpenCode」的判定;会话亲和 ID 的签发归
- * ProviderRoutingService(按 sessionKey),模型列表拉取归
+ * 这里只负责「上游是不是 OpenCode」的判定;亲和 ID 的值就是持久化的
+ * sessionKey(ProviderRoutingService 路由时注入),模型列表拉取归
  * provider-model-fetch(进程级 ID)。
  */
 

@@ -334,7 +334,7 @@ describe("ProviderRoutingService OpenCode 会话头(issue #3)", () => {
     },
   })
 
-  it("OpenCode 上游注入 x-opencode-session:同会话重签发保持稳定,跨会话区分", async () => {
+  it("OpenCode 上游注入 x-opencode-session:值即 sessionKey,重签发/服务重建保持稳定,跨会话区分", async () => {
     const seenSessions: string[] = []
     const upstream = http.createServer((request, response) => {
       seenSessions.push(String(request.headers["x-opencode-session"] ?? ""))
@@ -350,7 +350,8 @@ describe("ProviderRoutingService OpenCode 会话头(issue #3)", () => {
     store.upsert(config("user-opencode-go", baseUrl), { codex: "key-go" })
     // 本地 upstream 不是 opencode.ai,注入谓词模拟命中(判定本身由
     // opencode-session.test.ts 的 URL 矩阵覆盖)。
-    const routing = new ProviderRoutingService(dir, () => store, undefined, undefined, undefined, () => true)
+    const openCode = () => true
+    const routing = new ProviderRoutingService(dir, () => store, undefined, undefined, undefined, openCode)
 
     const first = await routing.issueRoute("session-a", "user-opencode-go", "codex")
     await fetch(`${first.baseUrl}/v1/responses`, { method: "POST", body: "{}" })
@@ -361,11 +362,14 @@ describe("ProviderRoutingService OpenCode 会话头(issue #3)", () => {
     const other = await routing.issueRoute("session-b", "user-opencode-go", "codex")
     await fetch(`${other.baseUrl}/v1/responses`, { method: "POST", body: "{}" })
 
-    expect(seenSessions).toHaveLength(3)
-    expect(seenSessions[0]).toMatch(/^[0-9a-f-]{36}$/)
-    expect(seenSessions[1]).toBe(seenSessions[0])
-    expect(seenSessions[2]).not.toBe(seenSessions[0])
+    // 服务重建(模拟 app 重启后恢复同一会话):亲和 ID 仍不变
     routing.dispose()
+    const rebuilt = new ProviderRoutingService(dir, () => store, undefined, undefined, undefined, openCode)
+    const revived = await rebuilt.issueRoute("session-a", "user-opencode-go", "codex")
+    await fetch(`${revived.baseUrl}/v1/responses`, { method: "POST", body: "{}" })
+
+    expect(seenSessions).toEqual(["session-a", "session-a", "session-b", "session-a"])
+    rebuilt.dispose()
   })
 
   it("非 OpenCode 上游不注入 x-opencode-session", async () => {
