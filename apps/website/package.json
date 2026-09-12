@@ -1,0 +1,12 @@
+{
+  "name": "bento-website",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --config wrangler.jsonc --port 3082"
+  },
+  "devDependencies": {
+    "wrangler": "4.131.1"
+  }
+}

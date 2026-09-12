@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/bento-logo.png" alt="Bento logo" width="88" />
+  <img src="apps/bento/public/bento-logo.png" alt="Bento logo" width="88" />
 </p>
 
 <h1 align="center">Bento</h1>
@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <img src="promo/site/assets/agents-frame.jpg" alt="Bento running multiple agent sessions in a desktop workspace" width="100%" />
+  <img src="apps/website/assets/agents-frame.jpg" alt="Bento running multiple agent sessions in a desktop workspace" width="100%" />
 </p>
 
 > [!NOTE]
@@ -88,9 +88,13 @@ pnpm dev:web   # Browser-only UI preview
 pnpm test      # Run the test suite
 pnpm lint      # Run static checks
 pnpm build     # Build the application
-pnpm dist:dir  # Build release/mac-arm64/Bento.app
+pnpm dist:dir  # Build apps/bento/release/mac-arm64/Bento.app
 pnpm dist      # Build the arm64 DMG
 ```
+
+## Repository layout
+
+The existing desktop app lives in `apps/bento`; the website lives in `apps/website`. Root development commands continue to target Bento. See [directory and architecture guide](docs/structure.md).
 
 ## How it works
 

@@ -1,0 +1,9 @@
+.private
+.wrangler
+node_modules
+dist
+README.md
+package.json
+wrangler.jsonc
+.assetsignore
+.DS_Store

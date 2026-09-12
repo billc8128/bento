@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/bento-logo.png" alt="Bento 标志" width="88" />
+  <img src="apps/bento/public/bento-logo.png" alt="Bento 标志" width="88" />
 </p>
 
 <h1 align="center">Bento</h1>
@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <img src="promo/site/assets/agents-frame.jpg" alt="Bento 桌面工作台中的多个 Agent 会话" width="100%" />
+  <img src="apps/website/assets/agents-frame.jpg" alt="Bento 桌面工作台中的多个 Agent 会话" width="100%" />
 </p>
 
 > [!NOTE]
@@ -88,9 +88,13 @@ pnpm dev:web   # 仅浏览器 UI 预览
 pnpm test      # 运行测试
 pnpm lint      # 静态检查
 pnpm build     # 构建应用
-pnpm dist:dir  # 生成 release/mac-arm64/Bento.app
+pnpm dist:dir  # 生成 apps/bento/release/mac-arm64/Bento.app
 pnpm dist      # 生成 arm64 DMG
 ```
+
+## 仓库目录
+
+现有桌面应用位于 `apps/bento`，官网源码位于 `apps/website`。根目录常用开发命令仍默认操作 Bento。详见[目录与架构说明](docs/structure.md)。
 
 ## 工作原理
 

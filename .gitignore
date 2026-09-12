@@ -1,57 +1,42 @@
-# Logs
-logs
+# Dependencies and generated artifacts
+node_modules/
+**/node_modules/
+**/dist/
+**/dist-electron/
+**/dist-ssr/
+**/release/
+**/.runtime/
+*.tsbuildinfo
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-dist-electron/*.mjs
-release
-build/*
-!build/bento-icon.png
+.env
+.env.*
+!.env.example
 *.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
 
-# 设计评审快照(impeccable skill 产物)
-.impeccable/
-
-# 本地过程产物:原型 demo、QA 截图与设计预览,不进开源仓库
-prototypes/
-artifacts/
-.visualizations/
-
-# 市场与视频制作工作区:部署和成片发布独立处理,不属于产品源码
-promo/bento-remotion/
-promo/bento-studio/
-videos/
-
-# 内部文档:调研、计划、产品设计笔记,不进开源仓库
-docs/
-research/
-ARCHITECTURE.md
-DESIGN.md
-PRODUCT.md
-*_PLAN.md
-
-# 本地 agent 配置
+# Local tooling and experiments
+.vscode/
+.idea/
 .codex/
 .claude/
+.impeccable/
 .spike-kimi/
+.visualizations/
+.wrangler/
+prototypes/
+artifacts/
+research/
+videos/
+promo/bento-remotion/
+promo/bento-studio/
 
-# Electron 构建产物(连同 dist/ 一律不进仓库)
-dist-electron/
+# Private product/research notes, retained locally
+/docs/internal/
+# Unused local icon working file
+/apps/bento/build/icon.png
+
+# Website production operations and deployment resources
+/apps/website/.private/
+
+# Local DSH client experiment
+/apps/bento-dsh/

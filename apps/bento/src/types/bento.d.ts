@@ -1,0 +1,238 @@
+/** preload 暴露的桌面 API。纯 web 模式下 window.bento 不存在,一切须降级。 */
+
+import type { AppUpdateState } from "@/core/app-update"
+import type { LogRecord } from "@/core/replay"
+import type { HarnessId, HarnessRuntimeStatus } from "@/core/harness"
+import type { CustomModelConfig, CustomProviderConfig, ProviderView } from "@/core/provider"
+import type { LocalProviderCandidate, ProviderPresetView } from "@/core/provider-preset"
+import type { BinaryProgress } from "../../electron/binaries/progress"
+import type { GlobalSkill } from "../../electron/skills/skills-types"
+import type { ApprovalDecision } from "@/core/events"
+import type { PermissionProfile } from "@/core/permission"
+import type { Effort, SessionScope } from "@/core/types"
+import type { PromptInput } from "@/core/types"
+import type { BentoAppId, BentoAppView, UserAppInput } from "@/core/apps"
+import type { UiCommand, UiPresence } from "@/core/collaboration"
+import type {
+  WorkspaceBounds,
+  WorkspaceBrowserState,
+  WorkspaceBrowserSnapshot,
+  WorkspaceFileEntry,
+  WorkspaceFileChange,
+  WorkspaceFilePreview,
+  WorkspaceTerminalCreated,
+  WorkspaceTerminalExit,
+} from "@/types/workspace"
+// BinaryProgress 单源定义在 electron/binaries/progress.ts(纯类型,无 node 依赖),
+// 这里 re-export 供 renderer 引用;GlobalSkill 同理来自 electron/skills-types.ts
+export type { BinaryProgress }
+export type { GlobalSkill }
+
+export type LiveSessionRecord = {
+  key: string
+  scope: SessionScope
+  harnessId: string
+  cwd: string
+  nativeSessionId: string
+  providerId?: string
+  modelId?: string
+  effort?: Effort
+  permissionProfile?: PermissionProfile
+  capabilities?: {
+    modelSwitch: "none" | "new-session" | "live"
+    effortSwitch: "none" | "new-session" | "live"
+    steer?: "none" | "live"
+    permissionSwitch?: "none" | "new-session" | "live"
+  }
+  title: string
+  createdAt: string
+  updatedAt: string
+  live: boolean
+  /** main 侧 runtime 投影;协作唤醒的侧栏 running 判定用。
+   *  blocked = 挂起审批等用户介入(turn 还活着,UI 按 running 渲染);
+   *  done = 回合完成但用户未查看。 */
+  runtime?: "sleeping" | "idle" | "working" | "done" | "blocked"
+}
+
+declare global {
+  interface Window {
+    bento?: {
+      desktop: true
+      getAppUpdate(): Promise<AppUpdateState>
+      checkAppUpdate(): Promise<void>
+      downloadAppUpdate(): Promise<void>
+      onAppUpdate(cb: (state: AppUpdateState) => void): () => void
+      createSession(opts: {
+        scope?: SessionScope
+        harnessId: string
+        cwd: string
+        title?: string
+        providerId: string
+        modelId: string
+        effort?: Effort
+        permissionProfile?: PermissionProfile
+      }): Promise<
+        { key: string; record: LiveSessionRecord; error?: undefined } | { error: string }
+      >
+      prompt(key: string, input: PromptInput): Promise<{ stopReason: string } | { error: string }>
+      queuePrompt(key: string, input: PromptInput, clientMessageId: string): Promise<
+        { status: "queued" | "started"; steerAvailable: boolean } | { error: string }
+      >
+      steerQueued(key: string, clientMessageId: string): Promise<{ ok: true } | { error: string }>
+      cancelQueued(key: string, clientMessageId: string): Promise<{ ok: true }>
+      cancel(key: string): Promise<void>
+      setModel(key: string, selection: { providerId: string; modelId: string }): Promise<
+        { record: LiveSessionRecord; error?: undefined } | { error: string }
+      >
+      setEffort(key: string, effort: Effort): Promise<
+        { record: LiveSessionRecord; error?: undefined } | { error: string }
+      >
+      setPermissionProfile(key: string, profile: PermissionProfile): Promise<
+        { record: LiveSessionRecord; error?: undefined } | { error: string }
+      >
+      resolveApproval(key: string, id: string, decision: ApprovalDecision): Promise<{ ok: true } | { error: string }>
+      listPermissionRules(): Promise<{ cwd: string; rules: { harnessId: string; rule: string; createdAt: string }[] }[]>
+      removePermissionRule(cwd: string, harnessId: string, rule: string): Promise<{ ok: boolean }>
+      renameSession(key: string, title: string): Promise<{ record: LiveSessionRecord; error?: undefined } | { error: string }>
+      closeSession(key: string): Promise<void>
+      removeSession(key: string): Promise<void>
+      listSessions(): Promise<LiveSessionRecord[]>
+      listHarnessRuntimes(): Promise<HarnessRuntimeStatus[]>
+      /** macOS 系统用户名:本地资料的默认显示名 */
+      systemUsername(): Promise<string | null>
+      scanSkills(): Promise<GlobalSkill[]>
+      setSkillsPreferences(prefs: { allowGlobal: boolean; disabledSkills: string[] }): Promise<void>
+      /** 液态玻璃主题:整窗 NSVisualEffectView 开关(macOS) */
+      setGlassVibrancy(on: boolean, dark: boolean): void
+      readEvents(key: string): Promise<LogRecord[]>
+      listProviders(options: {
+        harnessId: HarnessId
+        cwd?: string
+        discover?: boolean
+        refresh?: boolean
+      }): Promise<ProviderView[]>
+      setProviderModelVisibility(payload: {
+        providerId: string
+        updates: Array<{ modelId: string; enabled: boolean }>
+      }): Promise<{ ok: true } | { error: string }>
+      listProviderPresets(): Promise<ProviderPresetView[]>
+      discoverPresetModels(payload: { presetId: string; providerId?: string; apiKey?: string }): Promise<
+        { ok: true; models: CustomModelConfig[] } |
+        { ok: false; error: { kind: string; message: string } } |
+        { error: string; message: string }
+      >
+      savePresetProvider(payload: {
+        presetId: string
+        providerId?: string
+        name?: string
+        apiKey?: string
+        models: CustomModelConfig[]
+      }): Promise<{ config?: CustomProviderConfig; error?: string }>
+      scanLocalProviders(): Promise<LocalProviderCandidate[]>
+      inspectLocalProvider(candidateId: string): Promise<
+        { ok: true; models: CustomModelConfig[] } |
+        { ok: false; error: { kind: string; message: string } } |
+        { error: string; message: string }
+      >
+      importLocalProvider(payload: { candidateId: string; models: CustomModelConfig[] }): Promise<
+        { config?: CustomProviderConfig; error?: string }
+      >
+      listCustomProviders(): Promise<(CustomProviderConfig & {
+        hasCredential: boolean
+        runtimes: Record<string, { hasKey: boolean }>
+      })[]>
+      upsertCustomProvider(payload: {
+        config: CustomProviderConfig
+        keys?: Record<string, string>
+      }): Promise<{ config?: CustomProviderConfig; error?: string }>
+      oauthLogin(providerId: string): Promise<{ ok: true } | { error: string }>
+      oauthLogout(providerId: string): Promise<{ ok: true } | { error: string }>
+      removeCustomProvider(providerId: string): Promise<{ error?: string }>
+      fetchProviderModels(payload: {
+        providerId?: string
+        modelsUrl: string
+        apiKey?: string
+        agent?: string
+        auth?: { header: string; prefix?: string; fixedHeaders?: Record<string, string> }
+        parser?: "openai-list" | "anthropic-list" | "fireworks-list" | "ollama-tags"
+      }): Promise<{ ok: true; models: CustomModelConfig[] } | { ok: false; error: { kind: string; message: string } } | { error: string; message: string }>
+      providerSessionsUsing(providerId: string): Promise<number>
+      listApps(): Promise<BentoAppView[]>
+      setAppEnabled(id: BentoAppId, enabled: boolean): Promise<{ ok: true } | { error: string }>
+      upsertApp(input: UserAppInput): Promise<{ app: BentoAppView } | { error: string }>
+      removeApp(id: string): Promise<{ ok: true } | { error: string }>
+      onAppsChanged(cb: () => void): () => void
+      onProvidersChanged(cb: () => void): () => void
+      chooseDirectory(): Promise<{ path?: string; error?: string }>
+      /** 拖入的 File → 绝对路径(拖拽建项目用) */
+      pathForFile(file: File): string
+      /** 剪贴板粘贴等无路径 Blob → 落盘为附件文件,返回绝对路径 */
+      saveAttachmentBlob(input: { name: string; mimeType: string; data: ArrayBuffer }): Promise<
+        { path: string; error?: undefined } | { path?: undefined; error: string }
+      >
+      openPath(target: string): Promise<string>
+      readFileDataUrl(target: string): Promise<{ dataUrl?: string; error?: string }>
+      createProject(opts: { sourceDir: string; name: string }): Promise<
+        { path: string; error?: undefined } | { path?: undefined; error: string }
+      >
+      workspace: {
+        terminal: {
+          create(input: { cwd: string; cols: number; rows: number }): Promise<
+            { terminal: WorkspaceTerminalCreated; error?: undefined } | { terminal?: undefined; error: string }
+          >
+          write(id: string, data: string): void
+          resize(id: string, cols: number, rows: number): void
+          kill(id: string): Promise<{ ok: true } | { error: string }>
+          onData(cb: (event: { id: string; data: string }) => void): () => void
+          onExit(cb: (event: WorkspaceTerminalExit) => void): () => void
+        }
+        files: {
+          list(root: string, relativePath: string): Promise<
+            { entries: WorkspaceFileEntry[]; error?: undefined } | { entries?: undefined; error: string }
+          >
+          read(root: string, relativePath: string): Promise<
+            { preview: WorkspaceFilePreview; error?: undefined } | { preview?: undefined; error: string }
+          >
+          watch(root: string, directory: string): Promise<
+            { subscriptionId: string; error?: undefined } | { subscriptionId?: undefined; error: string }
+          >
+          unwatch(subscriptionId: string): void
+          onChanged(cb: (change: WorkspaceFileChange) => void): () => void
+        }
+        browser: {
+          create(preferredId?: string): Promise<
+            { state: WorkspaceBrowserState; error?: undefined } | { state?: undefined; error: string }
+          >
+          list(): Promise<WorkspaceBrowserState[]>
+          navigate(id: string, url: string): Promise<{ ok: true } | { error: string }>
+          setBounds(id: string, bounds: WorkspaceBounds | null): void
+          back(id: string): void
+          forward(id: string): void
+          reload(id: string): void
+          openExternal(id: string): Promise<{ ok: true } | { error: string }>
+          automation: {
+            snapshot(id: string): Promise<
+              { snapshot: WorkspaceBrowserSnapshot; error?: undefined } | { snapshot?: undefined; error: string }
+            >
+            click(id: string, nodeId: number): Promise<{ ok: true } | { error: string }>
+            fill(id: string, nodeId: number, text: string): Promise<{ ok: true } | { error: string }>
+            scroll(id: string, deltaY: number): Promise<{ ok: true } | { error: string }>
+            screenshot(id: string): Promise<
+              { base64: string; error?: undefined } | { base64?: undefined; error: string }
+            >
+          }
+          destroy(id: string): Promise<{ ok: true } | { error: string }>
+          onState(cb: (state: WorkspaceBrowserState) => void): () => void
+          onReveal(cb: (id: string) => void): () => void
+        }
+      }
+      onSessionEvent(cb: (e: { key: string; record: LogRecord }) => void): () => void
+      onSessionsChanged(cb: () => void): () => void
+      onCollaborationUiCommand(cb: (command: UiCommand) => void): () => void
+      reportCollaborationUiState(presence: UiPresence): void
+      onBinaryProgress(cb: (p: BinaryProgress) => void): () => void
+    }
+  }
+}
+
+export {}
