@@ -19,6 +19,7 @@ import type { PermissionProfile } from "../src/core/permission"
 import type { PromptInput } from "../src/core/types"
 import type { BentoAppId, UserAppInput } from "../src/core/apps"
 import { configureBinaryManager } from "./binaries/manager"
+import { HarnessUpdatesService, UPDATABLE, type UpdatableHarnessId } from "./runtime/harness-updates"
 import { createProject } from "./sessions/projects"
 import { readFileDataUrl, saveAttachmentBlob } from "./platform/local-files"
 import type { CustomProviderConfig } from "../src/core/provider"
@@ -306,6 +307,22 @@ app.whenReady().then(async () => {
     // 受管二进制下载进度走独立频道:不进会话事件流(connectSession 的
     // pending 缓冲会把连接前事件延迟到完成才显示,进度会完全不可见)
     if (win && !win.isDestroyed()) win.webContents.send("binary:progress", progress)
+  })
+  // ---- Harness 运行时更新:检查(ready + 24h,失败静默)+ 设置页手动更新;
+  // 更新下载进度只走 harnessUpdates:changed 行内进度条,不碰 binary:progress 横幅 ----
+  const harnessUpdates = new HarnessUpdatesService(app.getPath("userData"), () => {
+    if (win && !win.isDestroyed()) win.webContents.send("harnessUpdates:changed")
+  })
+  harnessUpdates.schedule()
+  ipcMain.handle("harnessUpdates:status", () => harnessUpdates.status())
+  ipcMain.handle("harnessUpdates:check", async () => {
+    await harnessUpdates.check()
+    return harnessUpdates.status()
+  })
+  ipcMain.handle("harnessUpdates:update", (_e, harnessId: string) => {
+    if (!UPDATABLE.includes(harnessId as UpdatableHarnessId)) return { error: "该 harness 不支持手动更新" }
+    void harnessUpdates.update(harnessId as UpdatableHarnessId).catch(() => {})
+    return { ok: true as const }
   })
   // OAuth 凭证死透时往受影响会话的时间线注入提示(复用既有 notice 链路);
   // 重新登录成功由 setOAuthTokens 复位 needsReauth 标记。中间四个参数用默认实现。

@@ -240,6 +240,17 @@ const api = {
     ipcRenderer.on("binary:progress", handler)
     return () => ipcRenderer.removeListener("binary:progress", handler)
   },
+
+  /** Harness 运行时更新:状态查询/手动检查/手动更新;变更推送后重拉 status */
+  harnessUpdatesStatus: () => ipcRenderer.invoke("harnessUpdates:status"),
+  harnessUpdatesCheck: () => ipcRenderer.invoke("harnessUpdates:check"),
+  harnessUpdatesUpdate: (harnessId: string) =>
+    ipcRenderer.invoke("harnessUpdates:update", harnessId),
+  onHarnessUpdatesChanged: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on("harnessUpdates:changed", handler)
+    return () => ipcRenderer.removeListener("harnessUpdates:changed", handler)
+  },
 }
 
 contextBridge.exposeInMainWorld("bento", api)

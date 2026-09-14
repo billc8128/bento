@@ -10,7 +10,9 @@ import { ChevronLeft, CircleUserRound, FlaskConical, FolderCog, Keyboard, KeyRou
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { HorseIcon } from "@/components/HorseIcon"
+import { UpdateDot } from "@/components/UpdateDot"
 import { useT } from "@/lib/i18n"
+import { pendingUpdateCount, useHarnessUpdates } from "@/lib/settings/harness-updates-store"
 import { closeSettings, useSettingsPage, type SettingsSection } from "@/lib/settings/settings-store"
 import { cn } from "@/lib/utils"
 
@@ -44,6 +46,8 @@ export function SettingsPage() {
   const settings = useSettingsPage()
   const [section, setSection] = useState<SettingsSection>(settings.section)
   const { t } = useT()
+  const { statuses: updateStatuses } = useHarnessUpdates()
+  const harnessPending = pendingUpdateCount(updateStatuses)
 
   // 每次打开跟随调用方指定的板块(渲染期调整,不开 effect);
   // 页面内的点击切换归本地 state 管
@@ -115,6 +119,7 @@ export function SettingsPage() {
             <item.icon className="size-4 opacity-70" />
             {t(item.labelKey)}
             {item.beta && <BetaBadge />}
+            {item.id === "harnesses" && harnessPending > 0 && <UpdateDot className="ml-auto" />}
           </button>
         ))}
       </nav>

@@ -8,10 +8,22 @@ import { pipeline } from "node:stream/promises"
 import { promisify } from "node:util"
 import zlib from "node:zlib"
 
-import { BINARY_MANIFEST, type ManagedBinaryName } from "./manifest"
+import { BINARY_MANIFEST, type BinaryArtifact, type ManagedBinaryName } from "./manifest"
+import { effectiveBinaryEntry } from "./updates-store"
 import type { BinaryProgress } from "./progress"
 
 export type { BinaryProgress } from "./progress"
+
+/** 更新流程安装指定(非 baked)条目的入参形状。 */
+export type BinaryEntry = { version: string; artifact: BinaryArtifact }
+
+type EnsureOptions = {
+  entry?: BinaryEntry
+  /** 更新流程的行内进度回调(独立于全局 binary:progress 通道)。 */
+  onProgress?: (fraction: number) => void
+  /** true = 不走全局 binary:progress(更新下载有自己的行内 UI)。 */
+  silent?: boolean
+}
 
 const execFileAsync = promisify(execFile)
 
@@ -34,10 +46,15 @@ export class BinaryManager {
     private readonly onProgress: (progress: BinaryProgress) => void = () => {},
   ) {}
 
-  ensure(name: ManagedBinaryName): Promise<string> {
+  /** rootDir 约定是 userData/binaries;更新记录存在 userData/providers 下。 */
+  private get userDataDir(): string {
+    return path.dirname(this.rootDir)
+  }
+
+  ensure(name: ManagedBinaryName, opts: EnsureOptions = {}): Promise<string> {
     const existing = this.installs.get(name)
     if (existing) return existing
-    const install = this.resolveOrInstall(name).finally(() => this.installs.delete(name))
+    const install = this.resolveOrInstall(name, opts).finally(() => this.installs.delete(name))
     this.installs.set(name, install)
     return install
   }
@@ -53,17 +70,17 @@ export class BinaryManager {
         return null
       }
     }
-    const artifact = manifest.platforms[this.platformKey]
-    if (!artifact) return null
-    const installDir = path.join(this.rootDir, name, manifest.version, this.platformKey)
-    const executable = path.join(installDir, artifact.executable)
+    const entry = effectiveBinaryEntry(this.userDataDir, name, this.platformKey)
+    if (!entry) return null
+    const installDir = path.join(this.rootDir, name, entry.version, this.platformKey)
+    const executable = path.join(installDir, entry.artifact.executable)
     const marker = path.join(installDir, "install.json")
-    return await this.isInstalled(executable, marker, manifest.version, artifact.sha256)
+    return await this.isInstalled(executable, marker, entry.version, entry.artifact.sha256)
       ? executable
       : null
   }
 
-  private async resolveOrInstall(name: ManagedBinaryName) {
+  private async resolveOrInstall(name: ManagedBinaryName, opts: EnsureOptions) {
     const manifest = BINARY_MANIFEST[name]
     const override = process.env[manifest.overrideEnv]
     if (override) {
@@ -71,20 +88,26 @@ export class BinaryManager {
       return override
     }
 
-    const artifact = manifest.platforms[this.platformKey]
-    if (!artifact) throw new Error(`${name} 暂不支持平台 ${this.platformKey}`)
-    const installDir = path.join(this.rootDir, name, manifest.version, this.platformKey)
+    // 更新流程传指定条目;运行时解析用有效条目(已更新版本 > baked pin)
+    const entry = opts.entry ?? effectiveBinaryEntry(this.userDataDir, name, this.platformKey)
+    if (!entry) throw new Error(`${name} 暂不支持平台 ${this.platformKey}`)
+    const { version, artifact } = entry
+    const report = (progress: BinaryProgress) => {
+      if (!opts.silent) this.onProgress(progress)
+      if (progress.fraction !== undefined) opts.onProgress?.(progress.fraction)
+    }
+    const installDir = path.join(this.rootDir, name, version, this.platformKey)
     const executable = path.join(installDir, artifact.executable)
     const marker = path.join(installDir, "install.json")
-    if (await this.isInstalled(executable, marker, manifest.version, artifact.sha256)) {
+    if (await this.isInstalled(executable, marker, version, artifact.sha256)) {
       return executable
     }
 
-    this.onProgress({
+    report({
       name,
-      version: manifest.version,
+      version,
       phase: "downloading",
-      text: `正在下载 ${name} ${manifest.version}…`,
+      text: `正在下载 ${name} ${version}…`,
     })
     let tempDir: string | undefined
     try {
@@ -101,24 +124,26 @@ export class BinaryManager {
               : "download",
       )
       await this.download(artifact.url, archive, (received, total) => {
-        this.onProgress({
+        report({
           name,
-          version: manifest.version,
+          version,
           phase: "downloading",
           ...(total ? { fraction: received / total } : {}),
           text: total
-            ? `正在下载 ${name} ${manifest.version} ${Math.round((received / total) * 100)}%`
-            : `正在下载 ${name} ${manifest.version}…`,
+            ? `正在下载 ${name} ${version} ${Math.round((received / total) * 100)}%`
+            : `正在下载 ${name} ${version}…`,
         })
       })
-      this.onProgress({
+      report({
         name,
-        version: manifest.version,
+        version,
         phase: "verifying",
-        text: `校验 ${name} ${manifest.version}…`,
+        text: `校验 ${name} ${version}…`,
       })
       const digest = await sha256File(archive)
-      if (digest !== artifact.sha256) {
+      // sha256 为空 = TOFU(上游未提供摘要):跳过比对,自算值入 marker,
+      // 首次下载即信任锚点;后续 isInstalled 按版本 + marker 摘要判定。
+      if (artifact.sha256 && digest !== artifact.sha256) {
         throw new Error(`${name} 下载摘要不匹配: expected ${artifact.sha256}, got ${digest}`)
       }
 
@@ -161,23 +186,23 @@ export class BinaryManager {
       await fs.promises.chmod(executable, 0o755)
       await fs.promises.writeFile(
         marker,
-        JSON.stringify({ version: manifest.version, archiveSha256: artifact.sha256 }, null, 2),
+        JSON.stringify({ version, archiveSha256: artifact.sha256 || digest }, null, 2),
       )
-      this.onProgress({
+      report({
         name,
-        version: manifest.version,
+        version,
         phase: "done",
-        text: `${name} ${manifest.version} 就绪`,
+        text: `${name} ${version} 就绪`,
       })
       return executable
     } catch (error) {
       // 失败必须上报 error 相位:renderer 据此清掉进度行,否则残留的
       // 「下载 71%」会在下次创建会话时错误重现
-      this.onProgress({
+      report({
         name,
-        version: manifest.version,
+        version,
         phase: "error",
-        text: `${name} ${manifest.version} 安装失败:${error instanceof Error ? error.message : String(error)}`,
+        text: `${name} ${version} 安装失败:${error instanceof Error ? error.message : String(error)}`,
       })
       throw error
     } finally {
@@ -197,7 +222,9 @@ export class BinaryManager {
         archiveSha256?: string
       }
       await fs.promises.access(executable, fs.constants.X_OK)
-      return state.version === version && state.archiveSha256 === archiveSha256
+      // sha 为空 = TOFU 安装:只按版本判定(marker 摘要即首次自算值)
+      return state.version === version &&
+        (!archiveSha256 || state.archiveSha256 === archiveSha256)
     } catch {
       return false
     }
@@ -269,6 +296,17 @@ export function configureBinaryManager(
 export function managedBinary(name: ManagedBinaryName) {
   if (!manager) throw new Error("BinaryManager 尚未初始化")
   return manager.ensure(name)
+}
+
+/** 更新流程入口:安装指定(非 baked)条目;进度只回调调用方,
+ * 不进全局 binary:progress(那个语义留给「会话需要运行时」的首次安装)。 */
+export function installBinaryUpdate(
+  name: ManagedBinaryName,
+  entry: BinaryEntry,
+  onProgress?: (fraction: number) => void,
+) {
+  if (!manager) throw new Error("BinaryManager 尚未初始化")
+  return manager.ensure(name, { entry, onProgress, silent: true })
 }
 
 export function managedBinaryIfInstalled(name: ManagedBinaryName) {

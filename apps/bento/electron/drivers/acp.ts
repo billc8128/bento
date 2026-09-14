@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url"
 import * as acp from "@agentclientprotocol/sdk"
 
 import { managedBinary, managedUvxBinary } from "../binaries/manager"
+import { installedUpdateVersion } from "../binaries/updates-store"
 import { HERMES_AGENT_VERSION, resolveHarnessRuntime } from "../runtime/harness-runtime"
 import { resolveRealPath } from "../platform/realpath"
 import { harnessUsage } from "./usage"
@@ -108,7 +109,8 @@ async function harnessCommand(id: AcpDriverId): Promise<SpawnSpec> {
     async () => id === "hermes"
       ? {
           cmd: await managedUvxBinary(),
-          args: ["--python", "3.12", "--from", `hermes-agent[acp]==${HERMES_AGENT_VERSION}`, "hermes-acp"],
+          // hermes 无本地二进制:更新 = 换 pin(uvx 下次会话自拉新版)
+          args: ["--python", "3.12", "--from", `hermes-agent[acp]==${installedUpdateVersion("hermes") ?? HERMES_AGENT_VERSION}`, "hermes-acp"],
         }
       : { cmd: await managedBinary(id), args: acpArgs },
   )

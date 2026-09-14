@@ -3,6 +3,7 @@
 import type { AppUpdateState } from "@/core/app-update"
 import type { LogRecord } from "@/core/replay"
 import type { HarnessId, HarnessRuntimeStatus } from "@/core/harness"
+import type { HarnessUpdateStatus } from "@/core/harness-updates"
 import type { CustomModelConfig, CustomProviderConfig, ProviderView } from "@/core/provider"
 import type { LocalProviderCandidate, ProviderPresetView } from "@/core/provider-preset"
 import type { BinaryProgress } from "../../electron/binaries/progress"
@@ -98,6 +99,9 @@ declare global {
       removeSession(key: string): Promise<void>
       listSessions(): Promise<LiveSessionRecord[]>
       listHarnessRuntimes(): Promise<HarnessRuntimeStatus[]>
+      harnessUpdatesStatus(): Promise<HarnessUpdateStatus[]>
+      harnessUpdatesCheck(): Promise<HarnessUpdateStatus[]>
+      harnessUpdatesUpdate(harnessId: string): Promise<{ ok: true } | { error: string }>
       /** macOS 系统用户名:本地资料的默认显示名 */
       systemUsername(): Promise<string | null>
       scanSkills(): Promise<GlobalSkill[]>
@@ -232,6 +236,7 @@ declare global {
       onCollaborationUiCommand(cb: (command: UiCommand) => void): () => void
       reportCollaborationUiState(presence: UiPresence): void
       onBinaryProgress(cb: (p: BinaryProgress) => void): () => void
+      onHarnessUpdatesChanged(cb: () => void): () => void
     }
   }
 }

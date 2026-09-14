@@ -6,6 +6,7 @@ import { promisify } from "node:util"
 
 import type { HarnessId, HarnessRuntimeStatus } from "../../src/core/harness"
 import { BINARY_MANIFEST, type ManagedBinaryName } from "../binaries/manifest"
+import { installedUpdateVersion, type UpdatableHarnessId } from "../binaries/updates-store"
 
 const execFileAsync = promisify(execFile)
 
@@ -173,12 +174,14 @@ function bundledClaudeVersion(): Promise<string | undefined> {
   return claudeCliVersion
 }
 
-/** managed/bundled 的确定性版本:manifest pin / 内嵌包,不猜 PATH。 */
+/** managed/bundled 的确定性版本:manifest pin / 内嵌包,不猜 PATH。
+ * 托管二进制与 hermes 的版本优先取用户已更新的安装(> baked pin)。 */
 function preferredRuntimeVersion(harnessId: HarnessId): string | undefined | Promise<string | undefined> {
   const fallback = DEFINITIONS[harnessId].fallback
   if (fallback === "managed") {
-    if (harnessId === "hermes") return HERMES_AGENT_VERSION
-    return BINARY_MANIFEST[harnessId as ManagedBinaryName]?.version
+    if (harnessId === "hermes") return installedUpdateVersion("hermes") ?? HERMES_AGENT_VERSION
+    return installedUpdateVersion(harnessId as UpdatableHarnessId) ??
+      BINARY_MANIFEST[harnessId as ManagedBinaryName]?.version
   }
   if (harnessId === "pi") return bundledPackageVersion("@earendil-works/pi-coding-agent/rpc-entry")
   if (harnessId === "claude-code") return bundledClaudeVersion()

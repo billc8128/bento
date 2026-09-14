@@ -83,6 +83,7 @@ import { hasUnreadSessionMessage, isRunning, liveMeta, removeLive, renameLive, u
 import type { HarnessId } from "@/core/harness"
 import { togglePin, usePinnedSessions } from "@/lib/sessions/pinned-sessions"
 import { openSettings } from "@/lib/settings/settings-store"
+import { pendingUpdateCount, useHarnessUpdates } from "@/lib/settings/harness-updates-store"
 import { useStatusGlyph } from "@/lib/appearance/status-glyph"
 import { SESSION_MIME } from "@/views/DockWorkspace"
 import type { SidebarShape } from "@/data/styles"
@@ -152,6 +153,8 @@ export function AppSidebar() {
   const rowRound = inset ? "rounded-lg" : "rounded-none"
   const { focusedSessionId, appsFocused } = useLayout()
   const profile = useProfile()
+  const { statuses: updateStatuses } = useHarnessUpdates()
+  const harnessPending = pendingUpdateCount(updateStatuses)
   const theme = useTheme()
   const { sessions: liveSessions } = useLive()
   const pinned = usePinnedSessions()
@@ -636,12 +639,17 @@ export function AppSidebar() {
               onClick={() => openSettings("account")}
               className="flex h-auto min-w-0 flex-1 items-center gap-2.5 rounded-l-lg px-2 py-1.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
-              <Avatar size="sm">
-                {profile.avatar && <AvatarImage src={profile.avatar} />}
-                <AvatarFallback className="type-micro bg-primary/15 font-semibold text-sidebar-foreground">
-                  {profile.avatar ? null : profileInitial(profile.name)}
-                </AvatarFallback>
-              </Avatar>
+              <span className="relative">
+                <Avatar size="sm">
+                  {profile.avatar && <AvatarImage src={profile.avatar} />}
+                  <AvatarFallback className="type-micro bg-primary/15 font-semibold text-sidebar-foreground">
+                    {profile.avatar ? null : profileInitial(profile.name)}
+                  </AvatarFallback>
+                </Avatar>
+                {harnessPending > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-brand ring-2 ring-sidebar" />
+                )}
+              </span>
               <span className="min-w-0 flex-1 truncate text-left text-xs font-medium">
                 {profile.name}
               </span>

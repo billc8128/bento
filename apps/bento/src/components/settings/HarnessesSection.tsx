@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react"
-import { Check, RefreshCw } from "lucide-react"
+import { Check, Download, Loader2, RefreshCw, TriangleAlert } from "lucide-react"
 
 import { HarnessIcon } from "@/components/HarnessIcon"
+import { UpdateDot } from "@/components/UpdateDot"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { HARNESSES, getHarness, type HarnessRuntimeStatus } from "@/core/harness"
 import { PERMISSION_PROFILES } from "@/core/permission"
 import { useT, type TFn } from "@/lib/i18n"
+import { pendingUpdateCount, useHarnessUpdates } from "@/lib/settings/harness-updates-store"
 import { setHarnessEnabled, useHarnessPreferences } from "@/lib/sessions/harness-preferences"
 import { setDefaultPermissionProfile, useDefaultPermissionProfile } from "@/lib/sessions/permission-profile"
 import { cn } from "@/lib/utils"
@@ -41,6 +43,8 @@ export function HarnessesSection() {
   const [loading, setLoading] = useState(true)
   const defaultProfile = useDefaultPermissionProfile()
   const { isEnabled } = useHarnessPreferences()
+  const updates = useHarnessUpdates()
+  const pendingCount = pendingUpdateCount(updates.statuses)
   const [ruleGroups, setRuleGroups] = useState<
     { cwd: string; rules: { harnessId: string; rule: string; createdAt: string }[] }[]
   >([])
@@ -48,6 +52,8 @@ export function HarnessesSection() {
   const refresh = () => {
     setLoading(true)
     void window.bento?.listHarnessRuntimes().then(setStatuses).finally(() => setLoading(false))
+    // 刷新同时触发一次上游检查(结果经 harnessUpdates:changed 推回)
+    void window.bento?.harnessUpdatesCheck().catch(() => {})
   }
   const refreshRules = () => {
     void window.bento?.listPermissionRules().then(setRuleGroups)
@@ -72,15 +78,28 @@ export function HarnessesSection() {
         title={t("settings.runtime")}
         desc={t("settings.runtimeDesc")}
         action={
-          <Button variant="ghost" size="icon" className="size-8" onClick={refresh} disabled={loading}>
-            <RefreshCw className={loading ? "animate-spin" : ""} />
-            <span className="sr-only">{t("settings.redetect")}</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            {pendingCount > 0 && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-brand/10 px-2.5 py-0.5 text-[11px] font-medium text-brand">
+                <UpdateDot />{t("settings.runtimeUpdateCount", { count: pendingCount })}
+              </span>
+            )}
+            <Button variant="ghost" size="icon" className="size-8" onClick={refresh} disabled={loading}>
+              <RefreshCw className={loading ? "animate-spin" : ""} />
+              <span className="sr-only">{t("settings.redetect")}</span>
+            </Button>
+          </div>
         }
       >
         <div className="flex flex-col divide-y divide-border rounded-xl border border-border">
           {HARNESSES.map((harness) => {
             const status = statuses.find((item) => item.harnessId === harness.id)
+            // override(BENTO_*_PATH)优先于托管运行时:更新了也不会生效,
+            // 此时不展示更新 affordance,版本号也显示 override 探测值
+            const update = status?.source === "override"
+              ? undefined
+              : updates.statuses.find((item) => item.harnessId === harness.id)
+            const trigger = () => void window.bento?.harnessUpdatesUpdate(harness.id)
             return (
               <div key={harness.id} className="flex items-center gap-3 px-4 py-3">
                 <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted">
@@ -88,10 +107,49 @@ export function HarnessesSection() {
                 </span>
                 <span className="flex min-w-0 flex-1 items-baseline gap-2">
                   <span className="text-sm font-medium">{harness.name}</span>
-                  <span className="truncate font-mono text-xs text-muted-foreground">
-                    {sourceLabel(status, t)}
-                  </span>
+                  {update && (update.state === "available" || update.state === "downloading" || update.state === "failed") ? (
+                    <span className="truncate font-mono text-xs text-muted-foreground">
+                      {update.current}
+                      <span className="mx-1 text-muted-foreground/60">→</span>
+                      <span className="font-medium text-brand">{update.latest}</span>
+                    </span>
+                  ) : (
+                    <span className="truncate font-mono text-xs text-muted-foreground">
+                      {update ? update.current : sourceLabel(status, t)}
+                    </span>
+                  )}
                 </span>
+                {update?.state === "available" && (
+                  <Button variant="outline" size="sm" onClick={trigger}>
+                    <Download className="size-3.5" />{t("settings.runtimeUpdate")}
+                  </Button>
+                )}
+                {update?.state === "downloading" && (
+                  <span className="flex w-36 shrink-0 flex-col gap-1.5">
+                    <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <Loader2 className="size-3 animate-spin motion-reduce:animate-none" />{t("settings.runtimeUpdating")} {update.percent ?? 0}%
+                    </span>
+                    <span className="h-1 overflow-hidden rounded-full bg-muted">
+                      <span
+                        className="block h-full rounded-full bg-brand transition-[width] duration-150 motion-reduce:transition-none"
+                        style={{ width: `${update.percent ?? 0}%` }}
+                      />
+                    </span>
+                  </span>
+                )}
+                {update?.state === "failed" && (
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span className="flex items-center gap-1 text-[11px] text-err">
+                      <TriangleAlert className="size-3" />{t("settings.runtimeUpdateFailed")}
+                    </span>
+                    <Button variant="outline" size="sm" onClick={trigger}>{t("settings.updateRetry")}</Button>
+                  </span>
+                )}
+                {update?.state === "updated" && (
+                  <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <Check className="size-3.5 text-green-600 dark:text-green-400" />{t("settings.runtimeUpdated")}
+                  </span>
+                )}
                 <Switch
                   checked={isEnabled(harness.id)}
                   onCheckedChange={(v) => setHarnessEnabled(harness.id, v)}
