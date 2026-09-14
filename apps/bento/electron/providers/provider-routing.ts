@@ -17,7 +17,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import type { CustomProviderConfig } from "../../src/core/provider"
-import type { OAuthTokens, CustomProviderStore } from "./custom-providers"
+import type { CustomProviderStore } from "./custom-providers"
 import { RouteRegistry, startLocalModelProxy, type LocalModelProxy, type ProxyRoute } from "./model-proxy"
 import { isOpenCodeUpstream, OPENCODE_SESSION_HEADER } from "../sessions/opencode-session"
 import { refreshOAuthToken } from "./oauth-runner"
@@ -45,7 +45,7 @@ export class ProviderRoutingService {
   private readonly tokensBySession = new Map<string, Set<string>>()
   private proxy: LocalModelProxy | null = null
   private starting: Promise<LocalModelProxy> | null = null
-  private readonly oauthRefreshes = new Map<string, Promise<void>>()
+  private readonly oauthRefreshes = new Map<string, Promise<boolean>>()
 
   constructor(
     private readonly userDataDir: string,
@@ -56,16 +56,24 @@ export class ProviderRoutingService {
     private readonly isOpenCode: (baseUrl: string) => boolean = isOpenCodeUpstream,
   ) {}
 
-  private refreshOAuthInBackground(
-    providerId: string,
-    descriptor: Extract<CustomProviderConfig["auth"], { method: "oauth" }>["oauth"],
-    current: OAuthTokens,
-  ): void {
-    if (!current.refreshToken || this.oauthRefreshes.has(providerId)) return
-    const refresh = this.refreshToken(descriptor, current.refreshToken).then((next) => {
+  /**
+   * OAuth 刷新(按 provider 单飞):主动(签发时临期)与被动(代理收到
+   * 上游 401)共用同一条路径。成功→写回 store 并原地更新全部活跃路由的
+   * apiKey(并发的同会话请求自动用上新凭证),resolve true;无 refreshToken
+   * 或刷新失败→路由 key 置占位符,resolve false。
+   */
+  private refreshOAuth(providerId: string): Promise<boolean> {
+    const inflight = this.oauthRefreshes.get(providerId)
+    if (inflight) return inflight
+    const config = this.providers().getProviderConfig(providerId)
+    const current = this.providers().readOAuthTokens(providerId)
+    if (!config || config.auth.method !== "oauth" || !current?.refreshToken) {
+      return Promise.resolve(false)
+    }
+    const refresh = this.refreshToken(config.auth.oauth, current.refreshToken).then((next) => {
       if (!next) {
         this.routes.updateProvider(providerId, { apiKey: "bento-oauth-refresh-failed" })
-        return
+        return false
       }
       const merged = {
         ...next,
@@ -77,15 +85,37 @@ export class ProviderRoutingService {
         apiKey: merged.accessToken,
         ...(merged.oauthProxyUrl ? { baseUrl: merged.oauthProxyUrl } : {}),
       })
-    }).finally(() => {
+      return true
+    }).catch(() => {
+      this.routes.updateProvider(providerId, { apiKey: "bento-oauth-refresh-failed" })
+      return false
+    })
+    const tracked = refresh.finally(() => {
       this.oauthRefreshes.delete(providerId)
     })
-    this.oauthRefreshes.set(providerId, refresh)
+    this.oauthRefreshes.set(providerId, tracked)
+    return tracked
+  }
+
+  /** 代理收到上游 401 的回调:仅 OAuth provider 可自愈,其余直接透传。 */
+  private readonly onUpstreamUnauthorized = (route: ProxyRoute, failedApiKey: string): Promise<boolean> => {
+    const config = this.providers().getProviderConfig(route.providerId)
+    if (!config || config.auth.method !== "oauth") return Promise.resolve(false)
+    // 并发 401 的迟到者:本请求是用旧 key 发的,凭证已被其他请求的刷新
+    // 原地轮换(updateProvider 语义)——无需再刷,直接用新 key 重试。
+    if (route.apiKey !== failedApiKey) return Promise.resolve(true)
+    return this.refreshOAuth(route.providerId)
+  }
+
+  private refreshOAuthInBackground(providerId: string): void {
+    void this.refreshOAuth(providerId)
   }
 
   private async ensureProxy(): Promise<LocalModelProxy> {
     if (this.proxy) return this.proxy
-    this.starting ??= startLocalModelProxy(this.routes).then((proxy) => {
+    this.starting ??= startLocalModelProxy(this.routes, {
+      onUnauthorized: this.onUpstreamUnauthorized,
+    }).then((proxy) => {
       this.proxy = proxy
       return proxy
     })
@@ -187,7 +217,7 @@ export class ProviderRoutingService {
         }
       }
       if (tokens.expiresAt - Date.now() < 5 * 60 * 1_000) {
-        this.refreshOAuthInBackground(providerId, config.auth.oauth, tokens)
+        this.refreshOAuthInBackground(providerId)
       }
     }
 

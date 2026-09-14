@@ -394,3 +394,152 @@ describe("ProviderRoutingService OpenCode 会话头(issue #3)", () => {
     routing.dispose()
   })
 })
+
+describe("ProviderRoutingService 上游 401 的 OAuth 自愈", () => {
+  const oauthConfig = (id: string): CustomProviderConfig => ({
+    id,
+    name: id,
+    auth: {
+      method: "oauth",
+      oauth: {
+        authorizeUrl: "https://example.com/authorize",
+        tokenUrl: "https://example.com/token",
+        clientId: "client",
+        scopes: "scope",
+      },
+    },
+    runtimes: {
+      codex: {
+        baseUrl: "https://unused.example.com",
+        requestPath: "/responses",
+        wireProtocol: "openai-responses",
+        models: [{ id: "m", name: "M" }],
+      },
+    },
+  })
+
+  /** fake 上游:旧 access token 一律 401 token_expired,新 token 放行。 */
+  async function expiringUpstream() {
+    const seenAuth: Array<string | undefined> = []
+    const upstream = http.createServer((request, response) => {
+      seenAuth.push(request.headers.authorization)
+      if (request.headers.authorization === "Bearer new-access") {
+        response.writeHead(200, { "content-type": "application/json" }).end("{}")
+      } else {
+        response.writeHead(401, { "content-type": "application/json" })
+          .end(JSON.stringify({ error: { code: "token_expired" } }))
+      }
+    })
+    servers.push(upstream)
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
+    return { seenAuth, url: `http://127.0.0.1:${(upstream.address() as AddressInfo).port}` }
+  }
+
+  it("会话半路过期:401 触发刷新并用新 token 重试,客户端无感拿到 200", async () => {
+    const { seenAuth, url } = await expiringUpstream()
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-401-heal-"))
+    dirs.push(dir)
+    const store = new CustomProviderStore(dir, memorySecrets())
+    store.upsert(oauthConfig("user-oauth-sub"))
+    // expiresAt 还很远:签发时不触发主动刷新,保证走的是 401 被动路径
+    store.writeOAuthTokens("user-oauth-sub", {
+      accessToken: "old-access",
+      refreshToken: "refresh",
+      expiresAt: Date.now() + 3_600_000,
+      oauthProxyUrl: url,
+    })
+    const refresh = vi.fn(async () => ({
+      accessToken: "new-access",
+      refreshToken: "refresh-2",
+      expiresAt: Date.now() + 3_600_000,
+    }))
+    const routing = new ProviderRoutingService(dir, () => store, refresh)
+    const route = await routing.issueRoute("session", "user-oauth-sub", "codex")
+
+    const response = await fetch(`${route.baseUrl}/v1/responses`, { method: "POST", body: "{}" })
+    expect(response.status).toBe(200)
+    expect(seenAuth).toEqual(["Bearer old-access", "Bearer new-access"])
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(store.readOAuthTokens("user-oauth-sub")).toMatchObject({ accessToken: "new-access" })
+    routing.dispose()
+  })
+
+  it("并发请求共享同一次刷新(单飞),各自重试成功", async () => {
+    const { seenAuth, url } = await expiringUpstream()
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-401-singleflight-"))
+    dirs.push(dir)
+    const store = new CustomProviderStore(dir, memorySecrets())
+    store.upsert(oauthConfig("user-oauth-sub"))
+    store.writeOAuthTokens("user-oauth-sub", {
+      accessToken: "old-access",
+      refreshToken: "refresh",
+      expiresAt: Date.now() + 3_600_000,
+      oauthProxyUrl: url,
+    })
+    let release!: (tokens: OAuthTokens) => void
+    const pending = new Promise<OAuthTokens>((resolve) => { release = resolve })
+    const refresh = vi.fn(() => pending)
+    const routing = new ProviderRoutingService(dir, () => store, refresh)
+    const route = await routing.issueRoute("session", "user-oauth-sub", "codex")
+
+    const first = fetch(`${route.baseUrl}/v1/responses`, { method: "POST", body: "{}" })
+    const second = fetch(`${route.baseUrl}/v1/responses`, { method: "POST", body: "{}" })
+    // 等两个请求都撞过 401、刷新已在途,再放行
+    await new Promise((resolve) => setImmediate(resolve))
+    release({ accessToken: "new-access", refreshToken: "refresh-2", expiresAt: Date.now() + 3_600_000 })
+    const [resA, resB] = await Promise.all([first, second])
+    expect(resA.status).toBe(200)
+    expect(resB.status).toBe(200)
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(seenAuth.filter((auth) => auth === "Bearer new-access")).toHaveLength(2)
+    routing.dispose()
+  })
+
+  it("刷新失败:原 401 透传,路由 key 置占位符", async () => {
+    const { url } = await expiringUpstream()
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-401-fail-"))
+    dirs.push(dir)
+    const store = new CustomProviderStore(dir, memorySecrets())
+    store.upsert(oauthConfig("user-oauth-sub"))
+    store.writeOAuthTokens("user-oauth-sub", {
+      accessToken: "old-access",
+      refreshToken: "refresh",
+      expiresAt: Date.now() + 3_600_000,
+      oauthProxyUrl: url,
+    })
+    const refresh = vi.fn(async () => null)
+    const routing = new ProviderRoutingService(dir, () => store, refresh)
+    const route = await routing.issueRoute("session", "user-oauth-sub", "codex")
+
+    expect((await fetch(`${route.baseUrl}/v1/responses`, { method: "POST", body: "{}" })).status).toBe(401)
+    expect(refresh).toHaveBeenCalledTimes(1)
+    routing.dispose()
+  })
+
+  it("apiKey provider 的 401 不触发刷新,直接透传", async () => {
+    const { url } = await expiringUpstream()
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-401-apikey-"))
+    dirs.push(dir)
+    const store = new CustomProviderStore(dir, memorySecrets())
+    store.upsert({
+      id: "user-key",
+      name: "user-key",
+      auth: { method: "apiKey" },
+      runtimes: {
+        codex: {
+          baseUrl: url,
+          requestPath: "/responses",
+          wireProtocol: "openai-responses",
+          models: [{ id: "m", name: "M" }],
+        },
+      },
+    }, { codex: "old-access" })
+    const refresh = vi.fn(async () => null)
+    const routing = new ProviderRoutingService(dir, () => store, refresh)
+    const route = await routing.issueRoute("session", "user-key", "codex")
+
+    expect((await fetch(`${route.baseUrl}/v1/responses`, { method: "POST", body: "{}" })).status).toBe(401)
+    expect(refresh).not.toHaveBeenCalled()
+    routing.dispose()
+  })
+})

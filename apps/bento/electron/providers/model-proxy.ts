@@ -15,6 +15,8 @@
  *   - anthropic-messages 直通(字节级 pipe,SSE 延迟≈0);openai-chat 同时
  *     桥两个方向:chat-bridge 服务 claude-code 的 /messages,
  *     responses-bridge 服务 codex 的 /responses
+ *   - 上游 401 自愈:经 onUnauthorized 钩子刷新 OAuth 凭证并重试一次
+ *     (access token 会话半路过期的场景,对齐原生 CLI 的 auth 自刷新)
  */
 
 import http from "node:http"
@@ -198,14 +200,53 @@ export type LocalModelProxy = {
   close(): void
 }
 
+/**
+ * 上游 401 自愈钩子(ProviderRoutingService 注入):OAuth access token
+ * 在会话半路过期时,代理收到上游 401 → 调它刷新凭证(路由对象的 apiKey
+ * 被原地更新)→ 返回 true 时代理用新凭证原样重试一次。与原生 codex CLI
+ * 的 auth.json 自刷新行为对齐,只是凭证保管在代理侧。
+ *
+ * @param failedApiKey 本次失败请求实际携带的 apiKey。并发场景下,等迟到的
+ *   401 处理时凭证可能已被别的请求刷新轮换(route.apiKey !== failedApiKey),
+ *   此时无需再刷,直接重试即可——由实现方据此避免刷新风暴。
+ */
+export type UnauthorizedHandler = (route: ProxyRoute, failedApiKey: string) => Promise<boolean>
+
+/**
+ * 发上游请求;401 → 刷新 → 重试一次。刷新失败/未注册钩子/重试仍 401 都
+ * 透传首个响应;重试只发生一次,绝不循环(认证失败发生在上游边缘,请求
+ * 未被执行,重试 POST 安全——与 codex CLI 的处理口径一致)。
+ */
+async function fetchWithAuthRetry(
+  route: ProxyRoute,
+  onUnauthorized: UnauthorizedHandler | undefined,
+  send: () => Promise<Response>,
+): Promise<Response> {
+  const sentApiKey = route.apiKey
+  const first = await send()
+  if (first.status !== 401 || !onUnauthorized) return first
+  let refreshed = false
+  try {
+    refreshed = await onUnauthorized(route, sentApiKey)
+  } catch {
+    return first
+  }
+  if (!refreshed) return first
+  await first.arrayBuffer().catch(() => {}) // 排空旧响应体,释放连接
+  return send()
+}
+
 export function startLocalModelProxy(
   routes: RouteRegistry,
-  options: { onError?: (error: Error, context: string) => void } = {},
+  options: {
+    onError?: (error: Error, context: string) => void
+    onUnauthorized?: UnauthorizedHandler
+  } = {},
 ): Promise<LocalModelProxy> {
   const onError = options.onError ?? (() => {})
   const server = http.createServer((req, res) => {
     try {
-      void handleRequest(req, res, routes, onError)
+      void handleRequest(req, res, routes, onError, options.onUnauthorized)
     } catch (error) {
       onError(error instanceof Error ? error : new Error(String(error)), "dispatch")
       if (!res.headersSent) res.writeHead(500, { "content-type": "application/json" })
@@ -231,6 +272,7 @@ async function handleRequest(
   res: http.ServerResponse,
   routes: RouteRegistry,
   onError: (error: Error, context: string) => void,
+  onUnauthorized?: UnauthorizedHandler,
 ): Promise<void> {
   let route: ProxyRoute | undefined
   try {
@@ -249,17 +291,17 @@ async function handleRequest(
     }
 
     if (route.wireProtocol === "openai-chat" && split.suffix.includes("messages")) {
-      await handleChatBridge(req, res, route)
+      await handleChatBridge(req, res, route, onUnauthorized)
       return
     }
     if (route.wireProtocol === "openai-chat" && split.suffix.includes("responses")) {
-      await handleResponsesBridge(req, res, route)
+      await handleResponsesBridge(req, res, route, onUnauthorized)
       return
     }
 
     const target = upstreamUrlOf(route, split.suffix, url.search)
     let body = req.method === "GET" || req.method === "HEAD" ? undefined : await readBody(req)
-    const headers = buildProxyHeaders(req.headers, route.apiKey, route.headerOverrides, routeAuth(route))
+    let bodyRewritten = false
     if (
       body &&
       route.wireProtocol === "openai-chat" &&
@@ -268,7 +310,7 @@ async function handleRequest(
       const normalized = normalizeOpenAiChatBody(body)
       if (normalized !== body) {
         body = normalized
-        delete headers["content-length"]
+        bodyRewritten = true
       }
     }
     if (
@@ -280,14 +322,22 @@ async function handleRequest(
       const normalized = stripUnsupportedResponsesParams(body)
       if (normalized !== body) {
         body = normalized
-        delete headers["content-length"]
+        bodyRewritten = true
       }
     }
-    const upstreamRes = await fetch(target, {
-      method: req.method,
-      headers,
-      ...(body !== undefined ? { body: new Uint8Array(body) } : {}),
-    })
+    // send 闭包内重建 headers:401 自愈后 route.apiKey 已被原地更新,
+    // 重试自动带上新凭证。
+    const activeRoute: ProxyRoute = route
+    const send = () => {
+      const headers = buildProxyHeaders(req.headers, activeRoute.apiKey, activeRoute.headerOverrides, routeAuth(activeRoute))
+      if (bodyRewritten) delete headers["content-length"]
+      return fetch(target, {
+        method: req.method,
+        headers,
+        ...(body !== undefined ? { body: new Uint8Array(body) } : {}),
+      })
+    }
+    const upstreamRes = await fetchWithAuthRetry(activeRoute, onUnauthorized, send)
 
     res.writeHead(upstreamRes.status, sanitizeResponseHeaders(upstreamRes.headers))
     if (upstreamRes.body) {
@@ -310,21 +360,25 @@ async function handleChatBridge(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   route: ProxyRoute,
+  onUnauthorized?: UnauthorizedHandler,
 ): Promise<void> {
   const anthropicBody = JSON.parse((await readBody(req)).toString("utf8")) as Record<string, unknown>
   const chatRequest = translateRequest(anthropicBody)
   const target = `${route.baseUrl.replace(/\/+$/, "")}/chat/completions`
-  const headers = buildProxyHeaders(req.headers, route.apiKey, route.headerOverrides, routeAuth(route))
-  delete headers["content-length"] // 翻译后长度必变,fetch 按新 body 重算
-  const upstreamRes = await fetch(target, {
-    method: "POST",
-    headers: {
-      ...headers,
-      "content-type": "application/json",
-      accept: chatRequest.stream ? "text/event-stream" : "application/json",
-    },
-    body: JSON.stringify(chatRequest),
-  })
+  const send = () => {
+    const headers = buildProxyHeaders(req.headers, route.apiKey, route.headerOverrides, routeAuth(route))
+    delete headers["content-length"] // 翻译后长度必变,fetch 按新 body 重算
+    return fetch(target, {
+      method: "POST",
+      headers: {
+        ...headers,
+        "content-type": "application/json",
+        accept: chatRequest.stream ? "text/event-stream" : "application/json",
+      },
+      body: JSON.stringify(chatRequest),
+    })
+  }
+  const upstreamRes = await fetchWithAuthRetry(route, onUnauthorized, send)
 
   if (!upstreamRes.ok) {
     res.writeHead(upstreamRes.status, sanitizeResponseHeaders(upstreamRes.headers))
@@ -367,23 +421,27 @@ async function handleResponsesBridge(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   route: ProxyRoute,
+  onUnauthorized?: UnauthorizedHandler,
 ): Promise<void> {
   const responsesBody = JSON.parse((await readBody(req)).toString("utf8")) as Parameters<
     typeof translateResponsesRequest
   >[0]
   const chatRequest = translateResponsesRequest(responsesBody)
   const target = `${route.baseUrl.replace(/\/+$/, "")}/chat/completions`
-  const headers = buildProxyHeaders(req.headers, route.apiKey, route.headerOverrides, routeAuth(route))
-  delete headers["content-length"] // 翻译后长度必变,fetch 按新 body 重算
-  const upstreamRes = await fetch(target, {
-    method: "POST",
-    headers: {
-      ...headers,
-      "content-type": "application/json",
-      accept: chatRequest.stream ? "text/event-stream" : "application/json",
-    },
-    body: JSON.stringify(chatRequest),
-  })
+  const send = () => {
+    const headers = buildProxyHeaders(req.headers, route.apiKey, route.headerOverrides, routeAuth(route))
+    delete headers["content-length"] // 翻译后长度必变,fetch 按新 body 重算
+    return fetch(target, {
+      method: "POST",
+      headers: {
+        ...headers,
+        "content-type": "application/json",
+        accept: chatRequest.stream ? "text/event-stream" : "application/json",
+      },
+      body: JSON.stringify(chatRequest),
+    })
+  }
+  const upstreamRes = await fetchWithAuthRetry(route, onUnauthorized, send)
 
   if (!upstreamRes.ok) {
     res.writeHead(upstreamRes.status, sanitizeResponseHeaders(upstreamRes.headers))

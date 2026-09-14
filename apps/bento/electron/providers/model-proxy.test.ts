@@ -240,6 +240,96 @@ describe("LocalModelProxy 全链路(fake 上游)", () => {
   })
 })
 
+describe("上游 401 自愈:刷新凭证后原样重试一次", () => {
+  let proxy: LocalModelProxy
+  let upstream: http.Server
+  const routes = new RouteRegistry()
+  const seenAuth: Array<string | undefined> = []
+  let route: ProxyRoute
+  let handler: (route: ProxyRoute) => Promise<boolean>
+  let handlerCalls = 0
+
+  beforeAll(async () => {
+    // fake 上游:旧凭证一律 401 token_expired,新凭证才放行
+    upstream = http.createServer((req, res) => {
+      seenAuth.push(req.headers.authorization)
+      if (req.headers.authorization === "Bearer new-token") {
+        res.writeHead(200, { "content-type": "application/json" })
+        res.end(JSON.stringify({ ok: true }))
+      } else {
+        res.writeHead(401, { "content-type": "application/json" })
+        res.end(JSON.stringify({ error: { code: "token_expired" } }))
+      }
+    })
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
+    route = {
+      providerId: "user-oauth",
+      agent: "codex",
+      baseUrl: `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`,
+      wireProtocol: "openai-responses",
+      apiKey: "old-token",
+      auth: { header: "Authorization", prefix: "Bearer " },
+    }
+    routes.issue("tok-oauth", route)
+    proxy = await startLocalModelProxy(routes, {
+      onUnauthorized: (r) => { handlerCalls += 1; return handler(r) },
+    })
+  })
+  afterAll(() => {
+    proxy.close()
+    upstream.close()
+  })
+
+  function postResponses() {
+    return fetch(`http://127.0.0.1:${proxy.port}/s/tok-oauth/v1/responses`, {
+      method: "POST",
+      body: "{}",
+    })
+  }
+
+  it("刷新成功:用新凭证重试,客户端拿到 200;上游依次看到旧/新凭证", async () => {
+    seenAuth.length = 0
+    handlerCalls = 0
+    // 模拟 ProviderRoutingService 刷新成功:原地更新路由 apiKey(updateProvider 语义)
+    handler = async (r) => {
+      r.apiKey = "new-token"
+      return true
+    }
+    const res = await postResponses()
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true })
+    expect(seenAuth).toEqual(["Bearer old-token", "Bearer new-token"])
+    expect(handlerCalls).toBe(1)
+    route.apiKey = "old-token"
+  })
+
+  it("刷新失败(返回 false):原 401 透传,不重试", async () => {
+    seenAuth.length = 0
+    handler = async () => false
+    const res = await postResponses()
+    expect(res.status).toBe(401)
+    expect(seenAuth).toEqual(["Bearer old-token"])
+  })
+
+  it("钩子抛错:原 401 透传,代理自身不报错", async () => {
+    seenAuth.length = 0
+    handler = async () => {
+      throw new Error("refresh exploded")
+    }
+    expect((await postResponses()).status).toBe(401)
+    expect(seenAuth).toEqual(["Bearer old-token"])
+  })
+
+  it("重试仍 401:透传且只重试一次,不循环", async () => {
+    seenAuth.length = 0
+    handlerCalls = 0
+    handler = async () => true // 假装刷新成功,但凭证没换,上游继续 401
+    expect((await postResponses()).status).toBe(401)
+    expect(seenAuth).toEqual(["Bearer old-token", "Bearer old-token"])
+    expect(handlerCalls).toBe(1)
+  })
+})
+
 describe("openai-chat 桥全链路(fake openai 上游)", () => {
   let proxy: LocalModelProxy
   let upstream: http.Server
