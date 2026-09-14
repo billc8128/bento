@@ -117,6 +117,7 @@ export class ProviderRegistry {
     private readonly discoverBuiltin: BuiltinDiscoverer = async () => null,
     private readonly modelEnabled: ModelEnabledReader = () => true,
     private readonly persistentCache?: ProviderModelCache,
+    private readonly needsReauth: (providerId: string) => boolean = () => false,
   ) {}
 
   /** CustomProviderStore 变更后同步;user provider 与 cwd 无关,不进发现缓存。 */
@@ -140,6 +141,9 @@ export class ProviderRegistry {
     return {
       ...view,
       harnessIds: [harnessId],
+      ...(config.auth.method === "oauth" && !view.connected && this.needsReauth(config.id)
+        ? { needsReauth: true }
+        : {}),
       modelDiscovery: models.length > 0 ? "ready" : "idle",
       models: {
         [harnessId]: source === "builtin"

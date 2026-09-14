@@ -6,6 +6,8 @@
  * - OAuth token:Electron safeStorage,key 名 provider_oauth_<id>,provider 级整包加密
  * - 凭证绝不进 JSON、绝不经 IPC 回 renderer(renderer 只拿布尔状态)
  * - 变更通知:CRUD 成功后调 onChanged 回调 → main 向 renderer 广播 providers:changed
+ * - needsReauth(登录死透标记):providers/reauth.json 小文件,重启后设置页仍能
+ *   区分「登录已失效」与「未登录」;非凭证,可落盘
  *
  * 密钥读写经注入的 SecretStore 接口(测试传内存实现;prod 传 safeStorage 适配),
  * 本模块不 import electron,保持可单测。
@@ -275,8 +277,10 @@ export function migrateCustomProvider(config: CustomProviderConfig): CustomProvi
 
 export class CustomProviderStore {
   private readonly file: string
+  private readonly reauthFile: string
   private readonly onChange: () => void
   private cache: CustomProviderConfig[] | null = null
+  private reauthFlags: Set<string> | null = null
 
   constructor(
     userDataDir: string,
@@ -286,6 +290,7 @@ export class CustomProviderStore {
     const dir = path.join(userDataDir, "providers")
     fs.mkdirSync(dir, { recursive: true })
     this.file = path.join(dir, "custom.json")
+    this.reauthFile = path.join(dir, "reauth.json")
     this.onChange = onChange
   }
 
@@ -312,11 +317,13 @@ export class CustomProviderStore {
   /** renderer 视图:非凭证配置 + 凭证布尔；不包含任何 secret/token。 */
   listView(): (CustomProviderConfig & {
     hasCredential: boolean
+    needsReauth: boolean
     runtimes: Record<string, { hasKey: boolean }>
   })[] {
     return this.list().map((config) => ({
       ...config,
       hasCredential: this.hasCredential(config.id),
+      needsReauth: this.needsReauth(config.id),
       runtimes: Object.fromEntries(
         Object.entries(config.runtimes).map(([agent, runtime]) => [
           agent,
@@ -365,12 +372,51 @@ export class CustomProviderStore {
 
   setOAuthTokens(providerId: string, tokens: OAuthTokens): void {
     this.writeOAuthTokens(providerId, tokens)
+    this.clearNeedsReauth(providerId)
     this.onChange()
   }
 
   clearOAuthTokens(providerId: string): void {
     this.secrets.delete(oauthSecretKeyOf(providerId))
+    this.clearNeedsReauth(providerId)
     this.onChange()
+  }
+
+  /** 登录死透标记(路由侧刷新失败时置位):不广播——死透路径紧随其后的
+   * clearOAuthTokens 会发一次 providers:changed,renderer 重拉时自然带上。 */
+  markNeedsReauth(providerId: string): void {
+    const flags = this.reauthSet()
+    if (flags.has(providerId)) return
+    flags.add(providerId)
+    this.persistReauth()
+  }
+
+  clearNeedsReauth(providerId: string): void {
+    if (!this.reauthSet().delete(providerId)) return
+    this.persistReauth()
+  }
+
+  needsReauth(providerId: string): boolean {
+    return this.reauthSet().has(providerId)
+  }
+
+  private reauthSet(): Set<string> {
+    if (this.reauthFlags) return this.reauthFlags
+    try {
+      const parsed = JSON.parse(fs.readFileSync(this.reauthFile, "utf8")) as unknown
+      this.reauthFlags = new Set(
+        Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [],
+      )
+    } catch {
+      this.reauthFlags = new Set()
+    }
+    return this.reauthFlags
+  }
+
+  private persistReauth(): void {
+    const tmp = `${this.reauthFile}.${randomUUID()}.tmp`
+    fs.writeFileSync(tmp, JSON.stringify([...this.reauthSet()]))
+    fs.renameSync(tmp, this.reauthFile)
   }
 
   readOAuthTokens(providerId: string): OAuthTokens | null {

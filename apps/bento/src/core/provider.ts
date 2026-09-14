@@ -28,6 +28,8 @@ export type ProviderView = {
   authMethod?: "none" | "apiKey" | "oauth"
   harnessIds: HarnessId[]
   connected: boolean
+  /** OAuth 登录死透(刷新失败已清凭证):设置页显示「登录已失效」警告态。 */
+  needsReauth?: boolean
   /** 未发现不等于没有模型；unsupported/failed 时必须让 Harness 自己选默认。 */
   modelDiscovery: "idle" | "loading" | "ready" | "unsupported" | "failed"
   discoveryError?: string

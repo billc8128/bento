@@ -16,6 +16,8 @@ function t(key: string, vars?: Record<string, string | number>): string {
 /** listCustomProviders 的条目:完整配置 + 每个 runtime 是否已存 key(key 本体只写不读)。 */
 export type CustomProviderEntry = Omit<CustomProviderConfig, "runtimes"> & {
   hasCredential: boolean
+  /** OAuth 登录死透(刷新失败已清凭证),重新登录后复位。 */
+  needsReauth: boolean
   runtimes: Partial<Record<CustomHarnessId, CustomRuntimeConfig & { hasKey: boolean }>>
 }
 

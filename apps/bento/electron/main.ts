@@ -180,6 +180,7 @@ providers = new ProviderRegistry(
     Promise.resolve(null),
   (providerId, modelId) => modelVisibility.isEnabled(providerId, modelId),
   providerModelCache,
+  (providerId) => customProviders.needsReauth(providerId),
 )
 customProviders.migrateBuiltinSubscriptions()
 providers.setUserProviders(customProviders.list()) // 启动即同步,重启后首次拉取就能看到 user providers
@@ -306,7 +307,21 @@ app.whenReady().then(async () => {
     // pending 缓冲会把连接前事件延迟到完成才显示,进度会完全不可见)
     if (win && !win.isDestroyed()) win.webContents.send("binary:progress", progress)
   })
-  const activeRouting = new ProviderRoutingService(app.getPath("userData"), () => customProviders)
+  // OAuth 凭证死透时往受影响会话的时间线注入提示(复用既有 notice 链路);
+  // 重新登录成功由 setOAuthTokens 复位 needsReauth 标记。中间四个参数用默认实现。
+  const activeRouting = new ProviderRoutingService(
+    app.getPath("userData"),
+    () => customProviders,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    (providerName, sessionKeys) => {
+      for (const key of sessionKeys) {
+        sessions.appendSystemNotice(key, `${providerName} 登录已过期且无法自动续期,请到设置页重新登录`)
+      }
+    },
+  )
   routing = activeRouting
 
   // 全局 skills:扫描/开关缓存/会话物化(IPC 见下方 skills:*;会话注入经

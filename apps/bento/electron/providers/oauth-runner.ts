@@ -9,6 +9,10 @@ import type { OAuthTokens } from "./custom-providers"
 
 export type OAuthErrorKind = "network" | "unauthorized" | "invalid-response" | "state" | "cancelled"
 export type OAuthLoginResult = OAuthTokens | { error: { kind: OAuthErrorKind; message: string } }
+/** refresh 结果:unauthorized=凭证死透;network/invalid-response=临时失败,勿清凭证。 */
+export type OAuthRefreshResult =
+  | { ok: true; tokens: OAuthTokens }
+  | { ok: false; kind: Exclude<OAuthErrorKind, "state" | "cancelled"> }
 
 type OAuthRunnerDeps = {
   fetch?: typeof fetch
@@ -226,13 +230,16 @@ export async function refreshOAuthToken(
   descriptor: OAuthProviderDescriptor,
   refreshToken: string,
   deps: Pick<OAuthRunnerDeps, "fetch"> = {},
-): Promise<OAuthTokens | null> {
+): Promise<OAuthRefreshResult> {
   const anthropic = new URL(descriptor.tokenUrl).hostname === "platform.claude.com"
   const result = await exchangeToken(descriptor, {
     grant_type: "refresh_token",
     refresh_token: refreshToken,
     ...(anthropic ? { scope: descriptor.scopes } : {}),
   }, deps.fetch ?? fetch)
-  if ("error" in result) return null
-  return { ...result, refreshToken: result.refreshToken ?? refreshToken }
+  // exchangeToken 只会产生这三种 kind(state/cancelled 属于登录回调路径)
+  if ("error" in result) {
+    return { ok: false, kind: result.error.kind as Exclude<OAuthErrorKind, "state" | "cancelled"> }
+  }
+  return { ok: true, tokens: { ...result, refreshToken: result.refreshToken ?? refreshToken } }
 }

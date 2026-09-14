@@ -139,6 +139,7 @@ declare global {
       >
       listCustomProviders(): Promise<(CustomProviderConfig & {
         hasCredential: boolean
+        needsReauth: boolean
         runtimes: Record<string, { hasKey: boolean }>
       })[]>
       upsertCustomProvider(payload: {

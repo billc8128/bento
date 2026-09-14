@@ -6,8 +6,9 @@ import type { AddressInfo } from "node:net"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { CustomProviderConfig } from "../../src/core/provider"
-import { CustomProviderStore, type OAuthTokens, type SecretStore } from "./custom-providers"
+import { CustomProviderStore, type SecretStore } from "./custom-providers"
 import { ProviderRoutingService } from "./provider-routing"
+import type { OAuthRefreshResult } from "./oauth-runner"
 
 function memorySecrets(): SecretStore {
   const values = new Map<string, string>()
@@ -256,15 +257,15 @@ describe("ProviderRoutingService OAuth", () => {
       accountId: "account-stable",
     })
 
-    let finishRefresh!: (tokens: OAuthTokens) => void
-    const pendingRefresh = new Promise<OAuthTokens>((resolve) => { finishRefresh = resolve })
+    let finishRefresh!: (result: OAuthRefreshResult) => void
+    const pendingRefresh = new Promise<OAuthRefreshResult>((resolve) => { finishRefresh = resolve })
     const refresh = vi.fn(() => pendingRefresh)
     const routing = new ProviderRoutingService(dir, () => store, refresh)
     const routeA = await routing.issueRoute("session-a", config.id, "claude-code")
     await routing.issueRoute("session-b", config.id, "claude-code")
     expect(refresh).toHaveBeenCalledTimes(1)
 
-    finishRefresh({ accessToken: "new-access", refreshToken: "refresh-2", expiresAt: Date.now() + 3_600_000 })
+    finishRefresh({ ok: true, tokens: { accessToken: "new-access", refreshToken: "refresh-2", expiresAt: Date.now() + 3_600_000 } })
     await pendingRefresh
     await new Promise((resolve) => setImmediate(resolve))
 
@@ -448,10 +449,13 @@ describe("ProviderRoutingService 上游 401 的 OAuth 自愈", () => {
       expiresAt: Date.now() + 3_600_000,
       oauthProxyUrl: url,
     })
-    const refresh = vi.fn(async () => ({
-      accessToken: "new-access",
-      refreshToken: "refresh-2",
-      expiresAt: Date.now() + 3_600_000,
+    const refresh = vi.fn(async (): Promise<OAuthRefreshResult> => ({
+      ok: true,
+      tokens: {
+        accessToken: "new-access",
+        refreshToken: "refresh-2",
+        expiresAt: Date.now() + 3_600_000,
+      },
     }))
     const routing = new ProviderRoutingService(dir, () => store, refresh)
     const route = await routing.issueRoute("session", "user-oauth-sub", "codex")
@@ -476,8 +480,8 @@ describe("ProviderRoutingService 上游 401 的 OAuth 自愈", () => {
       expiresAt: Date.now() + 3_600_000,
       oauthProxyUrl: url,
     })
-    let release!: (tokens: OAuthTokens) => void
-    const pending = new Promise<OAuthTokens>((resolve) => { release = resolve })
+    let release!: (result: OAuthRefreshResult) => void
+    const pending = new Promise<OAuthRefreshResult>((resolve) => { release = resolve })
     const refresh = vi.fn(() => pending)
     const routing = new ProviderRoutingService(dir, () => store, refresh)
     const route = await routing.issueRoute("session", "user-oauth-sub", "codex")
@@ -486,7 +490,7 @@ describe("ProviderRoutingService 上游 401 的 OAuth 自愈", () => {
     const second = fetch(`${route.baseUrl}/v1/responses`, { method: "POST", body: "{}" })
     // 等两个请求都撞过 401、刷新已在途,再放行
     await new Promise((resolve) => setImmediate(resolve))
-    release({ accessToken: "new-access", refreshToken: "refresh-2", expiresAt: Date.now() + 3_600_000 })
+    release({ ok: true, tokens: { accessToken: "new-access", refreshToken: "refresh-2", expiresAt: Date.now() + 3_600_000 } })
     const [resA, resB] = await Promise.all([first, second])
     expect(resA.status).toBe(200)
     expect(resB.status).toBe(200)
@@ -495,7 +499,7 @@ describe("ProviderRoutingService 上游 401 的 OAuth 自愈", () => {
     routing.dispose()
   })
 
-  it("刷新失败:原 401 透传,路由 key 置占位符", async () => {
+  it("刷新失败(network):原 401 透传,路由 key 置占位符,凭证完好", async () => {
     const { url } = await expiringUpstream()
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-401-fail-"))
     dirs.push(dir)
@@ -507,12 +511,14 @@ describe("ProviderRoutingService 上游 401 的 OAuth 自愈", () => {
       expiresAt: Date.now() + 3_600_000,
       oauthProxyUrl: url,
     })
-    const refresh = vi.fn(async () => null)
+    const refresh = vi.fn(async (): Promise<OAuthRefreshResult> => ({ ok: false, kind: "network" }))
     const routing = new ProviderRoutingService(dir, () => store, refresh)
     const route = await routing.issueRoute("session", "user-oauth-sub", "codex")
 
     expect((await fetch(`${route.baseUrl}/v1/responses`, { method: "POST", body: "{}" })).status).toBe(401)
     expect(refresh).toHaveBeenCalledTimes(1)
+    // 临时失败绝不能误清凭证
+    expect(store.readOAuthTokens("user-oauth-sub")).toMatchObject({ accessToken: "old-access" })
     routing.dispose()
   })
 
@@ -534,12 +540,89 @@ describe("ProviderRoutingService 上游 401 的 OAuth 自愈", () => {
         },
       },
     }, { codex: "old-access" })
-    const refresh = vi.fn(async () => null)
+    const refresh = vi.fn(async (): Promise<OAuthRefreshResult> => ({ ok: false, kind: "network" }))
     const routing = new ProviderRoutingService(dir, () => store, refresh)
     const route = await routing.issueRoute("session", "user-key", "codex")
 
     expect((await fetch(`${route.baseUrl}/v1/responses`, { method: "POST", body: "{}" })).status).toBe(401)
     expect(refresh).not.toHaveBeenCalled()
+    routing.dispose()
+  })
+
+  it("死透(unauthorized):清凭证+吊销路由+广播变更,受影响会话拿干净 session_expired,通知只发一次", async () => {
+    const { url } = await expiringUpstream()
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-401-dead-"))
+    dirs.push(dir)
+    let changeCount = 0
+    const store = new CustomProviderStore(dir, memorySecrets(), () => { changeCount += 1 })
+    store.upsert(oauthConfig("user-oauth-sub"))
+    store.writeOAuthTokens("user-oauth-sub", {
+      accessToken: "old-access",
+      refreshToken: "refresh",
+      expiresAt: Date.now() + 3_600_000,
+      oauthProxyUrl: url,
+    })
+    const refresh = vi.fn(async (): Promise<OAuthRefreshResult> => ({ ok: false, kind: "unauthorized" }))
+    const onReauthRequired = vi.fn()
+    const routing = new ProviderRoutingService(
+      dir, () => store, refresh, undefined, undefined, undefined, onReauthRequired,
+    )
+    const route = await routing.issueRoute("session", "user-oauth-sub", "codex")
+
+    // 死透后原 401 透传;凭证被清、标记置位、providers:changed 广播(upsert 1 次+清凭证 1 次)
+    expect((await fetch(`${route.baseUrl}/v1/responses`, { method: "POST", body: "{}" })).status).toBe(401)
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(store.readOAuthTokens("user-oauth-sub")).toBeNull()
+    expect(store.needsReauth("user-oauth-sub")).toBe(true)
+    expect(changeCount).toBe(2)
+    // 受影响会话已通知(供应商名 + 会话 key),迟到请求拿代理自己的干净 401
+    expect(onReauthRequired).toHaveBeenCalledTimes(1)
+    expect(onReauthRequired).toHaveBeenCalledWith("user-oauth-sub", ["session"])
+    const late = await fetch(`${route.baseUrl}/v1/responses`, { method: "POST", body: "{}" })
+    expect(late.status).toBe(401)
+    expect(await late.json()).toMatchObject({ error: { type: "session_expired" } })
+    // 新会话被既有「尚未授权」抛错拦截
+    await expect(routing.issueRoute("session-new", "user-oauth-sub", "codex")).rejects.toThrow("尚未授权")
+    // 再写回死凭证触发第二次死透:仍清理但不再重复通知(重新登录前只通知一次)
+    store.writeOAuthTokens("user-oauth-sub", {
+      accessToken: "old-access",
+      refreshToken: "refresh",
+      expiresAt: Date.now() + 3_600_000,
+      oauthProxyUrl: url,
+    })
+    const route2 = await routing.issueRoute("session-2", "user-oauth-sub", "codex")
+    expect((await fetch(`${route2.baseUrl}/v1/responses`, { method: "POST", body: "{}" })).status).toBe(401)
+    expect(refresh).toHaveBeenCalledTimes(2)
+    expect(onReauthRequired).toHaveBeenCalledTimes(1)
+    // 重新登录(setOAuthTokens)复位标记
+    store.setOAuthTokens("user-oauth-sub", { accessToken: "fresh", expiresAt: Date.now() + 3_600_000 })
+    expect(store.needsReauth("user-oauth-sub")).toBe(false)
+    routing.dispose()
+  })
+
+  it("死透(invalid-response 归临时):不清凭证不通知,维持占位符", async () => {
+    const { url } = await expiringUpstream()
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-routing-401-invalid-"))
+    dirs.push(dir)
+    const store = new CustomProviderStore(dir, memorySecrets())
+    store.upsert(oauthConfig("user-oauth-sub"))
+    store.writeOAuthTokens("user-oauth-sub", {
+      accessToken: "old-access",
+      refreshToken: "refresh",
+      expiresAt: Date.now() + 3_600_000,
+      oauthProxyUrl: url,
+    })
+    const refresh = vi.fn(async (): Promise<OAuthRefreshResult> => ({ ok: false, kind: "invalid-response" }))
+    const onReauthRequired = vi.fn()
+    const routing = new ProviderRoutingService(
+      dir, () => store, refresh, undefined, undefined, undefined, onReauthRequired,
+    )
+    const route = await routing.issueRoute("session", "user-oauth-sub", "codex")
+
+    expect((await fetch(`${route.baseUrl}/v1/responses`, { method: "POST", body: "{}" })).status).toBe(401)
+    expect(store.readOAuthTokens("user-oauth-sub")).toMatchObject({ accessToken: "old-access" })
+    expect(store.needsReauth("user-oauth-sub")).toBe(false)
+    expect(onReauthRequired).not.toHaveBeenCalled()
     routing.dispose()
   })
 })

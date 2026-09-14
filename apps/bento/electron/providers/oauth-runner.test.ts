@@ -85,12 +85,35 @@ describe("runOAuthLogin", () => {
 })
 
 describe("refreshOAuthToken", () => {
-  it("保留未轮换的 refresh token", async () => {
+  it("成功时保留未轮换的 refresh token", async () => {
     const fakeFetch = vi.fn(async () => new Response(JSON.stringify({
       access_token: "new-access",
       expires_in: 7200,
     }), { status: 200 })) as typeof fetch
     await expect(refreshOAuthToken(descriptor, "old-refresh", { fetch: fakeFetch }))
-      .resolves.toMatchObject({ accessToken: "new-access", refreshToken: "old-refresh" })
+      .resolves.toMatchObject({ ok: true, tokens: { accessToken: "new-access", refreshToken: "old-refresh" } })
+  })
+
+  it("上游 400/401/403 透出 unauthorized(凭证死透)", async () => {
+    const fakeFetch = vi.fn(async () => new Response(
+      JSON.stringify({ error: "invalid_grant" }),
+      { status: 400 },
+    )) as typeof fetch
+    await expect(refreshOAuthToken(descriptor, "dead-refresh", { fetch: fakeFetch }))
+      .resolves.toEqual({ ok: false, kind: "unauthorized" })
+  })
+
+  it("断网/超时透出 network(临时)", async () => {
+    const fakeFetch = vi.fn(async () => {
+      throw new Error("connect ECONNREFUSED")
+    }) as unknown as typeof fetch
+    await expect(refreshOAuthToken(descriptor, "refresh", { fetch: fakeFetch }))
+      .resolves.toEqual({ ok: false, kind: "network" })
+  })
+
+  it("畸形响应透出 invalid-response(临时)", async () => {
+    const fakeFetch = vi.fn(async () => new Response("not-json", { status: 200 })) as typeof fetch
+    await expect(refreshOAuthToken(descriptor, "refresh", { fetch: fakeFetch }))
+      .resolves.toEqual({ ok: false, kind: "invalid-response" })
   })
 })

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Loader2, MoreHorizontal, Plus, RefreshCw, Search } from "lucide-react"
+import { Loader2, MoreHorizontal, Plus, RefreshCw, Search, TriangleAlert } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -40,8 +40,8 @@ import { ProviderMark } from "./ProviderMark"
 import { ProviderWizard } from "./ProviderWizard"
 
 type ProviderSource =
-  | { kind: "builtin"; id: string; name: string; connected: boolean; modelCount: number; authMethod: "none" | "apiKey" | "oauth"; brandKey: string; view: ProviderView }
-  | { kind: "custom"; id: string; name: string; connected: boolean; modelCount: number; authMethod: "none" | "apiKey" | "oauth"; brandKey?: string; entry: CustomProviderEntry }
+  | { kind: "builtin"; id: string; name: string; connected: boolean; modelCount: number; authMethod: "none" | "apiKey" | "oauth"; brandKey: string; view: ProviderView; needsReauth?: boolean }
+  | { kind: "custom"; id: string; name: string; connected: boolean; modelCount: number; authMethod: "none" | "apiKey" | "oauth"; brandKey?: string; entry: CustomProviderEntry; needsReauth?: boolean }
 
 type ProviderGroup = {
   id: string
@@ -240,6 +240,7 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
         authMethod: view.authMethod === "apiKey" || view.authMethod === "none" ? view.authMethod : "oauth",
         brandKey: view.id,
         view,
+        ...(view.needsReauth ? { needsReauth: true } : {}),
       })),
     ...customProviders.map((entry): ProviderSource => ({
       kind: "custom",
@@ -250,6 +251,7 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
       authMethod: entry.auth.method,
       ...(entry.presetId ? { brandKey: entry.presetId } : {}),
       entry,
+      ...(entry.needsReauth ? { needsReauth: true } : {}),
     })),
   ], [catalogProviders, customProviders])
   const groups = useMemo<ProviderGroup[]>(() => {
@@ -553,6 +555,18 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
     setConnecting(false)
   }
 
+  /** OAuth 登录死透后的重登入口(custom provider):成功后 setOAuthTokens 会广播
+   * providers:changed,列表自动重拉,警告态消失。 */
+  async function reloginCustom(provider: Extract<ProviderSource, { kind: "custom" }>) {
+    if (!window.bento) return
+    setConnecting(true)
+    setError(null)
+    const result = await window.bento.oauthLogin(provider.id)
+    if ("error" in result) setError(result.error)
+    else toast.success(t("providers.connected", { name: provider.name }))
+    setConnecting(false)
+  }
+
   function onWizardSaved(providerId?: string) {
     const wasEditing = editing !== null
     setWizardOpen(false)
@@ -672,19 +686,36 @@ export function ProvidersSection({ addProviderIntent }: { addProviderIntent: fal
                 </div>
                 {builtinSource ? (
                   <>
+                    {builtinSource.authMethod === "oauth" && !builtinSource.connected && builtinSource.needsReauth && (
+                      <span className="inline-flex h-5 shrink-0 items-center gap-1 rounded-full bg-err/10 px-2 text-[11px] font-medium text-err">
+                        <TriangleAlert className="size-3" />{t("providers.reauthWarning")}
+                      </span>
+                    )}
                     {builtinSource.connected && (
                       <Button variant="outline" disabled={refreshing} onClick={() => void refreshSelectedGroup()}>
                         <RefreshCw className={cn(refreshing && "animate-spin")} />{t("providers.refreshModels")}
                       </Button>
                     )}
                     <Button variant={builtinSource.connected ? "outline" : "default"} disabled={connecting} onClick={() => void toggleBuiltinAuth(builtinSource)}>
-                      {connecting && <Loader2 className="animate-spin" />}{builtinSource.connected ? t("providers.disconnect") : t("providers.login")}
+                      {connecting && <Loader2 className="animate-spin" />}{builtinSource.connected ? t("providers.disconnect") : builtinSource.needsReauth ? t("providers.relogin") : t("providers.login")}
                     </Button>
                   </>
                 ) : customSource ? (
-                  <Button variant="outline" disabled={refreshing} onClick={() => void refreshSelectedGroup()}>
-                    <RefreshCw className={cn(refreshing && "animate-spin")} />{t("providers.refreshModels")}
-                  </Button>
+                  <>
+                    {customSource.authMethod === "oauth" && !customSource.connected && customSource.needsReauth && (
+                      <>
+                        <span className="inline-flex h-5 shrink-0 items-center gap-1 rounded-full bg-err/10 px-2 text-[11px] font-medium text-err">
+                          <TriangleAlert className="size-3" />{t("providers.reauthWarning")}
+                        </span>
+                        <Button disabled={connecting} onClick={() => void reloginCustom(customSource)}>
+                          {connecting && <Loader2 className="animate-spin" />}{t("providers.relogin")}
+                        </Button>
+                      </>
+                    )}
+                    <Button variant="outline" disabled={refreshing} onClick={() => void refreshSelectedGroup()}>
+                      <RefreshCw className={cn(refreshing && "animate-spin")} />{t("providers.refreshModels")}
+                    </Button>
+                  </>
                 ) : (
                   <Button variant="outline" disabled={refreshing} onClick={() => void refreshSelectedGroup()}>
                     <RefreshCw className={cn(refreshing && "animate-spin")} />{t("providers.redetect")}

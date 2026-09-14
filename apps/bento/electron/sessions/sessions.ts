@@ -922,6 +922,13 @@ export class SessionManager {
     return this.live.has(key)
   }
 
+  /** main 侧注入系统提示(如 OAuth 死透通知):复用既有 notice 事件落盘/
+   * 广播链路;会话不在线则跳过(append 守卫另会跳过流已 end 的会话)。 */
+  appendSystemNotice(key: string, text: string): void {
+    const session = this.live.get(key)
+    if (session) this.append(session, { type: "notice", text })
+  }
+
   renameSession(key: string, title: string): SessionRecord {
     const record = this.listSessions().find((item) => item.key === key)
     if (!record) throw new Error(`会话不存在: ${key}`)

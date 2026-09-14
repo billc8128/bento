@@ -350,4 +350,17 @@ describe("CustomProviderStore", () => {
     expect(secrets.dump().has(oauthSecretKeyOf(legacy.id))).toBe(false)
     expect(store.hasCredentialFor(store.getProviderConfig("openai")!, "codex")).toBe(true)
   })
+
+  it("needsReauth 标记落盘,重启后保留,登录/登出时复位", () => {
+    const { store, dir } = tempStore()
+    store.markNeedsReauth("openai")
+    // 同目录重开 = 模拟 app 重启:设置页仍能区分「登录已失效」与「未登录」
+    const reopened = new CustomProviderStore(dir, memorySecrets())
+    expect(reopened.needsReauth("openai")).toBe(true)
+    reopened.setOAuthTokens("openai", { accessToken: "fresh", expiresAt: Date.now() + 3_600_000 })
+    expect(reopened.needsReauth("openai")).toBe(false)
+    reopened.markNeedsReauth("openai")
+    reopened.clearOAuthTokens("openai")
+    expect(reopened.needsReauth("openai")).toBe(false)
+  })
 })
