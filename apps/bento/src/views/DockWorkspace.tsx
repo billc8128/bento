@@ -20,7 +20,9 @@ import {
 } from "dockview"
 
 import {
+  APPS_PANEL_ID,
   attachDockApi,
+  closeAppsView,
   closeSession,
   openSession,
   openSessionAt,
@@ -69,7 +71,7 @@ function PanelHost(props: IDockviewPanelProps<PanelParams>) {
       value={{
         panelId: props.api.id,
         sessionId,
-        close: () => closeSession(sessionId),
+        close: props.api.id === APPS_PANEL_ID ? closeAppsView : () => closeSession(sessionId),
         solo: openSessionIds.length <= 1,
       }}
     >

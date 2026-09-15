@@ -12,7 +12,7 @@ import type { AddPanelOptions, DockviewApi } from "dockview"
 
 import { deriveUiAdjacency } from "@/core/collaboration"
 import type { UiSessionAdjacency, UiSessionRect } from "@/core/collaboration"
-import { liveMeta } from "@/lib/sessions/live-store"
+import { liveMeta, liveSessionsSnapshot } from "@/lib/sessions/live-store"
 import { loadPreference, resolveLocale, translate } from "@/lib/i18n"
 
 function t(key: string, vars?: Record<string, string | number>): string {
@@ -180,10 +180,17 @@ export function openSession(sessionId: string, mode: "replace" | "split" = "repl
   const activeIsChat = active && sessionIdOf(active.id) !== null
 
   if (mode === "split" || !activeIsChat) {
-    addChatPanel(
-      sessionId,
-      activeIsChat ? { direction: "right", referencePanel: active!.id } : undefined,
-    )
+    if (mode !== "split" && active) {
+      // replace 落在非会话面板(应用面板)上:同组替换——受管布局没有可见
+      // 标签页,叠放等于把它藏成关不掉的隐藏标签
+      addChatPanel(sessionId, { referenceGroup: active.group })
+      api.removePanel(active)
+    } else {
+      addChatPanel(
+        sessionId,
+        active ? { direction: "right", referencePanel: active.id } : undefined,
+      )
+    }
   } else {
     // replace:先在同组加新面板再移除旧的,组不会因清空而消失
     addChatPanel(sessionId, { referenceGroup: active!.group })
@@ -233,9 +240,9 @@ export function setLayoutMode(mode: LayoutMode) {
 export const APPS_PANEL_ID = "apps"
 
 /**
- * 打开应用主视图。已开则聚焦;未开则在当前焦点组里加单例面板——
- * 之后点会话走 openSession 的默认路径,应用面板作为隐藏标签留在组里,
- * 再点「应用」即切回,布局持久化自动覆盖它
+ * 打开应用主视图。已开则聚焦;未开则在当前焦点组里加单例面板(盖住同组会话,
+ * 关掉即回到它)。面板头自带关闭按钮;再点会话走 openSession 直接替换它,
+ * 不留隐藏标签
  */
 export function openAppsView() {
   if (!api) return
@@ -253,6 +260,20 @@ export function openAppsView() {
     params: { viewId: "core.apps" },
     ...(active ? { position: { referenceGroup: active.group } } : {}),
   })
+  refresh()
+}
+
+/** 关闭应用面板。它可能是组里最后一个面板:关掉后工作台空了就回到最近会话,
+ *  不留白屏(与 defaultLayout 同一条兜底) */
+export function closeAppsView() {
+  if (!api) return
+  const panel = api.getPanel(APPS_PANEL_ID)
+  if (!panel) return
+  api.removePanel(panel)
+  if (api.panels.length === 0) {
+    const last = liveSessionsSnapshot()[0]
+    if (last) addChatPanel(last.key)
+  }
   refresh()
 }
 

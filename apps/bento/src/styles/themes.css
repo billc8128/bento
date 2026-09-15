@@ -758,10 +758,12 @@
     --dv-drag-over-background-color: color-mix(in oklab, var(--primary) 10%, transparent);
     --dv-drag-over-border-color: var(--primary);
 
-    /* 分隔条:平时隐形,激活时用主题色淡显,与外层侧栏拖柄一致 */
+    /* 分隔条:平时隐形,激活时用主题色淡显,与外层侧栏拖柄一致;
+       hover 反馈要即时(dockview 默认延迟 0.5s,隐形 4px 条配上延迟像死的) */
     --dv-sash-color: transparent;
     --dv-active-sash-color: color-mix(in oklab, var(--primary) 25%, transparent);
     --dv-sash-border-radius: 0;
+    --dv-active-sash-transition-delay: 0s;
 
     --dv-border-radius: var(--radius);
     --dv-floating-box-shadow: 0 12px 32px rgb(0 0 0 / 0.25);
@@ -776,4 +778,28 @@
 /* 组间留一条主题分隔线(dockview 自己的 sash 是悬浮层,不占位) */
 .dockview-theme-bento .dv-split-view-container.dv-horizontal > .dv-view-container > .dv-view:not(:first-child) {
     border-left: 1px solid var(--border);
+}
+
+/* sash 可拖性:pane 头部是 Electron 原生拖拽区,矩形合并后会把 sash 顶部一段
+   吞成窗口拖拽——no-drag 把 sash 从原生拖拽区里挖出来(与 header 按钮同手法);
+   命中区从 4px 扩到 10px(dockview 只在 coarse pointer 下扩,桌面端没有) */
+.dockview-theme-bento .dv-sash {
+    -webkit-app-region: no-drag;
+}
+.dockview-theme-bento .dv-split-view-container > .dv-sash-container > .dv-sash:not(.dv-disabled)::before {
+    content: "";
+    position: absolute;
+    background: transparent;
+}
+.dockview-theme-bento .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash:not(.dv-disabled)::before {
+    top: 0;
+    bottom: 0;
+    left: -3px;
+    right: -3px;
+}
+.dockview-theme-bento .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash:not(.dv-disabled)::before {
+    left: 0;
+    right: 0;
+    top: -3px;
+    bottom: -3px;
 }

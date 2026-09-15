@@ -14,7 +14,7 @@ vi.hoisted(() => {
   }
 })
 
-import { agentHideSession, agentShowSession, choosePlacement, currentUiAdjacency, panelIdOf } from "./layout-store"
+import { agentHideSession, agentShowSession, choosePlacement, closeAppsView, currentUiAdjacency, openSession, panelIdOf } from "./layout-store"
 
 /** 最小 DockviewApi 假件:面板字典 + activePanel + element 尺寸。 */
 function fakeApi(options: {
@@ -153,6 +153,25 @@ describe("agent 面向布局操作", () => {
 
     agentHideSession("s-1") // 最后一个:兜底保留
     expect(fake.getPanel("chat:s-1")).not.toBeNull()
+  })
+})
+
+describe("应用面板生命周期", () => {
+  it("应用面板聚焦时开会话:同组替换,不叠隐藏标签", () => {
+    const fake = attach(fakeApi({ panels: ["chat:a", "apps"], active: "apps" }))
+    openSession("b")
+    expect(fake.addedPanel).toBe(panelIdOf("b"))
+    expect(fake.getPanel("apps")).toBeNull() // 被替换,不留隐藏标签
+    expect(fake.getPanel("chat:a")).not.toBeNull() // 别的组不受影响
+  })
+
+  it("closeAppsView:可关;重复调用 no-op 不报错", () => {
+    const fake = attach(fakeApi({ panels: ["chat:a", "apps"], active: "apps" }))
+    closeAppsView()
+    expect(fake.getPanel("apps")).toBeNull()
+    expect(fake.getPanel("chat:a")).not.toBeNull()
+    closeAppsView()
+    expect(fake.getPanel("chat:a")).not.toBeNull()
   })
 })
 
