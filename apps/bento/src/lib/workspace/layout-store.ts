@@ -8,7 +8,7 @@
  */
 
 import { useSyncExternalStore } from "react"
-import type { AddPanelOptions, DockviewApi } from "dockview"
+import type { AddPanelOptions, Direction, DockviewApi, DockviewGroupPanel, IDockviewPanel } from "dockview"
 
 import { deriveUiAdjacency } from "@/core/collaboration"
 import type { UiSessionAdjacency, UiSessionRect } from "@/core/collaboration"
@@ -204,12 +204,42 @@ export function openSessionAt(sessionId: string, position: PanelPosition) {
   if (!api) return
   const existing = api.getPanel(panelIdOf(sessionId))
   if (existing) {
-    existing.api.setActive()
+    // 已打开的面板拖到落点 = 移动换位/出组,不是只激活
+    movePanelTo(existing, position)
     refresh()
     return
   }
   addChatPanel(sessionId, position)
   refresh()
+}
+
+/** addPanel 的 direction 与 moveTo 的 position 用词不同,这里翻译;
+ *  落点组取 referenceGroup,否则取 referencePanel 所在组 */
+function movePanelTo(panel: IDockviewPanel, position: PanelPosition) {
+  if (!position) return
+  let refGroup: DockviewGroupPanel | undefined
+  if ("referenceGroup" in position) {
+    refGroup = typeof position.referenceGroup === "string"
+      ? api!.groups.find((g) => g.id === position.referenceGroup)
+      : position.referenceGroup
+  } else if ("referencePanel" in position) {
+    const ref = typeof position.referencePanel === "string"
+      ? api!.getPanel(position.referencePanel)
+      : position.referencePanel
+    refGroup = ref?.group
+  }
+  if (!refGroup) return
+  const POSITION = {
+    left: "left",
+    right: "right",
+    above: "top",
+    below: "bottom",
+    within: "center",
+  } as const
+  panel.api.moveTo({
+    group: refGroup,
+    position: POSITION[(position.direction ?? "within") as Direction],
+  })
 }
 
 export function closeSession(sessionId: string) {

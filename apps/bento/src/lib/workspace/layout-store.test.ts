@@ -14,7 +14,7 @@ vi.hoisted(() => {
   }
 })
 
-import { agentHideSession, agentShowSession, choosePlacement, closeAppsView, closeSession, currentUiAdjacency, openSession, panelIdOf } from "./layout-store"
+import { agentHideSession, agentShowSession, choosePlacement, closeAppsView, closeSession, currentUiAdjacency, openSession, openSessionAt, panelIdOf } from "./layout-store"
 
 /** 最小 DockviewApi 假件:面板字典 + activePanel + element 尺寸。 */
 function fakeApi(options: {
@@ -29,7 +29,11 @@ function fakeApi(options: {
     const rect = options.rects?.[id] ?? { left: 0, top: 0, width: 100, height: 100 }
     return {
       id,
-      api: { setActive: () => {}, isVisible: !options.hidden?.includes(id) },
+      api: {
+        setActive: () => {},
+        isVisible: !options.hidden?.includes(id),
+        moveTo: (opts: unknown) => { record.lastMoveTo = opts },
+      },
       group: {
         element: {
           getBoundingClientRect: () => ({ ...rect, right: rect.left + rect.width, bottom: rect.top + rect.height }),
@@ -45,6 +49,7 @@ function fakeApi(options: {
     addedPanel: undefined as string | undefined,
     lastPosition: null as { direction?: string; referencePanel?: string } | null,
     lastInactive: undefined as boolean | undefined,
+    lastMoveTo: undefined as unknown,
   }
   const api = {
     get panels() { return [...panels.values()] },
@@ -68,11 +73,13 @@ function fakeApi(options: {
     addedPanel: { get: () => record.addedPanel },
     lastPosition: { get: () => record.lastPosition },
     lastInactive: { get: () => record.lastInactive },
+    lastMoveTo: { get: () => record.lastMoveTo },
   })
   return api as typeof api & {
     addedPanel: string | undefined
     lastPosition: { direction?: string; referencePanel?: string } | null
     lastInactive: boolean | undefined
+    lastMoveTo: unknown
   }
 }
 
@@ -186,6 +193,27 @@ describe("应用面板生命周期", () => {
     const fake = attach(fakeApi({ panels: ["chat:a", "chat:b", "chat:c", "apps"], active: "chat:c" }))
     closeSession("c")
     expect(fake.getPanel("apps")).not.toBeNull()
+  })
+})
+
+describe("面板拖拽换位", () => {
+  it("已打开的面板拖到落点 = 移动(moveTo),不新增面板", () => {
+    const fake = attach(fakeApi({ panels: ["chat:a", "chat:b"], active: "chat:a" }))
+    const groupA = fake.getPanel("chat:a")!.group as never
+    openSessionAt("b", { direction: "left", referenceGroup: groupA })
+    expect(fake.lastMoveTo).toMatchObject({ group: groupA, position: "left" })
+    expect(fake.addedPanel).toBeUndefined()
+  })
+
+  it("落点方向翻译:above→top、below→bottom、within→center", () => {
+    const fake = attach(fakeApi({ panels: ["chat:a", "chat:b"], active: "chat:a" }))
+    const groupA = fake.getPanel("chat:a")!.group as never
+    openSessionAt("b", { direction: "above", referenceGroup: groupA })
+    expect(fake.lastMoveTo).toMatchObject({ position: "top" })
+    openSessionAt("b", { direction: "below", referenceGroup: groupA })
+    expect(fake.lastMoveTo).toMatchObject({ position: "bottom" })
+    openSessionAt("b", { direction: "within", referenceGroup: groupA })
+    expect(fake.lastMoveTo).toMatchObject({ position: "center" })
   })
 })
 

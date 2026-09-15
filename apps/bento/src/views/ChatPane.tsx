@@ -20,6 +20,7 @@ import {
 import { cn } from "@/lib/utils"
 import { useT } from "@/lib/i18n"
 import { usePanelInstance } from "@/lib/workspace/panel-context"
+import { SESSION_MIME } from "@/views/DockWorkspace"
 import { useTraits } from "@/lib/appearance/style-context"
 import { requestNewSession } from "@/lib/sessions/new-session-store"
 import {
@@ -57,6 +58,7 @@ function PaneHeader({
   composer,
   scope,
   solo,
+  sessionId,
   onClose,
 }: {
   info: HeaderInfo
@@ -64,9 +66,21 @@ function PaneHeader({
   composer: ComposerShape
   scope: SessionScope
   solo: boolean
+  sessionId: string
   onClose: () => void
 }) {
   const { t } = useT()
+  // 文件夹名/标题区 = 面板拖拽把手(拖到别的 pane 边缘落点换位,落点由
+  // DockWorkspace 算)。受管布局没有标签头,这是移动面板的唯一手势;
+  // 必须从窗口拖拽区里挖出来(no-drag),HTML5 拖拽才起得来——
+  // 头部其余留白仍是窗口拖拽
+  const paneDrag = {
+    draggable: true,
+    onDragStart: (e: React.DragEvent) => {
+      e.dataTransfer.setData(SESSION_MIME, sessionId)
+      e.dataTransfer.effectAllowed = "move"
+    },
+  } as const
   return (
     <header
       className={cn(
@@ -87,12 +101,18 @@ function PaneHeader({
       {/* 项目会话:文件夹名提到标题级(纯信息,不响应点击)——分栏布局下每个
           pane 自己带项目上下文,minimal 模式再没有"这是哪个项目"的盲区 */}
       {info.folder && (
-        <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
+        <span
+          {...paneDrag}
+          className="flex shrink-0 cursor-grab items-center gap-1.5 text-muted-foreground [-webkit-app-region:no-drag] active:cursor-grabbing"
+        >
           <FolderIcon className="size-4" />
           <span className="max-w-32 truncate text-sm font-medium">{info.folder}</span>
         </span>
       )}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div
+        {...paneDrag}
+        className="flex min-w-0 flex-1 cursor-grab flex-col [-webkit-app-region:no-drag] active:cursor-grabbing"
+      >
         {/* minimal + 项目会话不显示标题:文件夹名已承载 pane 身份,标题和侧栏重复。
             其余场景标题保留;minimal 下缩到 text-sm,与文件夹名同一级 */}
         {!(minimal && info.folder) && (
@@ -186,6 +206,7 @@ export function ChatPane() {
         composer={traits.composer}
         scope={live.scope}
         solo={solo}
+        sessionId={sessionId}
         onClose={close}
       />
       <ChatView
