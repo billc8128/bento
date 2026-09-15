@@ -1,4 +1,5 @@
 export const BROWSER_APP_ID = "browser"
+export const AGENT_BROWSER_APP_ID = "agent-browser"
 
 export type BentoAppId = string
 export type AppSource = "builtin" | "user"
@@ -49,6 +50,17 @@ export const BROWSER_APP = {
   id: BROWSER_APP_ID,
   name: "settings.appBrowserName",
   description: "settings.appBrowserDesc",
+  source: "builtin",
+  enabledByDefault: true,
+  transport: "builtin",
+  editable: false,
+  hasSecrets: false,
+} as const
+
+export const AGENT_BROWSER_APP = {
+  id: AGENT_BROWSER_APP_ID,
+  name: "settings.appAgentBrowserName",
+  description: "settings.appAgentBrowserDesc",
   source: "builtin",
   enabledByDefault: true,
   transport: "builtin",

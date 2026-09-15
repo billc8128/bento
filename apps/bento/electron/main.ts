@@ -53,6 +53,7 @@ import { WorkspaceFileWatchManager } from "./workspace/file-watch-manager"
 import type { WorkspaceBounds } from "../src/types/workspace"
 import { AppsStore } from "./apps/apps"
 import { AppRuntimeHost } from "./apps/app-runtime-host"
+import { AgentBrowserService } from "./apps/agent-browser"
 import { CollaborationService } from "./collaboration/collaboration-service"
 import { UiCommandBridge } from "./collaboration/ui-command-bridge"
 import { SessionCollaborationBackend } from "./collaboration/collaboration-session-backend"
@@ -91,6 +92,7 @@ let providers: ProviderRegistry
 let routing: ProviderRoutingService | null = null
 let terminals: TerminalManager
 let workspaceBrowsers: WorkspaceBrowserManager
+let agentBrowser: AgentBrowserService
 let appRuntime: AppRuntimeHost
 /** 协作服务:SessionManager 建好后初始化;AppRuntimeHost 经 getter 惰性取用。 */
 let collaborationService: CollaborationService | null = null
@@ -281,10 +283,12 @@ app.whenReady().then(async () => {
   workspaceBrowsers = new WorkspaceBrowserManager((ownerId, state) => {
     sendWorkspaceEvent(ownerId, "workspace-browser:state", state)
   })
+  agentBrowser = new AgentBrowserService(app.getPath("userData"))
   appRuntime = new AppRuntimeHost(
     app.getPath("userData"),
     apps,
     workspaceBrowsers,
+    agentBrowser,
     () => {
       if (!win || win.isDestroyed()) return null
       return { ownerId: win.webContents.id, window: win }
@@ -323,6 +327,11 @@ app.whenReady().then(async () => {
     if (!UPDATABLE.includes(harnessId as UpdatableHarnessId)) return { error: "该 harness 不支持手动更新" }
     void harnessUpdates.update(harnessId as UpdatableHarnessId).catch(() => {})
     return { ok: true as const }
+  })
+  // Agent Browser(专用 Chrome + CDP):设置页「打开」预登录入口,懒启动
+  ipcMain.handle("agent-browser:open", async () => {
+    const endpoint = await agentBrowser.ensure()
+    return endpoint ? { ok: true as const, ...endpoint } : { error: "未检测到 Google Chrome / Chromium" }
   })
   // OAuth 凭证死透时往受影响会话的时间线注入提示(复用既有 notice 链路);
   // 重新登录成功由 setOAuthTokens 复位 needsReauth 标记。中间四个参数用默认实现。
@@ -1047,6 +1056,7 @@ app.whenReady().then(async () => {
       terminals?.disposeAll()
       workspaceBrowsers?.disposeAll()
       workspaceFileWatches?.disposeAll()
+      agentBrowser?.dispose()
       await appRuntime?.close()
     },
   )
@@ -1130,12 +1140,13 @@ app.on("window-all-closed", () => {
   workspaceBrowsers?.disposeAll()
   workspaceFileWatches?.disposeAll()
   if (process.platform !== "darwin") {
+    agentBrowser?.dispose()
     void appRuntime?.close()
     app.quit()
   }
 })
 
-app.on("before-quit", () => { updates?.dispose(); void appRuntime?.close() })
+app.on("before-quit", () => { updates?.dispose(); agentBrowser?.dispose(); void appRuntime?.close() })
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()

@@ -172,6 +172,18 @@ export function AppsSection() {
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-2">
+                {app.id === "agent-browser" && app.enabled && (
+                  // 拉起专用 Chrome(懒启动),供用户预登录;未装 Chrome 时给出提示
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void window.bento?.agentBrowserOpen().then((result) => {
+                      if (result && "error" in result) toast.error(result.error)
+                    })}
+                  >
+                    {t("settings.appAgentBrowserOpen")}
+                  </Button>
+                )}
                 {app.editable && (
                   <>
                     <Button

@@ -12,11 +12,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"
 import { z } from "zod"
 
-import { BROWSER_APP_ID, COLLABORATION_APP_ID } from "../../src/core/apps"
+import { AGENT_BROWSER_APP_ID, BROWSER_APP_ID, COLLABORATION_APP_ID } from "../../src/core/apps"
 import type { SessionListInput } from "../../src/core/collaboration"
 import { CollaborationError } from "../../src/core/collaboration"
 import type { CollaborationService } from "../collaboration/collaboration-service"
 import type { HarnessMcpServer } from "../drivers/types"
+import type { AgentBrowserService } from "./agent-browser"
 import type { AppsStore, RuntimeApp } from "./apps"
 import type { WorkspaceBrowserManager } from "../workspace/browser-manager"
 
@@ -35,6 +36,7 @@ type RuntimeLease = {
   cwd: string
   token: string
   browserEnabled: boolean
+  agentBrowserEnabled: boolean
   collaborationEnabled: boolean
   configuredUserApps: number
   clients: Client[]
@@ -50,6 +52,9 @@ export type AppSessionLease = {
   token: string
   stdioRelay: HarnessMcpServer
   piExtensionPath: string
+  /** 已在运行的 agent browser 的 CDP http 端点(注入会话 env 用);
+   *  未启动时缺省——懒启动由 browser_cdp_endpoint 工具完成 */
+  agentBrowserCdp?: string
   dispose(): Promise<void>
 }
 
@@ -75,6 +80,7 @@ export class AppRuntimeHost {
     private readonly userDataDir: string,
     private readonly apps: AppsStore,
     private readonly browsers: WorkspaceBrowserManager,
+    private readonly agentBrowser: AgentBrowserService,
     private readonly browserHost: () => BrowserHost | null,
     private readonly relayScriptPath: string,
     piExtensionSourcePath: string,
@@ -104,14 +110,16 @@ export class AppRuntimeHost {
     if (!this.server) throw new Error("App Runtime Host 尚未启动")
     await this.disposeLease(sessionKey)
     const browserEnabled = this.apps.isEnabled(BROWSER_APP_ID)
+    const agentBrowserEnabled = this.apps.isEnabled(AGENT_BROWSER_APP_ID)
     const collaborationEnabled = this.apps.isEnabled(COLLABORATION_APP_ID)
     const runtimeApps = this.apps.enabledRuntimeApps()
-    if (!browserEnabled && !collaborationEnabled && runtimeApps.length === 0) return null
+    if (!browserEnabled && !agentBrowserEnabled && !collaborationEnabled && runtimeApps.length === 0) return null
     const lease: RuntimeLease = {
       sessionKey,
       cwd,
       token: randomUUID(),
       browserEnabled,
+      agentBrowserEnabled,
       collaborationEnabled,
       configuredUserApps: runtimeApps.length,
       clients: [],
@@ -124,6 +132,9 @@ export class AppRuntimeHost {
     this.leases.set(lease.token, lease)
     const endpoint = `http://127.0.0.1:${this.port}/mcp/${lease.token}`
     const token = lease.token
+    // 已在运行的 agent browser 把端点注入会话 env;未启动不在此抢跑,
+    // 懒启动由 browser_cdp_endpoint 工具完成,下次 prepare 自然带上
+    const agentBrowserCdp = agentBrowserEnabled ? this.agentBrowser.endpoint()?.http : undefined
     return {
       sessionKey,
       endpoint,
@@ -139,6 +150,7 @@ export class AppRuntimeHost {
         },
       },
       piExtensionPath: this.piExtensionPath,
+      ...(agentBrowserCdp ? { agentBrowserCdp } : {}),
       dispose: () => this.disposeLease(sessionKey),
     }
   }
@@ -193,6 +205,7 @@ export class AppRuntimeHost {
   private makeServer(lease: RuntimeLease): McpServer {
     const server = new McpServer({ name: "bento-apps", version: "0.1.0" })
     if (lease.browserEnabled) this.registerBrowserTools(server)
+    if (lease.agentBrowserEnabled) this.registerAgentBrowserTool(server)
     if (lease.collaborationEnabled) this.registerCollaborationTools(server, lease)
     if (lease.configuredUserApps > 0) {
     server.registerTool("apps_status", {
@@ -438,6 +451,26 @@ export class AppRuntimeHost {
         timeoutMs: z.number().int().positive().max(1_800_000).optional(),
       },
     }, wrap(async (args) => requireService().wait(caller, args as never)))
+  }
+
+  private registerAgentBrowserTool(server: McpServer): void {
+    server.registerTool("browser_cdp_endpoint", {
+      description: "获取 Bento 专用浏览器(独立持久 profile 的 Chrome)的 CDP 端点,用于需要登录态的浏览器自动化:Playwright connectOverCDP(http 端点)或直连 ws。首次调用会拉起一个可见的 Chrome 窗口,用户可手动登录,登录态持久并被之后所有会话复用。与 Bento 内嵌浏览器(browser_open 等)是两个独立 profile。未安装 Chrome 时返回 chrome_not_found。",
+    }, async () => {
+      const endpoint = await this.agentBrowser.ensure()
+      if (!endpoint) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              error: "chrome_not_found",
+              hint: "未检测到 Google Chrome / Chromium。安装后重试,或改用 Bento 内嵌浏览器工具(browser_open 等)。",
+            }),
+          }],
+        }
+      }
+      return { content: [{ type: "text", text: JSON.stringify(endpoint) }] }
+    })
   }
 
   private registerBrowserTools(server: McpServer): void {

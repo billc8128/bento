@@ -197,10 +197,15 @@ export const codexDriver: HarnessDriver = {
     }
 
     const createRpc = (deps.createRpc ?? defaultCreateRpc) as RpcFactory
+    // CodexRpc 把传入 env 当完整环境用:proxyEnv 缺省时以 process.env 为底,
+    // 否则 appEnv 会把 PATH 等宿主环境顶掉
+    const rpcEnv = options.appEnv
+      ? { ...(options.proxyEnv?.env ?? process.env), ...options.appEnv }
+      : options.proxyEnv?.env
     const rpc = await createRpc(
       options.cwd,
       handlers,
-      options.proxyEnv?.env,
+      rpcEnv,
       "managed",
     )
     rpc.onExit(() => {

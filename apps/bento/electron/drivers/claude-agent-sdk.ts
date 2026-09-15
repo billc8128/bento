@@ -140,7 +140,7 @@ export const claudeAgentSdkDriver: HarnessDriver = {
 
     const sdkOptions = (abortController: AbortController): Options => ({
       cwd: options.cwd,
-      env: claudeSdkEnv(options.proxyEnv),
+      env: { ...claudeSdkEnv(options.proxyEnv), ...options.appEnv },
       ...(localExecutable ? { pathToClaudeCodeExecutable: localExecutable } : {}),
       ...(modelId ? { model: modelId } : {}),
       ...(resume ? { resume } : { sessionId: nativeSessionId }),

@@ -10,8 +10,9 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { COLLABORATION_APP_ID } from "../../src/core/apps"
+import { AGENT_BROWSER_APP_ID, COLLABORATION_APP_ID } from "../../src/core/apps"
 import type { CollaborationSession, MessageOrigin, SessionMessage } from "../../src/core/collaboration"
+import { AgentBrowserService } from "./agent-browser"
 import { AppRuntimeHost } from "./app-runtime-host"
 import { AppsStore, type AppSecretStore } from "./apps"
 import { CollaborationService } from "../collaboration/collaboration-service"
@@ -53,6 +54,7 @@ describe("AppRuntimeHost", () => {
       dir,
       new AppsStore(dir, secrets()),
       browsers,
+      new AgentBrowserService(dir, { findChrome: () => null }),
       () => ({ ownerId: 7 }),
       path.join(process.cwd(), "electron/apps/mcp-http-relay.mjs"),
       path.join(process.cwd(), "electron/apps/pi-mcp-extension.mjs"),
@@ -147,6 +149,87 @@ describe("AppRuntimeHost", () => {
     await lease.dispose()
   })
 
+  it("browser_cdp_endpoint:懒启动 agent browser 并返回端点;无 Chrome 返回 chrome_not_found;app 关闭时工具不注册", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-agent-browser-tool-"))
+    dirs.push(dir)
+    const endpoint = { http: "http://127.0.0.1:9377", ws: "ws://127.0.0.1:9377/devtools/browser/x", pid: 1 }
+    const ensure = vi.fn(async () => endpoint)
+    const agentBrowser = {
+      endpoint: () => endpoint,
+      ensure,
+      dispose: () => {},
+    } as unknown as AgentBrowserService
+    const host = new AppRuntimeHost(
+      dir,
+      new AppsStore(dir, secrets()),
+      { list: () => [] } as unknown as WorkspaceBrowserManager,
+      agentBrowser,
+      () => ({ ownerId: 1 }),
+      path.join(process.cwd(), "electron/apps/mcp-http-relay.mjs"),
+      path.join(process.cwd(), "electron/apps/pi-mcp-extension.mjs"),
+    )
+    hosts.push(host)
+    await host.start()
+    const lease = (await host.prepare("agent-browser-session", dir))!
+    // 已在运行:lease 带 CDP 端点(env 注入用)
+    expect(lease.agentBrowserCdp).toBe(endpoint.http)
+    const client = new Client({ name: "agent-browser-test", version: "1" })
+    await client.connect(new StreamableHTTPClientTransport(new URL(lease.endpoint), {
+      requestInit: { headers: { authorization: `Bearer ${lease.token}` } },
+    }))
+    const tools = (await client.listTools()).tools.map((tool) => tool.name)
+    expect(tools).toContain("browser_cdp_endpoint")
+    const result = await client.callTool({ name: "browser_cdp_endpoint", arguments: {} })
+    expect(ensure).toHaveBeenCalled()
+    expect(JSON.parse((result.content as Array<{ text: string }>)[0].text)).toEqual(endpoint)
+    await client.close()
+
+    // 无 Chrome:工具返回 chrome_not_found
+    const noChrome = new AgentBrowserService(dir, { findChrome: () => null })
+    const host2 = new AppRuntimeHost(
+      dir,
+      new AppsStore(dir, secrets()),
+      { list: () => [] } as unknown as WorkspaceBrowserManager,
+      noChrome,
+      () => ({ ownerId: 1 }),
+      path.join(process.cwd(), "electron/apps/mcp-http-relay.mjs"),
+      path.join(process.cwd(), "electron/apps/pi-mcp-extension.mjs"),
+    )
+    hosts.push(host2)
+    await host2.start()
+    const lease2 = (await host2.prepare("agent-browser-no-chrome", dir))!
+    expect(lease2.agentBrowserCdp).toBeUndefined()
+    const client2 = new Client({ name: "agent-browser-no-chrome-test", version: "1" })
+    await client2.connect(new StreamableHTTPClientTransport(new URL(lease2.endpoint), {
+      requestInit: { headers: { authorization: `Bearer ${lease2.token}` } },
+    }))
+    const result2 = await client2.callTool({ name: "browser_cdp_endpoint", arguments: {} })
+    expect(JSON.parse((result2.content as Array<{ text: string }>)[0].text).error).toBe("chrome_not_found")
+    await client2.close()
+
+    // app 关闭:工具不注册
+    const store3 = new AppsStore(dir, secrets())
+    store3.setEnabled(AGENT_BROWSER_APP_ID, false)
+    const host3 = new AppRuntimeHost(
+      dir,
+      store3,
+      { list: () => [] } as unknown as WorkspaceBrowserManager,
+      noChrome,
+      () => ({ ownerId: 1 }),
+      path.join(process.cwd(), "electron/apps/mcp-http-relay.mjs"),
+      path.join(process.cwd(), "electron/apps/pi-mcp-extension.mjs"),
+    )
+    hosts.push(host3)
+    await host3.start()
+    const lease3 = (await host3.prepare("agent-browser-disabled", dir))!
+    const client3 = new Client({ name: "agent-browser-disabled-test", version: "1" })
+    await client3.connect(new StreamableHTTPClientTransport(new URL(lease3.endpoint), {
+      requestInit: { headers: { authorization: `Bearer ${lease3.token}` } },
+    }))
+    expect((await client3.listTools()).tools.map((tool) => tool.name)).not.toContain("browser_cdp_endpoint")
+    await client3.close()
+  })
+
   it("browser_open 在空窗口中创建 Browser，并通知 Renderer 展示同一标签页", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bento-browser-autocreate-"))
     dirs.push(dir)
@@ -170,6 +253,7 @@ describe("AppRuntimeHost", () => {
       dir,
       new AppsStore(dir, secrets()),
       browsers,
+      new AgentBrowserService(dir, { findChrome: () => null }),
       () => ({ ownerId: 9, window: {} as never }),
       path.join(process.cwd(), "electron/apps/mcp-http-relay.mjs"),
       path.join(process.cwd(), "electron/apps/pi-mcp-extension.mjs"),
@@ -227,6 +311,7 @@ describe("AppRuntimeHost", () => {
       dir,
       store,
       { list: () => [] } as unknown as WorkspaceBrowserManager,
+      new AgentBrowserService(dir, { findChrome: () => null }),
       () => ({ ownerId: 1 }),
       path.join(process.cwd(), "electron/apps/mcp-http-relay.mjs"),
       path.join(process.cwd(), "electron/apps/pi-mcp-extension.mjs"),
@@ -263,6 +348,7 @@ describe("AppRuntimeHost", () => {
       dir,
       store,
       { list: () => [] } as unknown as WorkspaceBrowserManager,
+      new AgentBrowserService(dir, { findChrome: () => null }),
       () => ({ ownerId: 1 }),
       path.join(process.cwd(), "electron/apps/mcp-http-relay.mjs"),
       path.join(process.cwd(), "electron/apps/pi-mcp-extension.mjs"),
@@ -363,6 +449,7 @@ describe("AppRuntimeHost Collaboration tools", () => {
       dir,
       new AppsStore(dir, secrets()),
       { list: () => [], navigate: async () => {} } as never,
+      new AgentBrowserService(dir, { findChrome: () => null }),
       () => null,
       path.join(process.cwd(), "electron/apps/mcp-http-relay.mjs"),
       path.join(process.cwd(), "electron/apps/pi-mcp-extension.mjs"),
@@ -396,6 +483,7 @@ describe("AppRuntimeHost Collaboration tools", () => {
       dir,
       new AppsStore(dir, secrets()),
       { list: () => [], navigate: async () => {} } as never,
+      new AgentBrowserService(dir, { findChrome: () => null }),
       () => null,
       path.join(process.cwd(), "electron/apps/mcp-http-relay.mjs"),
       path.join(process.cwd(), "electron/apps/pi-mcp-extension.mjs"),
@@ -429,6 +517,7 @@ describe("AppRuntimeHost Collaboration tools", () => {
       dir,
       store,
       { list: () => [], navigate: async () => {} } as never,
+      new AgentBrowserService(dir, { findChrome: () => null }),
       () => null,
       path.join(process.cwd(), "electron/apps/mcp-http-relay.mjs"),
       path.join(process.cwd(), "electron/apps/pi-mcp-extension.mjs"),
@@ -468,6 +557,7 @@ describe("AppRuntimeHost Collaboration 错误语义与 wait", () => {
       dir,
       new AppsStore(dir, secrets()),
       { list: () => [], navigate: async () => {} } as never,
+      new AgentBrowserService(dir, { findChrome: () => null }),
       () => null,
       path.join(process.cwd(), "electron/apps/mcp-http-relay.mjs"),
       path.join(process.cwd(), "electron/apps/pi-mcp-extension.mjs"),

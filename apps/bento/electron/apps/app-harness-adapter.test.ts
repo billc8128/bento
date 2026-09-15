@@ -35,4 +35,16 @@ describe("appStartOptions", () => {
       },
     })
   })
+
+  it("agent browser 在运行时,CDP 端点注入所有 harness 的 appEnv", () => {
+    const withCdp: AppSessionLease = { ...lease, agentBrowserCdp: "http://127.0.0.1:9377" }
+    const harnesses: HarnessId[] = ["claude-code", "codex", "kimi", "opencode", "omp", "hermes", "trae", "pi"]
+    for (const harness of harnesses) {
+      expect(appStartOptions(harness, withCdp).appEnv?.BENTO_AGENT_BROWSER_CDP).toBe("http://127.0.0.1:9377")
+    }
+    // pi 的既有 env 不被覆盖
+    expect(appStartOptions("pi", withCdp).appEnv?.BENTO_MCP_TOKEN).toBe("token")
+    // 未运行时缺省,不注入
+    expect(appStartOptions("codex", lease).appEnv).toBeUndefined()
+  })
 })

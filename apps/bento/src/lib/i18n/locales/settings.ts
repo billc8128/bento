@@ -77,6 +77,9 @@ const bundle: LocaleBundle = {
     "settings.appCollaborationDesc": "让 Agent 发现并协作同一 Bento runtime 内的全部会话:可读取 Bento 会话列表与脱敏消息历史;可跨项目向其它会话发送消息并等待回复;可按调用者配置创建新的 Agent 会话;caller 身份由 lease 绑定,Agent 不能伪造来源。",
     "settings.appBrowserName": "浏览器",
     "settings.appBrowserDesc": "让所有兼容 Harness 操作右侧工作区中的真实浏览器标签页。",
+    "settings.appAgentBrowserName": "Agent 浏览器(CDP)",
+    "settings.appAgentBrowserDesc": "一个 Bento 管理的专用 Chrome:独立持久 profile,登录一次长期有效。Agent 经标准 CDP 协议接入(Playwright 等通用工具),你登录进这个浏览器的站点即视为授权 Agent 访问;与你日常使用的浏览器完全隔离。",
+    "settings.appAgentBrowserOpen": "打开",
 
     "settings.detecting": "检测中…",
     "settings.runtime": "运行环境",
@@ -193,6 +196,9 @@ const bundle: LocaleBundle = {
     "settings.appCollaborationDesc": "Lets agents discover and collaborate with every session in the same Bento runtime: read the Bento session list and redacted message history; message sessions in other projects and wait for replies; create new agent sessions per the caller’s configuration. Caller identity is bound by a lease, so agents can’t forge their origin.",
     "settings.appBrowserName": "Browser",
     "settings.appBrowserDesc": "Lets every compatible harness drive the real browser tabs in the workspace on the right.",
+    "settings.appAgentBrowserName": "Agent Browser (CDP)",
+    "settings.appAgentBrowserDesc": "A dedicated Chrome managed by Bento with its own persistent profile — sign in once and it lasts. Agents connect over standard CDP (Playwright and other universal tools). Anything you sign into in this browser is accessible to agents; it is fully isolated from your everyday browser.",
+    "settings.appAgentBrowserOpen": "Open",
 
     "settings.detecting": "Detecting…",
     "settings.runtime": "Runtimes",

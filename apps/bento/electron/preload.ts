@@ -251,6 +251,9 @@ const api = {
     ipcRenderer.on("harnessUpdates:changed", handler)
     return () => ipcRenderer.removeListener("harnessUpdates:changed", handler)
   },
+
+  /** Agent Browser(专用 Chrome + CDP):打开/拉起,供设置页预登录入口 */
+  agentBrowserOpen: () => ipcRenderer.invoke("agent-browser:open"),
 }
 
 contextBridge.exposeInMainWorld("bento", api)

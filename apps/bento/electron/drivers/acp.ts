@@ -98,6 +98,8 @@ type AcpOpen = (
   approvals?: AcpApprovals,
   /** 追加到 spawn args 末尾(kimi 的 --skills-dir 等 adapter 租约参数)。 */
   extraArgs?: string[],
+  /** 追加到子进程环境末尾(app 租约注入,如 BENTO_AGENT_BROWSER_CDP)。 */
+  appEnv?: Record<string, string>,
 ) => Promise<AcpOpenResult>
 
 async function harnessCommand(id: AcpDriverId): Promise<SpawnSpec> {
@@ -141,6 +143,7 @@ class AcpDriver implements HarnessDriver {
     permission: { current: PermissionProfile } = { current: "standard" },
     approvals: AcpApprovals = { waiters: new Map(), seq: 0 },
     extraArgs?: string[],
+    appEnv?: Record<string, string>,
   ) {
     // cwd 同样归一(macOS 的 /tmp 就是 symlink),两侧同口径才能比
     const realCwd = resolveRealPath(cwd)
@@ -156,7 +159,7 @@ class AcpDriver implements HarnessDriver {
     const child = spawn(merged.cmd, [...merged.args, ...(extraArgs ?? [])], {
       stdio: ["pipe", "pipe", "pipe"],
       cwd,
-      env: cleanEnv(merged),
+      env: { ...cleanEnv(merged), ...appEnv },
     })
     const spawnFailure = Promise.withResolvers<never>()
     child.once("error", spawnFailure.reject)
@@ -264,6 +267,7 @@ class AcpDriver implements HarnessDriver {
       permission,
       approvals,
       options.appArgs,
+      options.appEnv,
     )
     if (nativeSessionId && init.agentCapabilities?.sessionCapabilities?.resume) {
       try {

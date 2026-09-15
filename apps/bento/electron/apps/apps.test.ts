@@ -36,10 +36,11 @@ describe("AppsStore", () => {
       env: { GITHUB_TOKEN: "secret-token" },
     })
     const listed = store.list()
-    expect(listed).toHaveLength(3) // browser + collaboration + user
+    expect(listed).toHaveLength(4) // browser + agent-browser + collaboration + user
     expect(listed[0]).toMatchObject({ id: "browser", source: "builtin", enabled: true })
-    expect(listed[1]).toMatchObject({ id: "collaboration", source: "builtin", enabled: true, editable: false })
-    expect(listed[2]).toMatchObject({
+    expect(listed[1]).toMatchObject({ id: "agent-browser", source: "builtin", enabled: true, editable: false })
+    expect(listed[2]).toMatchObject({ id: "collaboration", source: "builtin", enabled: true, editable: false })
+    expect(listed[3]).toMatchObject({
       id: "user-github",
       source: "user",
       transport: "stdio",
@@ -55,7 +56,7 @@ describe("AppsStore", () => {
     store.setEnabled("user-github", false)
     expect(store.enabledRuntimeApps()).toEqual([])
     store.remove("user-github")
-    expect(store.list()).toHaveLength(2) // browser + collaboration
+    expect(store.list()).toHaveLength(3) // browser + agent-browser + collaboration
     expect(changed).toHaveBeenCalled()
   })
 

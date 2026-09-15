@@ -2,6 +2,8 @@ import fs from "node:fs"
 import path from "node:path"
 
 import {
+  AGENT_BROWSER_APP,
+  AGENT_BROWSER_APP_ID,
   BROWSER_APP,
   BROWSER_APP_ID,
   COLLABORATION_APP,
@@ -87,6 +89,7 @@ export class AppsStore {
   list(): BentoAppView[] {
     return [
       { ...BROWSER_APP, enabled: this.isEnabled(BROWSER_APP_ID) },
+      { ...AGENT_BROWSER_APP, enabled: this.isEnabled(AGENT_BROWSER_APP_ID) },
       { ...COLLABORATION_APP, enabled: this.isEnabled(COLLABORATION_APP_ID) },
       ...this.state.userApps.map((app): BentoAppView => ({
         id: app.id,
@@ -128,6 +131,7 @@ export class AppsStore {
   setEnabled(id: BentoAppId, enabled: boolean): void {
     if (
       id !== BROWSER_APP_ID &&
+      id !== AGENT_BROWSER_APP_ID &&
       id !== COLLABORATION_APP_ID &&
       !this.state.userApps.some((app) => app.id === id)
     ) {

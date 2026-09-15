@@ -102,6 +102,7 @@ declare global {
       harnessUpdatesStatus(): Promise<HarnessUpdateStatus[]>
       harnessUpdatesCheck(): Promise<HarnessUpdateStatus[]>
       harnessUpdatesUpdate(harnessId: string): Promise<{ ok: true } | { error: string }>
+      agentBrowserOpen(): Promise<{ ok: true; http: string; ws: string; pid: number } | { error: string }>
       /** macOS 系统用户名:本地资料的默认显示名 */
       systemUsername(): Promise<string | null>
       scanSkills(): Promise<GlobalSkill[]>
