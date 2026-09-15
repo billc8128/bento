@@ -7,19 +7,31 @@ import { useT } from "@/lib/i18n"
 import { hardBreaks } from "@/lib/markdown-breaks"
 import { requestWorkspaceFileReveal } from "@/lib/workspace/workspace-file-reveal"
 
+/** markdown 管线会把 URL 里的空格/非 ASCII percent-encode(Application Support →
+ * Application%20Support),落盘读文件前要解码回来;文件名含字面 % 时
+ * decodeURIComponent 会抛错,回退原样。 */
+function decodeUriPath(value: string): string {
+  if (!value.includes("%")) return value
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
 /** 模型常把本地产物写成路径链接:file:// 与裸绝对路径都认;
  * 有 cwd 时相对路径(如 [报告](docs/a.md))锚到会话工作目录;
  * 带协议(http/mailto 等)、// 与 # 锚点不动。 */
 function localFilePath(href: string | undefined, cwd?: string): string | null {
   if (!href || href.startsWith("#")) return null
   if (href.startsWith("file://")) {
-    const raw = decodeURIComponent(href.slice(7))
+    const raw = decodeUriPath(href.slice(7))
     return raw.startsWith("/") ? raw : null
   }
-  if (href.startsWith("/")) return href
+  if (href.startsWith("/")) return decodeUriPath(href)
   if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//")) return null
   if (!cwd) return null
-  return `${cwd.replace(/[\\/]+$/, "")}/${href}`
+  return `${cwd.replace(/[\\/]+$/, "")}/${decodeUriPath(href)}`
 }
 
 /** 绝对路径落在工作区内时给出相对路径——文件面板的路径边界只收相对路径 */
