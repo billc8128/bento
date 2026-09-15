@@ -14,7 +14,7 @@ vi.hoisted(() => {
   }
 })
 
-import { agentHideSession, agentShowSession, choosePlacement, closeAppsView, currentUiAdjacency, openSession, panelIdOf } from "./layout-store"
+import { agentHideSession, agentShowSession, choosePlacement, closeAppsView, closeSession, currentUiAdjacency, openSession, panelIdOf } from "./layout-store"
 
 /** 最小 DockviewApi 假件:面板字典 + activePanel + element 尺寸。 */
 function fakeApi(options: {
@@ -172,6 +172,20 @@ describe("应用面板生命周期", () => {
     expect(fake.getPanel("chat:a")).not.toBeNull()
     closeAppsView()
     expect(fake.getPanel("chat:a")).not.toBeNull()
+  })
+
+  it("关到只剩一个会话时,应用面板一并收掉,回到单栏全屏", () => {
+    const fake = attach(fakeApi({ panels: ["chat:a", "chat:b", "apps"], active: "chat:b" }))
+    closeSession("b")
+    expect(fake.getPanel("chat:b")).toBeNull()
+    expect(fake.getPanel("apps")).toBeNull()
+    expect(fake.getPanel("chat:a")).not.toBeNull()
+  })
+
+  it("还剩多个会话时,应用面板保留", () => {
+    const fake = attach(fakeApi({ panels: ["chat:a", "chat:b", "chat:c", "apps"], active: "chat:c" }))
+    closeSession("c")
+    expect(fake.getPanel("apps")).not.toBeNull()
   })
 })
 

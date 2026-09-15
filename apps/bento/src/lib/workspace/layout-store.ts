@@ -219,6 +219,11 @@ export function closeSession(sessionId: string) {
   // 最后一个聊天面板不许关——工作台不允许空到没有对话
   if (snapshot.openSessionIds.length <= 1) return
   api.removePanel(panel)
+  // 关到只剩一个会话时收敛到单栏全屏:应用面板一并收掉,不留它占位
+  if (snapshot.openSessionIds.length === 2) {
+    const apps = api.getPanel(APPS_PANEL_ID)
+    if (apps) api.removePanel(apps)
+  }
   refresh()
 }
 
