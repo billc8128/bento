@@ -222,6 +222,23 @@ const AssistantMessage = memo(function AssistantMessage({
 /** 距底多少像素以内算「还在看最新消息」 */
 const STICK_THRESHOLD = 80
 
+/**
+ * 跨 tab 切换的滚动记忆。dockview onlyWhenVisible 在切换时会销毁重建整个
+ * 面板子树(React 组件随 portal 目标元素一起重挂),组件内 ref 活不过切换,
+ * 所以记忆放在模块级 Map,按会话 key 存取。只活内存:重启/重开面板回底部。
+ */
+const scrollMemory = new Map<string, { id: string | null; offset: number; atBottom: boolean }>()
+
+function rememberScroll(key: string, value: { id: string | null; offset: number; atBottom: boolean }) {
+  scrollMemory.delete(key)
+  scrollMemory.set(key, value)
+  // 上限兜底,避免长时间运行堆积已删会话
+  if (scrollMemory.size > 64) {
+    const oldest = scrollMemory.keys().next().value
+    if (oldest !== undefined) scrollMemory.delete(oldest)
+  }
+}
+
 /** 一问一答收成一个回合:回合内紧凑(gap-3),回合之间放开(gap-8) */
 function groupTurns(list: Message[]): Message[][] {
   const turns: Message[][] = []
@@ -258,9 +275,11 @@ type ChatViewProps = {
     onSteer: () => void
     onCancel: () => void
   }
+  /** 会话 key:有它才启用跨 tab 滚动记忆(demo 等独立用法不传) */
+  scrollKey?: string
 }
 
-export function ChatView({ messages, pending = true, turn, onResolveApproval, queued, cwd }: ChatViewProps) {
+export function ChatView({ messages, pending = true, turn, onResolveApproval, queued, cwd, scrollKey }: ChatViewProps) {
   const traits = useTraits()
   const { t } = useT()
   const boxRef = useRef<HTMLDivElement>(null)
@@ -268,6 +287,8 @@ export function ChatView({ messages, pending = true, turn, onResolveApproval, qu
   const contentRef = useRef<HTMLDivElement>(null)
   const stuckRef = useRef(true)
   const [following, setFollowing] = useState(true)
+  // 锚点捕获的增量查找缓存,纯性能优化
+  const anchorIdxRef = useRef(0)
 
   const scrollToLatest = (behavior: ScrollBehavior = "auto") => {
     const viewport = rootRef.current?.querySelector<HTMLDivElement>(
@@ -297,23 +318,77 @@ export function ChatView({ messages, pending = true, turn, onResolveApproval, qu
         if (stuckRef.current) viewport.scrollTop = viewport.scrollHeight
       })
     }
+    // 锚点捕获:rAF 节流,从上次命中位置增量走(滚动是连续的)。捕获结果写进
+    // 模块级记忆——dockview 切 tab 会销毁重建面板子树,组件活不过切换。
+    let anchorRaf = 0
+    const captureAnchor = () => {
+      if (anchorRaf) return
+      anchorRaf = window.requestAnimationFrame(() => {
+        anchorRaf = 0
+        if (viewport.clientHeight === 0) return
+        const els = content.querySelectorAll<HTMLElement>("[data-mid]")
+        const id = (() => {
+          if (els.length === 0) return null
+          const vTop = viewport.getBoundingClientRect().top
+          let i = Math.min(anchorIdxRef.current, els.length - 1)
+          while (i < els.length - 1 && els[i].getBoundingClientRect().bottom <= vTop) i++
+          while (i > 0 && els[i - 1].getBoundingClientRect().bottom > vTop) i--
+          anchorIdxRef.current = i
+          return { id: els[i].dataset.mid!, offset: els[i].getBoundingClientRect().top - vTop }
+        })()
+        if (scrollKey) {
+          rememberScroll(scrollKey, id
+            ? { id: id.id, offset: id.offset, atBottom: stuckRef.current }
+            : { id: null, offset: 0, atBottom: stuckRef.current })
+        }
+      })
+    }
+    // 挂载定位:有记忆且离开时不贴底 → 把锚点组摆回原偏移;否则回到底部并跟随。
+    // 双 rAF 等首屏布局落定;之后残余的异步排版位移交给浏览器原生 scroll anchoring。
+    const mem = scrollKey ? scrollMemory.get(scrollKey) : undefined
+    const restoreFromMemory = () => {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          const el = mem?.id
+            ? content.querySelector<HTMLElement>(`[data-mid="${CSS.escape(mem.id)}"]`)
+            : null
+          if (!mem || mem.atBottom || !el) {
+            stuckRef.current = true
+            setFollowing(true)
+            viewport.scrollTop = viewport.scrollHeight
+            return
+          }
+          stuckRef.current = false
+          viewport.scrollTop +=
+            el.getBoundingClientRect().top - viewport.getBoundingClientRect().top - mem.offset
+        })
+      })
+    }
     const onScroll = () => {
+      if (viewport.clientHeight === 0) return
       const next = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < STICK_THRESHOLD
       stuckRef.current = next
       setFollowing(next)
+      captureAnchor()
     }
 
-    stick()
+    // 恢复中部位置前先解禁 stick,避免首个 RO 帧把人拽到底再纠正(闪烁)
+    if (mem && !mem.atBottom) stuckRef.current = false
+    restoreFromMemory()
     viewport.addEventListener("scroll", onScroll, { passive: true })
-    // 字体或窗口变化会改内容高度,ResizeObserver 比 mount 时滚一次可靠
-    const ro = new ResizeObserver(() => stuckRef.current && stick())
+    // 字体或窗口变化会改内容高度,ResizeObserver 比 mount 时滚一次可靠;
+    // 不贴底时借它刷新锚点,吸收可见期间的异步排版位移
+    const ro = new ResizeObserver(() => (stuckRef.current ? stick() : captureAnchor()))
     ro.observe(content)
 
     return () => {
       if (stickRaf) window.cancelAnimationFrame(stickRaf)
+      if (anchorRaf) window.cancelAnimationFrame(anchorRaf)
       viewport.removeEventListener("scroll", onScroll)
       ro.disconnect()
     }
+    // scrollKey 在面板生命周期内不变,只需挂载时跑一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // 人类发送永远跳回最新(聊天惯例:自己发了消息就是要看回复),并把跟随
@@ -352,7 +427,7 @@ export function ChatView({ messages, pending = true, turn, onResolveApproval, qu
         )}
 
         {groupTurns(messages).map((messageTurn) => (
-          <div key={messageTurn[0].id} className="flex min-w-0 flex-col gap-3">
+          <div key={messageTurn[0].id} data-mid={messageTurn[0].id} className="flex min-w-0 flex-col gap-3">
             {messageTurn.map((m) =>
               m.role === "user" ? (
                 <UserMessage key={m.id} m={m} shape={traits.message} />
