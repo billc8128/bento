@@ -36,11 +36,15 @@ export function WindowPanelToggle({
   label,
   className,
   onClick,
+  onMouseEnter,
+  onMouseLeave,
   children,
 }: {
   label: string
   className?: string
   onClick: () => void
+  onMouseEnter?: () => void
+  onMouseLeave?: () => void
   children: React.ReactNode
 }) {
   return (
@@ -49,6 +53,8 @@ export function WindowPanelToggle({
       aria-label={label}
       title={label}
       onClick={onClick}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       className={cn(
         "window-panel-toggle flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-[color,background-color,transform] duration-100 ease-out hover:bg-muted hover:text-foreground active:scale-[0.94] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:active:scale-100 motion-reduce:transition-none",
         className,

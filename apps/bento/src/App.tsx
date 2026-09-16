@@ -129,7 +129,8 @@ export default function App() {
   const workspaceProgrammaticResizeRef = useRef(false)
   const sidebarCollapsed = useSidebarCollapsed()
 
-  // Codex 式悬停 peek:侧栏收起时,左缘热区悬停滑出悬浮侧栏,移出 250ms 后
+  // Codex 式悬停 peek:侧栏收起时,左缘热区或标题栏侧栏按钮悬停滑出悬浮侧栏,
+  // 移出 250ms 后
   // 自动收回。侧栏本体在 0 宽面板里保持挂载(折叠不丢组件态,如文件夹开合);
   // peek 期间 overlay 是第二个实例,内容来自同一份 store。
   const [sidebarPeek, setSidebarPeek] = useState(false)
@@ -289,6 +290,8 @@ export default function App() {
                 <div className="app-window-drag flex h-9 shrink-0 items-center border-b border-border/60 bg-background pl-[76px] pr-3 [-webkit-app-region:drag]">
                   <WindowPanelToggle
                     onClick={toggleSidebarPanel}
+                    onMouseEnter={sidebarCollapsed ? openSidebarPeek : undefined}
+                    onMouseLeave={sidebarCollapsed ? closeSidebarPeek : undefined}
                     label={sidebarCollapsed ? t("chat.expandSidebar") : t("chat.collapseSidebar")}
                   >
                     <PanelStateIcon side="left" expanded={!sidebarCollapsed} />
