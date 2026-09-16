@@ -129,18 +129,21 @@ export default function App() {
   const workspaceProgrammaticResizeRef = useRef(false)
   const sidebarCollapsed = useSidebarCollapsed()
 
-  // Codex 式悬停 peek:侧栏收起时,左缘热区或标题栏侧栏按钮悬停滑出悬浮侧栏,
-  // 移出 250ms 后
-  // 自动收回。侧栏本体在 0 宽面板里保持挂载(折叠不丢组件态,如文件夹开合);
-  // peek 期间 overlay 是第二个实例,内容来自同一份 store。
+  // Codex 式悬停 peek:侧栏收起时,左缘热区或标题栏侧栏按钮悬停滑出悬浮侧栏。
+  // 打开带 350ms 意图延迟(快速扫过不误触发),期间按钮图标先长到半展开态做预告;
+  // 移出 250ms 后自动收回。侧栏本体在 0 宽面板里保持挂载(折叠不丢组件态,
+  // 如文件夹开合);peek 期间 overlay 是第二个实例,内容来自同一份 store。
   const [sidebarPeek, setSidebarPeek] = useState(false)
+  const [sidebarPeekHint, setSidebarPeekHint] = useState(false)
   const sidebarPeekTimerRef = useRef(0)
   const openSidebarPeek = () => {
     window.clearTimeout(sidebarPeekTimerRef.current)
-    setSidebarPeek(true)
+    setSidebarPeekHint(true)
+    sidebarPeekTimerRef.current = window.setTimeout(() => setSidebarPeek(true), 350)
   }
   const closeSidebarPeek = () => {
     window.clearTimeout(sidebarPeekTimerRef.current)
+    setSidebarPeekHint(false)
     sidebarPeekTimerRef.current = window.setTimeout(() => setSidebarPeek(false), 250)
   }
 
@@ -294,7 +297,7 @@ export default function App() {
                     onMouseLeave={sidebarCollapsed ? closeSidebarPeek : undefined}
                     label={sidebarCollapsed ? t("chat.expandSidebar") : t("chat.collapseSidebar")}
                   >
-                    <PanelStateIcon side="left" expanded={!sidebarCollapsed} />
+                    <PanelStateIcon side="left" expanded={!sidebarCollapsed} peekHint={sidebarPeekHint} />
                   </WindowPanelToggle>
                   <span className="flex-1" />
                   <WindowPanelToggle

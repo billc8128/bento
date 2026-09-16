@@ -3,10 +3,13 @@ import { cn } from "@/lib/utils"
 export function PanelStateIcon({
   side,
   expanded,
+  peekHint = false,
   className,
 }: {
   side: "left" | "right"
   expanded: boolean
+  /** 收起态下的悬停预告:分隔线长到半高,提示 peek 即将展开 */
+  peekHint?: boolean
   className?: string
 }) {
   return (
@@ -25,7 +28,8 @@ export function PanelStateIcon({
         d={side === "left" ? "M9 5.5v13" : "M15 5.5v13"}
         className={cn(
           "origin-center transition-transform duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
-          !expanded && (side === "left" ? "-translate-x-0.5 scale-y-[0.34]" : "translate-x-0.5 scale-y-[0.34]"),
+          !expanded && !peekHint && (side === "left" ? "-translate-x-0.5 scale-y-[0.34]" : "translate-x-0.5 scale-y-[0.34]"),
+          !expanded && peekHint && (side === "left" ? "-translate-x-0.5 scale-y-[0.68]" : "translate-x-0.5 scale-y-[0.68]"),
         )}
       />
     </svg>
